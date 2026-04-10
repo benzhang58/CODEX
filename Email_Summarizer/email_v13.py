@@ -14,15 +14,20 @@ import os
 import json
 import logging
 import re
+import sqlite3
+import base64
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass, asdict, field
-from typing import List, Dict, Optional, Set, Tuple
+from typing import List, Dict, Optional, Set, Tuple, Any
 import imaplib
 import email
 import email.utils
 from email.message import Message
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
+from urllib.error import HTTPError
 import pandas as pd
 from pypdf import PdfReader
 from docx import Document
@@ -36,6 +41,9 @@ from email.mime.text import MIMEText
 # Don't load .env at import time — we load the right one at runtime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+APP_BASE_DIR = Path(__file__).resolve().parent
+APP_STORAGE_DIR = Path(os.getenv("EMAIL_SUMMARIZER_STORAGE_DIR", str(APP_BASE_DIR / "data"))).resolve()
+OUTPUT_ROOT_DIR = Path(os.getenv("EMAIL_SUMMARIZER_OUTPUT_DIR", str(APP_BASE_DIR / "email_summaries_output"))).resolve()
 
 
 def available_env_options(cwd: Path = Path(".")) -> List[Path]:
@@ -47,6 +55,33 @@ def available_env_options(cwd: Path = Path(".")) -> List[Path]:
         options.append(base_env)
     options.extend(env_files)
     return options
+
+
+def parse_summary_style_preferences(raw_value: str) -> List[str]:
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in raw.split("\n") if item.strip()]
+
+
+def get_app_config_value(key: str, cwd: Path = Path(".")) -> str:
+    value = os.getenv(key)
+    if value:
+        return value
+
+    for candidate in (cwd / ".env.google_oauth", cwd / ".env", APP_BASE_DIR / ".env.google_oauth", APP_BASE_DIR / ".env"):
+        if candidate.exists():
+            parsed = dotenv_values(candidate)
+            maybe = parsed.get(key)
+            if maybe:
+                return str(maybe)
+    return ""
 
 
 def load_client_env_by_name(client_name: str, cwd: Path = Path(".")) -> Path:
@@ -61,26 +96,103 @@ def load_client_env_by_name(client_name: str, cwd: Path = Path(".")) -> Path:
 
 
 def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
-    profile_path = cwd / "data" / "users" / user_id / "profile.json"
-    if not profile_path.exists():
-        raise FileNotFoundError(f"No profile.json found for user '{user_id}'.")
-
     base_env_path = cwd / ".env"
     if base_env_path.exists():
         load_dotenv(base_env_path, override=True)
 
-    payload = json.loads(profile_path.read_text(encoding="utf-8"))
+    app_db_path = cwd / "data" / "app" / "app.db"
+    payload = None
+    source_label = ""
+
+    if app_db_path.exists():
+        connection = sqlite3.connect(app_db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            row = connection.execute(
+                "SELECT email, settings_json FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        if row:
+            payload = {
+                "email": row["email"],
+                "settings": json.loads(row["settings_json"] or "{}"),
+            }
+            source_label = f"database profile: {app_db_path}"
+
+    if payload is None:
+        profile_path = cwd / "data" / "users" / user_id / "profile.json"
+        if not profile_path.exists():
+            raise FileNotFoundError(f"No profile.json found for user '{user_id}'.")
+        payload = json.loads(profile_path.read_text(encoding="utf-8"))
+        source_label = f"profile: {profile_path}"
+
     settings = payload.get("settings") or {}
+    email_value = str(payload.get("email", "")).strip().lower()
+    provider_defaults = None
+    if email_value.endswith("@gmail.com"):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.gmail.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif email_value.endswith(("@outlook.com", "@hotmail.com", "@live.com", "@msn.com")):
+        provider_defaults = {
+            "IMAP_SERVER": "outlook.office365.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp-mail.outlook.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif email_value.endswith(("@yahoo.com", "@ymail.com")):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.mail.yahoo.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.mail.yahoo.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif email_value.endswith("@icloud.com"):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.mail.me.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.mail.me.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif email_value.endswith("@263.net") or email_value.endswith("@263.com"):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.263.net",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.263.net",
+            "SMTP_PORT": "465",
+            "IMAP_FOLDER": "INBOX",
+        }
+
+    if provider_defaults:
+        settings = {
+            **provider_defaults,
+            **settings,
+            "IMAP_SERVER": settings.get("IMAP_SERVER") or provider_defaults["IMAP_SERVER"],
+            "IMAP_PORT": settings.get("IMAP_PORT") or provider_defaults["IMAP_PORT"],
+            "SMTP_HOST": settings.get("SMTP_HOST") or provider_defaults["SMTP_HOST"],
+            "SMTP_PORT": settings.get("SMTP_PORT") or provider_defaults["SMTP_PORT"],
+            "IMAP_FOLDER": settings.get("IMAP_FOLDER") or provider_defaults["IMAP_FOLDER"],
+        }
     for key, value in settings.items():
-        if value is None:
+        if value is None or str(value).strip() == "":
             continue
         os.environ[str(key)] = str(value)
 
     if payload.get("email"):
         os.environ.setdefault("PROFILE_EMAIL", str(payload["email"]))
 
-    logger.info(f"Loaded config from profile: {profile_path}")
-    return profile_path
+    logger.info(f"Loaded config from {source_label}")
+    return cwd / "data" / "users" / user_id / "profile.json"
 
 
 def select_client_env() -> Path:
@@ -195,7 +307,7 @@ class EmailSummarizer:
         self.json_dir        = self.output_base / "json"
         self.user_id         = user_id
 
-        self.data_user_dir   = Path("data") / "users" / self.user_id
+        self.data_user_dir   = APP_STORAGE_DIR / "users" / self.user_id
         self.data_emails_dir = self.data_user_dir / "emails"
         self.data_summaries_dir = self.data_user_dir / "summaries"
         self.data_metadata_path = self.data_user_dir / "metadata.json"
@@ -225,6 +337,9 @@ class EmailSummarizer:
 
         self._primary_folder = os.getenv("IMAP_FOLDER", "INBOX")
         self._all_folders: List[str] = []  # populated after connect
+        self.profile_email = os.getenv("PROFILE_EMAIL", "").strip().lower()
+        self.google_oauth = self._load_google_oauth()
+        self.use_gmail_api = self._should_use_gmail_api()
 
     @staticmethod
     def _slugify(value: str) -> str:
@@ -237,6 +352,108 @@ class EmailSummarizer:
             cleaned = message_id.strip().strip("<>")
             return self._slugify(cleaned)
         return f"uid_{uid}"
+
+    def _load_google_oauth(self) -> Dict[str, Any]:
+        app_db_path = APP_STORAGE_DIR / "app" / "app.db"
+        if not app_db_path.exists():
+            return {}
+        connection = sqlite3.connect(app_db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            row = connection.execute(
+                "SELECT google_oauth_json FROM users WHERE user_id = ?",
+                (self.user_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if not row or not row["google_oauth_json"]:
+            return {}
+        try:
+            payload = json.loads(row["google_oauth_json"])
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
+    def _should_use_gmail_api(self) -> bool:
+        if not self.profile_email.endswith("@gmail.com"):
+            return False
+        return bool(self.google_oauth.get("refresh_token") or self.google_oauth.get("access_token"))
+
+    @staticmethod
+    def _uid_token(uid: Any) -> str:
+        return str(uid).strip()
+
+    @staticmethod
+    def _gmail_numeric_uid(gmail_message_id: str) -> int:
+        cleaned = re.sub(r"[^0-9a-fA-F]", "", str(gmail_message_id))
+        if cleaned:
+            return int(cleaned[:15], 16)
+        return abs(hash(gmail_message_id)) % (10**15)
+
+    def _gmail_refresh_access_token(self) -> str:
+        refresh_token = str(self.google_oauth.get("refresh_token", "")).strip()
+        access_token = str(self.google_oauth.get("access_token", "")).strip()
+        if access_token and not refresh_token:
+            return access_token
+        if not refresh_token:
+            raise ValueError("Google OAuth tokens are not available for this Gmail account.")
+
+        client_id = get_app_config_value("GOOGLE_CLIENT_ID", APP_BASE_DIR)
+        client_secret = get_app_config_value("GOOGLE_CLIENT_SECRET", APP_BASE_DIR)
+        if not client_id or not client_secret:
+            raise ValueError("Google OAuth client settings are missing.")
+
+        body = urlencode(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+        ).encode("utf-8")
+        request = UrlRequest(
+            "https://oauth2.googleapis.com/token",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            payload = exc.read().decode("utf-8", errors="replace")
+            raise ValueError(f"Google token refresh failed: {payload}") from exc
+
+        new_access_token = str(payload.get("access_token", "")).strip()
+        if not new_access_token:
+            raise ValueError("Google token refresh did not return an access token.")
+        self.google_oauth["access_token"] = new_access_token
+        return new_access_token
+
+    def _gmail_api_json(self, path: str, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        access_token = self._gmail_refresh_access_token()
+        query = f"?{urlencode(params)}" if params else ""
+        request = UrlRequest(
+            f"https://gmail.googleapis.com/gmail/v1/users/me/{path}{query}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            payload = exc.read().decode("utf-8", errors="replace")
+            raise ValueError(f"Gmail API request failed for {path}: {payload}") from exc
+
+    def _gmail_api_raw_message(self, gmail_message_id: str) -> Message:
+        payload = self._gmail_api_json(f"messages/{gmail_message_id}", {"format": "raw"})
+        raw_value = payload.get("raw", "")
+        raw_bytes = base64.urlsafe_b64decode(raw_value.encode("utf-8"))
+        parsed = email.message_from_bytes(raw_bytes)
+        parsed.uid = self._gmail_numeric_uid(gmail_message_id)
+        parsed.gmail_message_id = gmail_message_id
+        parsed.gmail_thread_id = payload.get("threadId", "")
+        return parsed
 
     def _summary_file_id(self, sender: str, run_date: str) -> str:
         return self._slugify(f"{sender}_{run_date}")
@@ -347,18 +564,18 @@ class EmailSummarizer:
     # State persistence
     # ──────────────────────────────────────────────
 
-    def load_processed_uids(self) -> Set[int]:
+    def load_processed_uids(self) -> Set[str]:
         if self.state_file.exists():
             try:
                 with open(self.state_file, 'r', encoding='utf-8') as f:
-                    loaded = set(json.load(f).get("processed_uids", []))
-                existing_saved_uids: Set[int] = set()
+                    loaded = {self._uid_token(uid) for uid in json.load(f).get("processed_uids", [])}
+                existing_saved_uids: Set[str] = set()
                 for email_path in self.data_emails_dir.glob("*.json"):
                     try:
                         payload = json.loads(email_path.read_text(encoding="utf-8"))
                         uid = payload.get("uid")
                         if uid is not None:
-                            existing_saved_uids.add(int(uid))
+                            existing_saved_uids.add(self._uid_token(uid))
                     except Exception:
                         continue
 
@@ -378,10 +595,10 @@ class EmailSummarizer:
                 logger.warning(f"Failed to load state: {e}")
         return set()
 
-    def save_processed_uids(self, uids: Set[int]):
+    def save_processed_uids(self, uids: Set[str]):
         try:
             with open(self.state_file, 'w', encoding='utf-8') as f:
-                json.dump({"processed_uids": sorted(uids), "last_run": datetime.now().isoformat()}, f, indent=2)
+                json.dump({"processed_uids": sorted(str(uid) for uid in uids), "last_run": datetime.now().isoformat()}, f, indent=2)
             logger.info(f"Saved state: {len(uids)} processed UIDs")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
@@ -391,6 +608,8 @@ class EmailSummarizer:
     # ──────────────────────────────────────────────
 
     def connect_imap(self) -> imaplib.IMAP4_SSL:
+        if self.use_gmail_api:
+            raise ValueError("IMAP should not be used for Gmail accounts with Google OAuth tokens.")
         server   = os.getenv("IMAP_SERVER")
         port     = int(os.getenv("IMAP_PORT", 993))
         user     = os.getenv("IMAP_USER")
@@ -617,12 +836,15 @@ class EmailSummarizer:
     # Fetch whitelisted trigger emails
     # ──────────────────────────────────────────────
 
-    def fetch_trigger_emails(self, mail: imaplib.IMAP4_SSL, days_back: int, processed_uids: Set[int]) -> Tuple[List[Message], Dict[str, int]]:
+    def fetch_trigger_emails(self, mail: Optional[imaplib.IMAP4_SSL], days_back: int, processed_uids: Set[str]) -> Tuple[List[Message], Dict[str, int]]:
         """
         Fetch recent emails from whitelisted senders.
         Search by FROM only — no combined SINCE+FROM — because some servers (e.g. 263.com)
         silently return empty results for combined criteria. Date filtering done in Python.
         """
+        if self.use_gmail_api:
+            return self.fetch_trigger_emails_gmail_api(days_back, processed_uids)
+
         since_dt = datetime.now() - timedelta(days=days_back)
         logger.info(f"Searching for whitelisted emails since {since_dt.strftime('%d-%b-%Y')} (date filtered in Python)")
 
@@ -663,7 +885,7 @@ class EmailSummarizer:
         msgs = []
         skipped_processed = 0
         for uid in uid_list:
-            if uid in processed_uids:
+            if self._uid_token(uid) in processed_uids:
                 logger.info(f"  Skipping UID {uid} (already processed)")
                 skipped_processed += 1
                 continue
@@ -676,6 +898,46 @@ class EmailSummarizer:
         logger.info(f"Found {len(msgs)} new trigger email(s)")
         return msgs, {
             "candidate_trigger_count": len(uid_list),
+            "already_processed_count": skipped_processed,
+            "new_trigger_count": len(msgs),
+        }
+
+    def fetch_trigger_emails_gmail_api(self, days_back: int, processed_uids: Set[str]) -> Tuple[List[Message], Dict[str, int]]:
+        query_parts = [f"newer_than:{max(1, days_back)}d", "-in:trash", "-in:spam"]
+        if self.whitelist:
+            sender_query = " OR ".join(f"from:{sender}" for sender in self.whitelist)
+            query_parts.append(f"({sender_query})")
+        query = " ".join(query_parts)
+        logger.info(f"Gmail API search query: {query}")
+
+        candidate_ids: List[str] = []
+        next_page_token: Optional[str] = None
+        while True:
+            params = {"q": query, "maxResults": "100"}
+            if next_page_token:
+                params["pageToken"] = next_page_token
+            payload = self._gmail_api_json("messages", params)
+            candidate_ids.extend([msg.get("id", "") for msg in payload.get("messages", []) if msg.get("id")])
+            next_page_token = payload.get("nextPageToken")
+            if not next_page_token:
+                break
+
+        logger.info(f"Gmail API returned {len(candidate_ids)} candidate message(s)")
+        msgs: List[Message] = []
+        skipped_processed = 0
+        for gmail_message_id in candidate_ids:
+            numeric_uid = self._gmail_numeric_uid(gmail_message_id)
+            if self._uid_token(numeric_uid) in processed_uids:
+                skipped_processed += 1
+                continue
+            try:
+                msgs.append(self._gmail_api_raw_message(gmail_message_id))
+            except Exception as exc:
+                logger.warning(f"Failed to fetch Gmail message {gmail_message_id}: {exc}")
+
+        logger.info(f"Found {len(msgs)} new Gmail trigger email(s)")
+        return msgs, {
+            "candidate_trigger_count": len(candidate_ids),
             "already_processed_count": skipped_processed,
             "new_trigger_count": len(msgs),
         }
@@ -694,13 +956,16 @@ class EmailSummarizer:
                     ids.add(part)
         return ids
 
-    def _fetch_full_thread(self, mail: imaplib.IMAP4_SSL, trigger: Message) -> List[ThreadMessage]:
+    def _fetch_full_thread(self, mail: Optional[imaplib.IMAP4_SSL], trigger: Message) -> List[ThreadMessage]:
         """
         Reconstruct the complete thread for a trigger email.
         Searches ALL IMAP folders for every related message.
         Uses both Message-ID header traversal and subject-line fallback.
         Returns all thread messages sorted oldest→newest (trigger included).
         """
+        if self.use_gmail_api and getattr(trigger, "gmail_thread_id", ""):
+            return self._fetch_full_thread_gmail_api(trigger)
+
         own_mid       = trigger.get("Message-ID", "").strip()
         referenced    = self._get_referenced_ids(trigger)
         is_threaded   = bool(referenced)
@@ -792,6 +1057,27 @@ class EmailSummarizer:
 
         # ── Convert and sort oldest → newest ──
         thread_msgs = [self._to_thread_message(m, mail) for m in collected.values()]
+        thread_msgs.sort(key=lambda m: m.date)
+        return thread_msgs
+
+    def _fetch_full_thread_gmail_api(self, trigger: Message) -> List[ThreadMessage]:
+        thread_id = getattr(trigger, "gmail_thread_id", "")
+        if not thread_id:
+            return [self._to_thread_message(trigger, None)]
+
+        payload = self._gmail_api_json(f"threads/{thread_id}")
+        messages: List[Message] = []
+        for item in payload.get("messages", []):
+            gmail_message_id = item.get("id", "")
+            if not gmail_message_id:
+                continue
+            try:
+                messages.append(self._gmail_api_raw_message(gmail_message_id))
+            except Exception as exc:
+                logger.warning(f"Failed to fetch Gmail thread message {gmail_message_id}: {exc}")
+        if not messages:
+            return [self._to_thread_message(trigger, None)]
+        thread_msgs = [self._to_thread_message(msg, None) for msg in messages]
         thread_msgs.sort(key=lambda m: m.date)
         return thread_msgs
 
@@ -1139,6 +1425,16 @@ class EmailSummarizer:
                 f"and all attachments from all participants in each thread.\n\n"
             )
 
+        summary_preferences = parse_summary_style_preferences(os.getenv("SUMMARY_STYLE_PREFERENCES", ""))
+        preference_block = ""
+        if summary_preferences:
+            preference_block = (
+                "USER SUMMARY STYLE PREFERENCES\n"
+                "Apply these preferences when writing the summary unless they conflict with the actual email content or required sections:\n"
+                + "\n".join(f"- {item}" for item in summary_preferences)
+                + "\n\n"
+            )
+
         # Build explicit attachment checklist so the LLM cannot skip any file
         all_attachment_names = []
         for record in records:
@@ -1184,7 +1480,7 @@ class EmailSummarizer:
             "2-3 sentences in plain English: what do I need to know and what do I need to do?\n"
         )
 
-        full_input = preamble + data_block + "\n\n" + section_guide
+        full_input = preamble + preference_block + data_block + "\n\n" + section_guide
         logger.info(f"LLM prompt length: {len(full_input)} chars (~{len(full_input)//4} tokens)")
         # Debug: log unique attachments going into the prompt
         for record in records:
@@ -1351,13 +1647,15 @@ class EmailSummarizer:
 
     def run(self, days_back: int = 7) -> Dict[str, object]:
         processed_uids = self.load_processed_uids()
-        mail           = self.connect_imap()
+        mail: Optional[imaplib.IMAP4_SSL] = None
+        if not self.use_gmail_api:
+            mail = self.connect_imap()
 
         try:
             trigger_msgs, trigger_stats = self.fetch_trigger_emails(mail, days_back, processed_uids)
 
             records: List[EmailRecord] = []
-            new_uids: Set[int]         = set()
+            new_uids: Set[str]         = set()
             now = datetime.now()
             run_date     = now.strftime("%Y-%m-%d_%H%M")   # file-safe key
             # e.g. "Summary (Last 7 Days): Tuesday, April 8th, 2026 [3:40 PM PST]"
@@ -1379,7 +1677,7 @@ class EmailSummarizer:
                 record = self.parse_email(msg, mail)
                 if record:
                     records.append(record)
-                    new_uids.add(record.uid)
+                    new_uids.add(self._uid_token(record.uid))
                     self._save_email_record_json(record, run_date)
 
             if not records:
@@ -1489,11 +1787,12 @@ class EmailSummarizer:
             }
 
         finally:
-            try:
-                mail.close()
-                mail.logout()
-            except Exception:
-                pass
+            if mail is not None:
+                try:
+                    mail.close()
+                    mail.logout()
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":
@@ -1503,7 +1802,7 @@ if __name__ == "__main__":
         client_name = profile_user_id
     else:
         client_name = config_path.name.replace(".env.", "").replace(".env", "default")
-    output_dir  = Path("email_summaries_output") / client_name
+    output_dir  = OUTPUT_ROOT_DIR / client_name
     summarizer  = EmailSummarizer(output_dir, user_id=client_name)
     stats = summarizer.run(days_back=int(os.getenv("DAYS_BACK", 7)))
     print(json.dumps({"success": True, "stats": stats}))

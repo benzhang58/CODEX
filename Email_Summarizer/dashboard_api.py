@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 import smtplib
+import sqlite3
 import subprocess
 import unicodedata
 from datetime import datetime
@@ -23,23 +24,42 @@ from openai import OpenAI
 from dotenv import dotenv_values
 from pydantic import BaseModel
 
+PUBLIC_BASE_URL = os.getenv("EMAIL_SUMMARIZER_PUBLIC_BASE_URL", "").strip().rstrip("/")
+
+
+def default_cors_origins() -> str:
+    origins = ["http://127.0.0.1:8000", "http://localhost:8000"]
+    if PUBLIC_BASE_URL:
+        origins.append(PUBLIC_BASE_URL)
+    return ",".join(origins)
+
+
+APP_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("EMAIL_SUMMARIZER_CORS_ORIGINS", default_cors_origins()).split(",")
+    if origin.strip()
+]
+SESSION_COOKIE_SECURE = os.getenv("EMAIL_SUMMARIZER_COOKIE_SECURE", "false").lower() == "true"
+SESSION_COOKIE_DOMAIN = os.getenv("EMAIL_SUMMARIZER_COOKIE_DOMAIN", "").strip() or None
 
 app = FastAPI(title="Email Summarizer Dashboard API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=APP_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = BASE_DIR / "email_summaries_output"
 STATIC_DIR = BASE_DIR / "dashboard_static"
-DATA_DIR = BASE_DIR / "data" / "users"
+APP_STORAGE_DIR = Path(os.getenv("EMAIL_SUMMARIZER_STORAGE_DIR", str(BASE_DIR / "data"))).resolve()
+OUTPUT_ROOT_DIR = Path(os.getenv("EMAIL_SUMMARIZER_OUTPUT_DIR", str(BASE_DIR / "email_summaries_output"))).resolve()
+DATA_DIR = APP_STORAGE_DIR / "users"
+APP_DATA_DIR = APP_STORAGE_DIR / "app"
+DB_PATH = APP_DATA_DIR / "app.db"
 SESSION_COOKIE_NAME = "email_dashboard_session"
-SESSION_STORE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_SCOPES = [
     "openid",
@@ -47,6 +67,41 @@ GOOGLE_OAUTH_SCOPES = [
     "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
+
+
+def get_db_connection() -> sqlite3.Connection:
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database() -> None:
+    with get_db_connection() as connection:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                settings_json TEXT NOT NULL,
+                google_oauth_json TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+            """
+        )
+
+
+initialize_database()
 
 
 class RunSummarizerRequest(BaseModel):
@@ -67,6 +122,19 @@ class ChatRequest(BaseModel):
 class CombinedSummaryRequest(BaseModel):
     user_id: Optional[str] = None
     summary_ids: List[str]
+
+
+class RefineSummaryRequest(BaseModel):
+    user_id: Optional[str] = None
+    title: str = ""
+    markdown: str
+    instructions: str
+    save_preference: bool = False
+
+
+class SummaryStylePreferenceRequest(BaseModel):
+    user_id: Optional[str] = None
+    preference: str
 
 
 class SignupRequest(BaseModel):
@@ -105,6 +173,21 @@ def home() -> RedirectResponse:
 @app.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/health/deployment")
+def deployment_health() -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "public_base_url_configured": bool(PUBLIC_BASE_URL),
+        "cookie_secure": SESSION_COOKIE_SECURE,
+        "cors_origins": APP_CORS_ORIGINS,
+        "storage_dir": str(APP_STORAGE_DIR),
+        "output_dir": str(OUTPUT_ROOT_DIR),
+        "openai_api_key_configured": bool(get_app_config_value("OPENAI_API_KEY")),
+        "google_oauth_configured": bool(get_app_config_value("GOOGLE_CLIENT_ID") and get_app_config_value("GOOGLE_CLIENT_SECRET")),
+        "smtp_host_configured": bool(get_app_config_value("SMTP_HOST")),
+    }
 
 
 @app.get("/login")
@@ -339,7 +422,9 @@ def get_app_config_value(key: str) -> str:
 def get_google_oauth_config() -> Dict[str, str]:
     client_id = get_app_config_value("GOOGLE_CLIENT_ID")
     client_secret = get_app_config_value("GOOGLE_CLIENT_SECRET")
-    redirect_uri = get_app_config_value("GOOGLE_REDIRECT_URI") or "http://127.0.0.1:8000/auth/google/callback"
+    redirect_uri = get_app_config_value("GOOGLE_REDIRECT_URI") or (
+        f"{PUBLIC_BASE_URL}/auth/google/callback" if PUBLIC_BASE_URL else "http://127.0.0.1:8000/auth/google/callback"
+    )
     if not client_id or not client_secret:
         raise HTTPException(
             status_code=500,
@@ -375,30 +460,89 @@ def get_json_with_bearer(url: str, access_token: str) -> Dict[str, Any]:
 
 def default_profile_settings() -> Dict[str, str]:
     settings = {
-        "OPENAI_API_KEY": "",
-        "OPENAI_MODEL": "gpt-4o",
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
+        "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4o"),
         "WHITELIST_SENDERS": "",
-        "IMAP_SERVER": "",
-        "IMAP_PORT": "993",
-        "IMAP_USER": "",
-        "IMAP_PASSWORD": "",
-        "IMAP_FOLDER": "INBOX",
-        "SMTP_HOST": "",
-        "SMTP_PORT": "465",
-        "SMTP_USER": "",
-        "SMTP_PASSWORD": "",
-        "SUMMARY_RECIPIENT": "",
+        "SUMMARY_STYLE_PREFERENCES": "[]",
+        "IMAP_SERVER": os.getenv("IMAP_SERVER", ""),
+        "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
+        "IMAP_USER": os.getenv("IMAP_USER", ""),
+        "IMAP_PASSWORD": os.getenv("IMAP_PASSWORD", ""),
+        "IMAP_FOLDER": os.getenv("IMAP_FOLDER", "INBOX"),
+        "SMTP_HOST": os.getenv("SMTP_HOST", ""),
+        "SMTP_PORT": os.getenv("SMTP_PORT", "465"),
+        "SMTP_USER": os.getenv("SMTP_USER", ""),
+        "SMTP_PASSWORD": os.getenv("SMTP_PASSWORD", ""),
+        "SUMMARY_RECIPIENT": os.getenv("SUMMARY_RECIPIENT", ""),
     }
     base_env = BASE_DIR / ".env"
     if base_env.exists():
-        settings.update(read_env_key_values(base_env))
+        env_values = read_env_key_values(base_env)
+        for key, value in env_values.items():
+            if not settings.get(key):
+                settings[key] = value
     return settings
+
+
+def parse_summary_style_preferences(settings_or_raw: Any) -> List[str]:
+    if isinstance(settings_or_raw, dict):
+        raw = str(settings_or_raw.get("SUMMARY_STYLE_PREFERENCES", "") or "").strip()
+    else:
+        raw = str(settings_or_raw or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in raw.split("\n") if item.strip()]
+
+
+def encode_summary_style_preferences(preferences: List[str]) -> str:
+    cleaned: List[str] = []
+    seen = set()
+    for preference in preferences:
+        text = str(preference).strip()
+        lowered = text.lower()
+        if not text or lowered in seen:
+            continue
+        seen.add(lowered)
+        cleaned.append(text)
+    return json.dumps(cleaned)
+
+
+def add_summary_style_preference(user_id: str, preference: str) -> List[str]:
+    profile = load_profile_or_404(user_id)
+    settings = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    preferences = parse_summary_style_preferences(settings)
+    preferences.append(preference)
+    settings["SUMMARY_STYLE_PREFERENCES"] = encode_summary_style_preferences(preferences)
+    profile["settings"] = settings
+    save_profile(profile)
+    return parse_summary_style_preferences(settings)
+
+
+def remove_summary_style_preference(user_id: str, preference: str) -> List[str]:
+    profile = load_profile_or_404(user_id)
+    settings = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    target = preference.strip().lower()
+    preferences = [
+        item for item in parse_summary_style_preferences(settings)
+        if item.strip().lower() != target
+    ]
+    settings["SUMMARY_STYLE_PREFERENCES"] = encode_summary_style_preferences(preferences)
+    profile["settings"] = settings
+    save_profile(profile)
+    return preferences
 
 
 def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
         "openai_api_key": settings.get("OPENAI_API_KEY", ""),
         "openai_model": settings.get("OPENAI_MODEL", "gpt-4o"),
+        "summary_style_preferences": parse_summary_style_preferences(settings),
         "imap_server": settings.get("IMAP_SERVER", ""),
         "imap_port": settings.get("IMAP_PORT", "993"),
         "imap_user": settings.get("IMAP_USER", ""),
@@ -428,23 +572,119 @@ def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str,
     return settings
 
 
-def load_profile(user_id: str) -> Optional[Dict[str, Any]]:
+def merge_non_empty_settings(base: Dict[str, str], overrides: Dict[str, Any]) -> Dict[str, str]:
+    merged = dict(base)
+    for key, value in (overrides or {}).items():
+        if value is None:
+            continue
+        value_str = str(value)
+        if value_str.strip() == "":
+            continue
+        merged[str(key)] = value_str
+    return merged
+
+
+def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, str]:
+    normalized = (email or "").strip().lower()
+    merged = dict(settings)
+    provider_defaults = None
+
+    if normalized.endswith("@gmail.com"):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.gmail.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif normalized.endswith(("@outlook.com", "@hotmail.com", "@live.com", "@msn.com")):
+        provider_defaults = {
+            "IMAP_SERVER": "outlook.office365.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp-mail.outlook.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif normalized.endswith(("@yahoo.com", "@ymail.com")):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.mail.yahoo.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.mail.yahoo.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif normalized.endswith("@icloud.com"):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.mail.me.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.mail.me.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif normalized.endswith("@263.net") or normalized.endswith("@263.com"):
+        provider_defaults = {
+            "IMAP_SERVER": "imap.263.net",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp.263.net",
+            "SMTP_PORT": "465",
+            "IMAP_FOLDER": "INBOX",
+        }
+
+    if provider_defaults:
+        for key, value in provider_defaults.items():
+            if not merged.get(key):
+                merged[key] = value
+    return merged
+
+
+def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
+    settings = merge_non_empty_settings(default_profile_settings(), json.loads(row["settings_json"] or "{}"))
+    settings = apply_provider_defaults(settings, row["email"])
+    google_oauth = json.loads(row["google_oauth_json"]) if row["google_oauth_json"] else {}
+    return {
+        "user_id": row["user_id"],
+        "email": row["email"],
+        "password_hash": row["password_hash"],
+        "password_salt": row["password_salt"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "settings": settings,
+        "google_oauth": google_oauth,
+    }
+
+
+def migrate_profile_json_to_db(user_id: str) -> Optional[Dict[str, Any]]:
     profile_path = get_profile_path_for_user(user_id)
     if not profile_path.exists():
         return None
     payload = json.loads(profile_path.read_text(encoding="utf-8"))
-    payload["settings"] = {**default_profile_settings(), **(payload.get("settings") or {})}
+    payload["settings"] = merge_non_empty_settings(default_profile_settings(), payload.get("settings") or {})
+    payload["settings"] = apply_provider_defaults(payload["settings"], payload.get("email", ""))
+    save_profile(payload)
     return payload
+
+
+def load_profile(user_id: str) -> Optional[Dict[str, Any]]:
+    with get_db_connection() as connection:
+        row = connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    if row:
+        return row_to_profile(row)
+    return migrate_profile_json_to_db(user_id)
 
 
 def find_profile_by_email(email: str) -> Optional[Dict[str, Any]]:
     normalized = email.strip().lower()
     if not normalized:
         return None
+    with get_db_connection() as connection:
+        row = connection.execute("SELECT * FROM users WHERE lower(email) = ?", (normalized,)).fetchone()
+    if row:
+        return row_to_profile(row)
     for profile_path in DATA_DIR.glob("*/profile.json"):
         payload = json.loads(profile_path.read_text(encoding="utf-8"))
         if str(payload.get("email", "")).strip().lower() == normalized:
             payload["settings"] = {**default_profile_settings(), **(payload.get("settings") or {})}
+            save_profile(payload)
             return payload
     return None
 
@@ -457,11 +697,36 @@ def load_profile_or_404(user_id: str) -> Dict[str, Any]:
 
 
 def save_profile(profile: Dict[str, Any]) -> None:
-    user_id = profile["user_id"]
-    user_dir = DATA_DIR / user_id
-    user_dir.mkdir(parents=True, exist_ok=True)
     profile["updated_at"] = datetime.now().isoformat()
-    (user_dir / "profile.json").write_text(json.dumps(profile, indent=2), encoding="utf-8")
+    profile.setdefault("created_at", profile["updated_at"])
+    settings_json = json.dumps(profile.get("settings") or {})
+    google_oauth_json = json.dumps(profile.get("google_oauth") or {})
+
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO users (user_id, email, password_hash, password_salt, created_at, updated_at, settings_json, google_oauth_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                email = excluded.email,
+                password_hash = excluded.password_hash,
+                password_salt = excluded.password_salt,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at,
+                settings_json = excluded.settings_json,
+                google_oauth_json = excluded.google_oauth_json
+            """,
+            (
+                profile["user_id"],
+                profile["email"],
+                profile["password_hash"],
+                profile["password_salt"],
+                profile["created_at"],
+                profile["updated_at"],
+                settings_json,
+                google_oauth_json,
+            ),
+        )
 
 
 def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -496,13 +761,19 @@ def _verify_password(password: str, password_hash: str, salt: str) -> bool:
 
 def create_session(response: Response, user_id: str) -> str:
     session_token = secrets.token_urlsafe(32)
-    SESSION_STORE[session_token] = {"user_id": user_id, "created_at": datetime.now().isoformat()}
+    with get_db_connection() as connection:
+        connection.execute(
+            "INSERT INTO sessions (session_token, user_id, created_at) VALUES (?, ?, ?)",
+            (session_token, user_id, datetime.now().isoformat()),
+        )
     response.set_cookie(
         SESSION_COOKIE_NAME,
         session_token,
         httponly=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
+        secure=SESSION_COOKIE_SECURE,
+        domain=SESSION_COOKIE_DOMAIN,
     )
     return session_token
 
@@ -510,18 +781,20 @@ def create_session(response: Response, user_id: str) -> str:
 def clear_session(response: Response, request: Request) -> None:
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if session_token:
-        SESSION_STORE.pop(session_token, None)
-    response.delete_cookie(SESSION_COOKIE_NAME)
+        with get_db_connection() as connection:
+            connection.execute("DELETE FROM sessions WHERE session_token = ?", (session_token,))
+    response.delete_cookie(SESSION_COOKIE_NAME, domain=SESSION_COOKIE_DOMAIN)
 
 
 def get_session_user_id(request: Request) -> Optional[str]:
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_token:
         return None
-    session_payload = SESSION_STORE.get(session_token)
-    if not session_payload:
+    with get_db_connection() as connection:
+        row = connection.execute("SELECT user_id FROM sessions WHERE session_token = ?", (session_token,)).fetchone()
+    if not row:
         return None
-    return session_payload.get("user_id")
+    return str(row["user_id"])
 
 
 def resolve_user_id(request: Request, explicit_user_id: Optional[str] = None) -> str:
@@ -602,19 +875,22 @@ def list_available_users() -> Dict[str, Any]:
     users = []
     seen_user_ids = set()
 
-    for profile_path in sorted(DATA_DIR.glob("*/profile.json")):
-        profile = json.loads(profile_path.read_text(encoding="utf-8"))
-        settings = {**default_profile_settings(), **(profile.get("settings") or {})}
+    with get_db_connection() as connection:
+        rows = connection.execute("SELECT * FROM users ORDER BY lower(email)").fetchall()
+
+    for row in rows:
+        profile = row_to_profile(row)
+        settings = profile.get("settings") or {}
         contacts = [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
         users.append(
             {
-                "user_id": profile.get("user_id", profile_path.parent.name),
+                "user_id": profile.get("user_id"),
                 "source": "profile",
                 "email": profile.get("email", ""),
                 "whitelist_contacts": contacts,
             }
         )
-        seen_user_ids.add(profile.get("user_id", profile_path.parent.name))
+        seen_user_ids.add(profile.get("user_id"))
 
     for option in sorted(BASE_DIR.glob(".env*")):
         if option.name == ".env":
@@ -649,7 +925,7 @@ def update_whitelist(payload: WhitelistUpdateRequest, request: Request) -> Dict[
 
 
 def get_user_summaries_dir(user_id: str) -> Path:
-    return OUTPUT_DIR / user_id / "summaries"
+    return OUTPUT_ROOT_DIR / user_id / "summaries"
 
 
 def get_user_json_summaries_dir(user_id: str) -> Path:
@@ -661,7 +937,7 @@ def get_user_json_emails_dir(user_id: str) -> Path:
 
 
 def get_user_processed_state_path(user_id: str) -> Path:
-    return OUTPUT_DIR / user_id / "processed_state.json"
+    return OUTPUT_ROOT_DIR / user_id / "processed_state.json"
 
 
 def extract_markdown_title(content: str, fallback: str) -> str:
@@ -732,18 +1008,18 @@ def load_summary_json(summary_path: Path) -> Dict[str, Any]:
     return payload
 
 
-def load_processed_uids_for_user(user_id: str) -> List[int]:
+def load_processed_uids_for_user(user_id: str) -> List[str]:
     path = get_user_processed_state_path(user_id)
     if not path.exists():
         return []
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return [int(uid) for uid in payload.get("processed_uids", [])]
+    return [str(uid).strip() for uid in payload.get("processed_uids", []) if str(uid).strip()]
 
 
-def save_processed_uids_for_user(user_id: str, uids: List[int]) -> None:
+def save_processed_uids_for_user(user_id: str, uids: List[str]) -> None:
     path = get_user_processed_state_path(user_id)
     payload = {
-        "processed_uids": sorted(set(int(uid) for uid in uids)),
+        "processed_uids": sorted(set(str(uid).strip() for uid in uids if str(uid).strip())),
         "last_run": __import__("datetime").datetime.now().isoformat(),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -885,7 +1161,7 @@ def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Q
     ]
 
     removed_email_ids: List[str] = []
-    removed_uids: List[int] = []
+    removed_uids: List[str] = []
     for email_id in summary_payload.get("source_email_file_ids", []) or []:
         if any(email_id in (other.get("source_email_file_ids", []) or []) for other in other_summaries):
             continue
@@ -895,7 +1171,7 @@ def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Q
             continue
         email_payload = load_email_json(email_path)
         if email_payload.get("uid") is not None:
-            removed_uids.append(int(email_payload["uid"]))
+            removed_uids.append(str(email_payload["uid"]).strip())
         email_path.unlink()
         removed_email_ids.append(email_id)
 
@@ -1072,32 +1348,189 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
     return {"recipient": recipient, "subject": msg["Subject"]}
 
 
-def build_combined_summary_context(summaries: List[Dict[str, Any]], max_total_chars: int = 50000) -> str:
+def clean_summary_title(title: str, fallback: str = "Summary") -> str:
+    raw_title = str(title or "").strip() or fallback
+    return re.sub(r"^Email Summary\s+[—-]\s*", "", raw_title, flags=re.IGNORECASE).strip()
+
+
+def build_combined_report_markdown(summaries: List[Dict[str, Any]]) -> str:
     blocks: List[str] = []
-    total_chars = 0
+
     for summary in summaries:
-        parts = [
-            f"Summary ID: {summary.get('summary_id', '')}",
-            f"Title: {summary.get('title', '')}",
-            f"Updated At: {summary.get('updated_at', '')}",
-        ]
-        for label, key, limit in [
-            ("Executive Summary", "executive_summary", 1400),
-            ("Main Topics", "main_topics", 900),
-            ("New Developments", "new_developments", 900),
-            ("Action Items", "action_items", 900),
-            ("Deadlines", "deadlines", 700),
-            ("Attachment Summary", "attachment_summary", 900),
-            ("Bottom Line", "bottom_line", 700),
+        title = clean_summary_title(summary.get("title", ""), summary.get("summary_id", "Summary"))
+        parts = [f"## {title}"]
+
+        if summary.get("updated_at"):
+            parts.append(f"Updated: {summary.get('updated_at')}")
+
+        for label, key in [
+            ("Executive Summary", "executive_summary"),
+            ("Main Topics", "main_topics"),
+            ("New Developments", "new_developments"),
+            ("Action Items / Asks", "action_items"),
+            ("Deadlines / Dates / Meetings", "deadlines"),
+            ("Attachment Summary", "attachment_summary"),
+            ("Bottom Line", "bottom_line"),
         ]:
-            if summary.get(key):
-                parts.append(f"{label}:\n{_compact_for_chat(summary[key], limit)}")
-        block = _to_ascii_safe("\n".join(parts))
-        if total_chars + len(block) > max_total_chars and blocks:
-            break
-        blocks.append(block)
-        total_chars += len(block) + 2
+            content = str(summary.get(key, "") or "").strip()
+            if content:
+                parts.append(label)
+                parts.append(content)
+
+        blocks.append("\n\n".join(parts))
+
     return "\n\n".join(blocks)
+
+
+def generate_combined_summary_content(user_id: str, summary_ids: List[str], request: Request) -> Dict[str, Any]:
+    cleaned_summary_ids = [summary_id.strip() for summary_id in summary_ids if summary_id.strip()]
+    if not cleaned_summary_ids:
+        raise HTTPException(status_code=400, detail="Select at least one summary first.")
+
+    summaries: List[Dict[str, Any]] = []
+    for summary_id in cleaned_summary_ids:
+        try:
+            summaries.append(get_summary(summary_id, request, user_id))
+        except HTTPException:
+            continue
+
+    if not summaries:
+        raise HTTPException(status_code=404, detail="None of the selected summaries could be loaded.")
+    combined_markdown = build_combined_report_markdown(summaries)
+    return {
+        "user_id": user_id,
+        "summary_ids": [summary.get("summary_id", "") for summary in summaries],
+        "count": len(summaries),
+        "combined_markdown": combined_markdown,
+        "title": f"Combined Report ({len(summaries)} Selected)",
+    }
+
+
+def parse_markdown_sections(markdown: str) -> Dict[str, str]:
+    sections: Dict[str, str] = {}
+    current_title = ""
+    current_lines: List[str] = []
+
+    def flush() -> None:
+        nonlocal current_title, current_lines
+        if current_title:
+            sections[current_title] = "\n".join(current_lines).strip()
+        current_lines = []
+
+    for line in str(markdown or "").splitlines():
+        if line.startswith("## "):
+            flush()
+            current_title = line[3:].strip()
+            continue
+        if line.startswith("# "):
+            continue
+        current_lines.append(line)
+    flush()
+    return sections
+
+
+def render_markdown_report_email_html(title: str, markdown: str) -> str:
+    sections = parse_markdown_sections(markdown)
+
+    def render_block(text: str) -> str:
+        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
+        if not lines:
+            return ""
+        bullet_lines = [line[2:] for line in lines if line.startswith("- ")]
+        plain_lines = [line for line in lines if not line.startswith("- ")]
+        html_parts: List[str] = []
+        for line in plain_lines:
+            html_parts.append(f"<p style='margin:0 0 10px 0; line-height:1.55;'>{line}</p>")
+        if bullet_lines:
+            html_parts.append(
+                "<ul style='margin:0; padding-left:22px;'>"
+                + "".join(f"<li style='margin:0 0 6px 0; line-height:1.5;'>{item}</li>" for item in bullet_lines)
+                + "</ul>"
+            )
+        return "".join(html_parts)
+
+    ordered_titles = [
+        "Executive Summary",
+        "Main Themes",
+        "Key Action Items",
+        "Deadlines / Dates",
+        "Notable Attachments",
+        "Bottom Line",
+    ]
+
+    section_html: List[str] = []
+    for section_title in ordered_titles:
+        block = render_block(sections.get(section_title, ""))
+        if not block:
+            continue
+        section_html.append(
+            f"<section style='margin:0 0 18px 0;'>"
+            f"<h3 style='margin:0 0 8px 0; font-size:16px; color:#111;'>{section_title}</h3>"
+            f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>{block}</div>"
+            f"</section>"
+        )
+
+    if not section_html and sections:
+        for section_title, section_content in sections.items():
+            block = render_block(section_content)
+            if not block:
+                continue
+            section_html.append(
+                f"<section style='margin:0 0 18px 0;'>"
+                f"<h3 style='margin:0 0 8px 0; font-size:16px; color:#111;'>{section_title}</h3>"
+                f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>{block}</div>"
+                f"</section>"
+            )
+
+    if not section_html:
+        section_html.append(
+            f"<section style='margin:0 0 18px 0;'>"
+            f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>"
+            f"{render_block(markdown)}"
+            f"</div></section>"
+        )
+
+    return (
+        "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
+        "max-width:760px; margin:0 auto; padding:24px; background:#fff;'>"
+        f"<h1 style='margin:0 0 24px 0; font-size:28px;'>{title}</h1>"
+        + "".join(section_html)
+        + "</body></html>"
+    )
+
+
+def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Dict[str, str]:
+    settings = get_settings_for_user(user_id)
+    profile = load_profile(user_id) or {}
+    smtp_host = settings.get("SMTP_HOST", "")
+    smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
+    smtp_user = settings.get("SMTP_USER", "")
+    smtp_password = settings.get("SMTP_PASSWORD", "")
+    recipient = settings.get("SUMMARY_RECIPIENT") or settings.get("IMAP_USER") or profile.get("email", "")
+
+    if not all([smtp_host, smtp_user, smtp_password, recipient]):
+        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = title
+    msg["From"] = smtp_user
+    msg["To"] = recipient
+    msg.attach(MIMEText(render_markdown_report_email_html(title, markdown), "html", "utf-8"))
+
+    try:
+        if smtp_port == 587:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, [recipient], msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, [recipient], msg.as_string())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to send combined report email: {exc}") from exc
+
+    return {"recipient": recipient, "subject": msg["Subject"]}
 
 
 @app.post("/chat")
@@ -1170,61 +1603,110 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
 @app.post("/summaries/combined")
 def combined_summary(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
-    summary_ids = [summary_id.strip() for summary_id in payload.summary_ids if summary_id.strip()]
-    if not summary_ids:
-        raise HTTPException(status_code=400, detail="Select at least one summary first.")
+    return generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
 
-    summaries: List[Dict[str, Any]] = []
-    for summary_id in summary_ids:
-        try:
-            summaries.append(get_summary(summary_id, request, resolved_user_id))
-        except HTTPException:
-            continue
 
-    if not summaries:
-        raise HTTPException(status_code=404, detail="None of the selected summaries could be loaded.")
+@app.post("/summaries/combined/send-email")
+def send_combined_summary_email(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
+    delivery = send_combined_report_via_smtp(
+        resolved_user_id,
+        combined["title"],
+        combined["combined_markdown"],
+    )
+    return {
+        "success": True,
+        "user_id": resolved_user_id,
+        "summary_ids": combined["summary_ids"],
+        "count": combined["count"],
+        **delivery,
+    }
+
+
+@app.post("/summaries/refine")
+def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    markdown = str(payload.markdown or "").strip()
+    instructions = str(payload.instructions or "").strip()
+    title = str(payload.title or "Refined Summary").strip()
+
+    if not markdown:
+        raise HTTPException(status_code=400, detail="No summary content was provided.")
+    if not instructions:
+        raise HTTPException(status_code=400, detail="Refinement instructions cannot be empty.")
 
     settings = get_settings_for_user(resolved_user_id)
     api_key = settings.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     model = settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o"
+    saved_preferences = parse_summary_style_preferences(settings)
     if not api_key:
         raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
 
     client = OpenAI(api_key=api_key)
-    context = build_combined_summary_context(summaries)
-    instructions = (
-        "You are writing a combined report across multiple saved email summaries. "
-        "Use only the provided summaries. Address the user as 'you'. "
-        "Do not invent facts. Prefer practical synthesis over repetition. "
-        "Return Markdown with these sections exactly when supported by the context: "
-        "## Executive Summary, ## Main Themes, ## Key Action Items, ## Deadlines / Dates, ## Notable Attachments, ## Bottom Line. "
-        "Use bullet points where helpful."
+    instructions_text = (
+        "You are refining an existing email summary for one user. "
+        "Keep the output grounded in the provided summary content only. "
+        "Do not add new facts, deadlines, people, or attachments. "
+        "Follow the user's refinement request closely. "
+        + (
+            "The user also has saved summary style preferences. Apply them unless the current refinement request conflicts:\n"
+            + "\n".join(f"- {item}" for item in saved_preferences)
+            + "\n"
+            if saved_preferences else ""
+        )
+        + (
+        "Return Markdown. Keep the result well structured and easy to scan. "
+        "Use section headers where helpful."
+        )
     )
     input_text = (
-        "SELECTED SUMMARY CONTEXT\n"
-        f"{context}\n\n"
-        "TASK\n"
-        "Create one combined summary that gives an overall report of everything covered by these selected summaries.\n"
+        f"CURRENT TITLE\n{_to_ascii_safe(title)}\n\n"
+        f"CURRENT SUMMARY\n{_to_ascii_safe(markdown)}\n\n"
+        f"REFINEMENT REQUEST\n{_to_ascii_safe(instructions)}\n"
     )
 
     try:
         response = client.responses.create(
             model=model,
-            instructions=instructions,
+            instructions=instructions_text,
             input=input_text,
-            temperature=0.1,
-            max_output_tokens=1400,
+            temperature=0.2,
+            max_output_tokens=1800,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Combined summary request failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Refine summary request failed: {exc}") from exc
+
+    updated_preferences = saved_preferences
+    if payload.save_preference:
+        updated_preferences = add_summary_style_preference(resolved_user_id, instructions)
 
     return {
         "user_id": resolved_user_id,
-        "summary_ids": [summary.get("summary_id", "") for summary in summaries],
-        "count": len(summaries),
-        "combined_markdown": response.output_text,
-        "title": f"Combined Summary ({len(summaries)} Selected)",
+        "title": title,
+        "refined_markdown": response.output_text,
+        "summary_style_preferences": updated_preferences,
     }
+
+
+@app.post("/summary-style-preferences")
+def create_summary_style_preference(payload: SummaryStylePreferenceRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    preference = payload.preference.strip()
+    if not preference:
+        raise HTTPException(status_code=400, detail="Preference cannot be empty.")
+    preferences = add_summary_style_preference(resolved_user_id, preference)
+    return {"success": True, "user_id": resolved_user_id, "summary_style_preferences": preferences}
+
+
+@app.post("/summary-style-preferences/remove")
+def delete_summary_style_preference(payload: SummaryStylePreferenceRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    preference = payload.preference.strip()
+    if not preference:
+        raise HTTPException(status_code=400, detail="Preference cannot be empty.")
+    preferences = remove_summary_style_preference(resolved_user_id, preference)
+    return {"success": True, "user_id": resolved_user_id, "summary_style_preferences": preferences}
 
 
 @app.post("/run-summarizer")

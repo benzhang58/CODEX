@@ -15,6 +15,7 @@
         --accent-soft: #f0f0f2;
         --surface-soft: #fafafa;
         --shadow: 0 14px 40px rgba(17, 17, 17, 0.06);
+        --top-card-height: 92px;
       }
 
       * {
@@ -41,7 +42,7 @@
       .topbar {
         display: flex;
         gap: 12px;
-        align-items: center;
+        align-items: flex-end;
         flex-wrap: wrap;
       }
 
@@ -121,7 +122,8 @@
         gap: 16px;
         width: 100%;
         max-width: 100%;
-        padding: 12px 14px;
+        min-height: var(--top-card-height);
+        padding: 10px 14px;
       }
 
       .account-copy {
@@ -147,7 +149,9 @@
       }
 
       .account-actions button {
-        min-height: 46px;
+        min-height: 38px;
+        padding-top: 9px;
+        padding-bottom: 9px;
       }
 
       .top-account-grid {
@@ -157,10 +161,24 @@
         align-items: start;
       }
 
+      #profilePanel.is-collapsed {
+        min-height: var(--top-card-height);
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+      }
+
+      #profilePanel.is-collapsed .panel-header {
+        width: 100%;
+        min-height: 0;
+        margin-bottom: 0;
+        align-items: center;
+      }
+
       .profile-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px 16px;
+        grid-template-columns: 1fr;
+        gap: 14px;
       }
 
       .field-group {
@@ -186,6 +204,62 @@
 
       .field-group.full-width {
         grid-column: 1 / -1;
+      }
+
+      .profile-actions {
+        margin-top: 14px;
+        margin-bottom: 0;
+      }
+
+      .profile-preferences {
+        margin-top: 18px;
+      }
+
+      .profile-preferences .markdown-box {
+        display: grid;
+        gap: 14px;
+      }
+
+      .profile-preferences .controls {
+        margin-bottom: 0;
+      }
+
+      .profile-preferences p {
+        margin: 0;
+      }
+
+      .preference-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 0;
+      }
+
+      .preference-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .preference-item span {
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .preference-remove {
+        min-width: 32px;
+        height: 32px;
+        padding: 0;
+        border-radius: 10px;
+      }
+
+      .preference-empty {
+        color: var(--muted);
+        font-size: 14px;
       }
 
       .muted-copy {
@@ -373,22 +447,21 @@
         gap: 10px;
         align-items: flex-start;
         transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+        cursor: pointer;
       }
 
       .summary-card:hover {
         transform: translateY(-1px);
-        border-color: #bfc0c4;
+        border-color: var(--accent);
+        background: var(--accent-soft);
       }
 
       .summary-card-main {
         flex: 1;
         text-align: left;
-        background: transparent;
-        border: 0;
         color: inherit;
         padding: 0;
         font: inherit;
-        cursor: pointer;
       }
 
       .summary-check {
@@ -396,6 +469,7 @@
         width: 18px;
         height: 18px;
         accent-color: var(--accent);
+        pointer-events: none;
       }
 
       .summary-unread {
@@ -606,6 +680,56 @@
         text-decoration: underline;
       }
 
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(17, 17, 17, 0.32);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 1000;
+      }
+
+      .modal-overlay[hidden] {
+        display: none;
+      }
+
+      .modal-card {
+        width: min(520px, 100%);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+        padding: 22px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .modal-card h3 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 650;
+        letter-spacing: -0.03em;
+      }
+
+      .modal-copy {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .modal-textarea {
+        min-height: 120px;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-bottom: 0;
+      }
+
       @media (max-width: 900px) {
         .profile-grid,
         .top-account-grid,
@@ -647,16 +771,23 @@
                 <input id="profileEmailInput" type="email" placeholder="you@example.com" />
               </div>
               <div class="field-group">
-                <label for="imapUserInput">Email</label>
-                <input id="imapUserInput" placeholder="you@example.com" />
-              </div>
-              <div class="field-group">
                 <label for="imapPasswordInput">Email Password</label>
                 <input id="imapPasswordInput" type="password" placeholder="Password or app password" />
               </div>
             </div>
-            <div class="controls">
+            <div class="controls profile-actions">
               <button id="saveProfileButton">Save Profile</button>
+            </div>
+            <div class="detail-section summary-rendered profile-preferences">
+              <h3>Summary Preferences</h3>
+              <div class="markdown-box">
+                <p>These are saved instructions the app will use when generating future summaries.</p>
+                <div class="controls">
+                  <input id="summaryPreferenceInput" style="flex: 1; min-width: 260px;" placeholder="Add a reusable preference" />
+                  <button id="addSummaryPreferenceButton" type="button">Add</button>
+                </div>
+                <div id="summaryPreferenceList" class="preference-list"></div>
+              </div>
             </div>
           </div>
         </section>
@@ -728,8 +859,8 @@ someone@example.com"
         <section class="panel">
           <h2 id="summariesHeading">Summaries</h2>
           <div class="controls icon-actions">
-            <span class="tooltip-wrap" data-tooltip="Select All New">
-              <button id="selectAllNewButton" class="icon-button" type="button" aria-label="Select All New">
+            <span class="tooltip-wrap" data-tooltip="Select All">
+              <button id="selectAllNewButton" class="icon-button" type="button" aria-label="Select All">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="4" y="4" width="6" height="6" rx="1"></rect>
                   <rect x="14" y="4" width="6" height="6" rx="1"></rect>
@@ -759,12 +890,20 @@ someone@example.com"
                 </svg>
               </button>
             </span>
-            <span class="tooltip-wrap" data-tooltip="Mark Unread">
-              <button id="markUnreadButton" class="icon-button" type="button" aria-label="Mark Unread">
+            <span class="tooltip-wrap" data-tooltip="Email Report">
+              <button id="emailReportButton" class="icon-button" type="button" aria-label="Email Report">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7h16v10H4z"></path>
-                  <path d="m4 8 8 6 8-6"></path>
-                  <circle cx="18.5" cy="5.5" r="2.5"></circle>
+                  <path d="M4 6h16v12H4z"></path>
+                  <path d="m4 7 8 6 8-6"></path>
+                  <path d="M8 4h8"></path>
+                </svg>
+              </button>
+            </span>
+            <span class="tooltip-wrap" data-tooltip="Refine Summary">
+              <button id="refineSummaryButton" class="icon-button" type="button" aria-label="Refine Summary">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 20h4l10-10-4-4L4 16v4z"></path>
+                  <path d="m12 6 4 4"></path>
                 </svg>
               </button>
             </span>
@@ -791,6 +930,18 @@ someone@example.com"
       </div>
     </div>
 
+    <div id="appModal" class="modal-overlay" hidden>
+      <div class="modal-card">
+        <h3 id="appModalTitle">Confirm</h3>
+        <div id="appModalMessage" class="modal-copy"></div>
+        <textarea id="appModalInput" class="modal-textarea" hidden></textarea>
+        <div class="controls modal-actions">
+          <button id="appModalCancelButton" class="secondary-button" type="button">No</button>
+          <button id="appModalConfirmButton" type="button">Yes</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const accountBar = document.getElementById("accountBar");
       const accountName = document.getElementById("accountName");
@@ -800,9 +951,11 @@ someone@example.com"
       const toggleProfileButton = document.getElementById("toggleProfileButton");
       const profileBody = document.getElementById("profileBody");
       const profileEmailInput = document.getElementById("profileEmailInput");
-      const imapUserInput = document.getElementById("imapUserInput");
       const imapPasswordInput = document.getElementById("imapPasswordInput");
       const saveProfileButton = document.getElementById("saveProfileButton");
+      const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
+      const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
+      const summaryPreferenceList = document.getElementById("summaryPreferenceList");
       const userIdInput = document.getElementById("userIdInput");
       const runButton = document.getElementById("runButton");
       const daysBackInput = document.getElementById("daysBackInput");
@@ -820,7 +973,8 @@ someone@example.com"
       const selectAllNewButton = document.getElementById("selectAllNewButton");
       const combinedSummaryButton = document.getElementById("combinedSummaryButton");
       const deleteSelectedButton = document.getElementById("deleteSelectedButton");
-      const markUnreadButton = document.getElementById("markUnreadButton");
+      const emailReportButton = document.getElementById("emailReportButton");
+      const refineSummaryButton = document.getElementById("refineSummaryButton");
       const sendSummaryEmailButton = document.getElementById("sendSummaryEmailButton");
       const summariesHeading = document.getElementById("summariesHeading");
       const listStatus = document.getElementById("listStatus");
@@ -830,12 +984,21 @@ someone@example.com"
       const runStatus = document.getElementById("runStatus");
       const runStatusText = document.getElementById("runStatusText");
       const runProgress = document.getElementById("runProgress");
+      const appModal = document.getElementById("appModal");
+      const appModalTitle = document.getElementById("appModalTitle");
+      const appModalMessage = document.getElementById("appModalMessage");
+      const appModalInput = document.getElementById("appModalInput");
+      const appModalCancelButton = document.getElementById("appModalCancelButton");
+      const appModalConfirmButton = document.getElementById("appModalConfirmButton");
 
       let currentUserId = null;
       let currentProfile = null;
       let currentSummaryId = null;
+      let currentDisplayedSummaryTitle = "";
+      let currentDisplayedSummaryMarkdown = "";
       let selectedSummaryIds = new Set();
       let currentSummaries = [];
+      let activeModalResolver = null;
 
       function getReadSummaryIds(userId) {
         try {
@@ -860,9 +1023,91 @@ someone@example.com"
         buttonEl.closest(".panel").classList.toggle("is-collapsed", collapsed);
       }
 
+      function setPanelCollapsed(bodyEl, buttonEl, collapsed) {
+        bodyEl.classList.toggle("collapsed", collapsed);
+        buttonEl.textContent = collapsed ? "+" : "-";
+        buttonEl.closest(".panel").classList.toggle("is-collapsed", collapsed);
+      }
+
       function setRunStatus(message, loading = false) {
         runStatusText.textContent = message;
         runProgress.classList.toggle("active", loading);
+      }
+
+      function closeAppModal(result = null) {
+        appModal.hidden = true;
+        activeModalResolver?.(result);
+        activeModalResolver = null;
+      }
+
+      function openAppModal({
+        title,
+        message,
+        confirmLabel = "Yes",
+        cancelLabel = "No",
+        withInput = false,
+        inputValue = "",
+        inputPlaceholder = "",
+      }) {
+        appModalTitle.textContent = title || "Confirm";
+        appModalMessage.textContent = message || "";
+        appModalConfirmButton.textContent = confirmLabel;
+        appModalCancelButton.textContent = cancelLabel;
+        appModalInput.hidden = !withInput;
+        appModalInput.value = inputValue || "";
+        appModalInput.placeholder = inputPlaceholder || "";
+        appModal.hidden = false;
+
+        return new Promise((resolve) => {
+          activeModalResolver = resolve;
+          appModalConfirmButton.onclick = () => {
+            closeAppModal(withInput ? { confirmed: true, value: appModalInput.value } : true);
+          };
+          appModalCancelButton.onclick = () => {
+            closeAppModal(withInput ? { confirmed: false, value: "" } : false);
+          };
+          if (withInput) {
+            appModalInput.focus();
+            appModalInput.select();
+          } else {
+            appModalConfirmButton.focus();
+          }
+        });
+      }
+
+      function renderSummaryPreferences(preferences) {
+        const items = Array.isArray(preferences) ? preferences : [];
+        if (!items.length) {
+          summaryPreferenceList.innerHTML = `<div class="preference-empty">No saved summary preferences yet.</div>`;
+          return;
+        }
+
+        summaryPreferenceList.innerHTML = items
+          .map(
+            (preference) => `
+              <div class="preference-item">
+                <span>${escapeHtml(preference)}</span>
+                <button class="preference-remove" type="button" data-preference="${escapeHtml(preference)}">×</button>
+              </div>
+            `
+          )
+          .join("");
+
+        summaryPreferenceList.querySelectorAll(".preference-remove").forEach((button) => {
+          button.addEventListener("click", () => removeSummaryPreference(button.dataset.preference || ""));
+        });
+      }
+
+      function getSavedSummaryPreferences() {
+        return currentProfile?.settings?.summary_style_preferences || [];
+      }
+
+      function estimateRunTime(daysBack) {
+        const days = Number(daysBack || 7);
+        if (days <= 3) return "Estimated runtime: about 20-40 seconds.";
+        if (days <= 7) return "Estimated runtime: about 30-60 seconds.";
+        if (days <= 14) return "Estimated runtime: about 45-90 seconds.";
+        return "Estimated runtime: about 1-3 minutes.";
       }
 
       function requireSignedIn() {
@@ -881,11 +1126,12 @@ someone@example.com"
           : `Signed in${profile.user_id ? ` as ${profile.user_id}` : ""}`;
         accountBar.hidden = false;
         profilePanel.hidden = false;
+        setPanelCollapsed(profileBody, toggleProfileButton, true);
 
         const settings = profile.settings || {};
         profileEmailInput.value = profile.email || "";
-        imapUserInput.value = settings.imap_user || profile.email || "";
         imapPasswordInput.value = settings.imap_password || "";
+        renderSummaryPreferences(settings.summary_style_preferences || []);
       }
 
       function resetSignedOutState() {
@@ -898,6 +1144,7 @@ someone@example.com"
         profilePanel.hidden = true;
         userIdInput.value = "";
         whitelistTextarea.value = "";
+        renderSummaryPreferences([]);
         summaryList.innerHTML = "";
         summaryDetail.innerHTML = "No summary selected yet.";
         sendSummaryEmailButton.hidden = true;
@@ -955,7 +1202,7 @@ someone@example.com"
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               email: profileEmailInput.value.trim(),
-              imap_user: imapUserInput.value.trim(),
+              imap_user: profileEmailInput.value.trim(),
               imap_password: imapPasswordInput.value,
             }),
           });
@@ -972,6 +1219,67 @@ someone@example.com"
         } finally {
           saveProfileButton.disabled = false;
           runProgress.classList.remove("active");
+        }
+      }
+
+      async function addSummaryPreference() {
+        if (!requireSignedIn()) return;
+        const preference = summaryPreferenceInput.value.trim();
+        if (!preference) return;
+
+        addSummaryPreferenceButton.disabled = true;
+        setRunStatus("Saving summary preference...", true);
+        try {
+          const response = await fetch("/summary-style-preferences", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              preference,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to save summary preference.");
+            return;
+          }
+          summaryPreferenceInput.value = "";
+          if (currentProfile?.settings) {
+            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
+          }
+          renderSummaryPreferences(data.summary_style_preferences || []);
+          setRunStatus("Saved summary preference.");
+        } catch (error) {
+          setRunStatus(`Failed to save summary preference: ${error.message}`);
+        } finally {
+          addSummaryPreferenceButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      async function removeSummaryPreference(preference) {
+        if (!requireSignedIn() || !preference) return;
+        try {
+          const response = await fetch("/summary-style-preferences/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              preference,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to remove summary preference.");
+            return;
+          }
+          if (currentProfile?.settings) {
+            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
+          }
+          renderSummaryPreferences(data.summary_style_preferences || []);
+          setRunStatus("Removed summary preference.");
+        } catch (error) {
+          setRunStatus(`Failed to remove summary preference: ${error.message}`);
         }
       }
 
@@ -1038,9 +1346,40 @@ someone@example.com"
         `;
       }
 
+      function formatSummaryCardTitle(summary) {
+        const rawTitle = String(summary.title || summary.summary_id || "").trim();
+        if (!rawTitle) return "Untitled Summary";
+        return rawTitle.replace(/^Email Summary\s+[—-]\s*/i, "").trim();
+      }
+
+      function buildMarkdownFromSummary(summary) {
+        const sections = [];
+        const baseTitle = String(summary.title || summary.summary_id || "Summary").trim();
+        if (baseTitle) {
+          sections.push(`# ${baseTitle}`);
+        }
+        for (const [label, key] of [
+          ["Executive Summary", "executive_summary"],
+          ["Main Topics", "main_topics"],
+          ["New Developments", "new_developments"],
+          ["Action Items / Asks", "action_items"],
+          ["Deadlines / Dates / Meetings", "deadlines"],
+          ["Attachment Summary", "attachment_summary"],
+          ["Bottom Line", "bottom_line"],
+        ]) {
+          const content = String(summary[key] || "").trim();
+          if (!content) continue;
+          sections.push(`## ${label}`);
+          sections.push(content);
+        }
+        return sections.join("\n\n").trim();
+      }
+
       async function loadSummaries() {
         if (!requireSignedIn()) return;
         currentSummaryId = null;
+        currentDisplayedSummaryTitle = "";
+        currentDisplayedSummaryMarkdown = "";
         selectedSummaryIds = new Set();
         currentSummaries = [];
         const readSummaryIds = getReadSummaryIds(currentUserId);
@@ -1065,9 +1404,9 @@ someone@example.com"
           return;
         }
 
-        listStatus.textContent = `${summaries.length} summary file(s) found.`;
         const unreadCount = summaries.filter((summary) => !readSummaryIds.has(summary.summary_id)).length;
         updateSummariesHeading(unreadCount);
+        listStatus.textContent = unreadCount > 0 ? `${unreadCount} New Summaries` : "No New Summaries";
 
         summaries.forEach((summary) => {
           const isUnread = !readSummaryIds.has(summary.summary_id);
@@ -1076,17 +1415,27 @@ someone@example.com"
           card.dataset.summaryId = summary.summary_id;
           card.innerHTML = `
             <input class="summary-check" type="checkbox" aria-label="Select summary" />
-            <button class="summary-card-main" type="button">
+            <div class="summary-card-main">
               ${isUnread ? '<div class="summary-unread">New</div>' : ''}
-              <h3>${escapeHtml(summary.title || summary.summary_id)}</h3>
+              <h3>${escapeHtml(formatSummaryCardTitle(summary))}</h3>
               <div class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</div>
-              <div class="preview">${escapeHtml(summary.preview || "No preview available.")}</div>
-            </button>
+            </div>
           `;
 
-          card.querySelector(".summary-card-main").addEventListener("click", () => {
+          const checkbox = card.querySelector(".summary-check");
+          const syncSelection = (checked) => {
+            checkbox.checked = checked;
+            if (checked) {
+              selectedSummaryIds.add(summary.summary_id);
+            } else {
+              selectedSummaryIds.delete(summary.summary_id);
+            }
+          };
+
+          card.addEventListener("click", () => {
             document.querySelectorAll(".summary-card").forEach((item) => item.classList.remove("active"));
             card.classList.add("active");
+            syncSelection(!checkbox.checked);
             if (!readSummaryIds.has(summary.summary_id)) {
               readSummaryIds.add(summary.summary_id);
               saveReadSummaryIds(currentUserId, readSummaryIds);
@@ -1095,14 +1444,6 @@ someone@example.com"
               updateSummariesHeading(Math.max(0, summaries.filter((item) => !readSummaryIds.has(item.summary_id)).length));
             }
             loadSummaryDetail(summary.summary_id);
-          });
-
-          card.querySelector(".summary-check").addEventListener("change", (event) => {
-            if (event.target.checked) {
-              selectedSummaryIds.add(summary.summary_id);
-            } else {
-              selectedSummaryIds.delete(summary.summary_id);
-            }
           });
 
           summaryList.appendChild(card);
@@ -1164,7 +1505,10 @@ someone@example.com"
       async function runSummarizer() {
         if (!requireSignedIn()) return;
         const daysBack = Number(daysBackInput.value || 7);
-        setRunStatus(`Running summarizer for ${currentUserId} over the last ${daysBack} day(s)...`, true);
+        setRunStatus(
+          `Running summarizer for ${currentUserId} over the last ${daysBack} day(s)...\n${estimateRunTime(daysBack)}`,
+          true
+        );
         runButton.disabled = true;
 
         try {
@@ -1199,7 +1543,10 @@ someone@example.com"
 
       async function deleteSummary(summaryId) {
         if (!requireSignedIn()) return;
-        if (!window.confirm("Delete this saved summary?")) return;
+        if (!(await openAppModal({
+          title: "Delete Summary",
+          message: "Delete this saved summary?",
+        }))) return;
 
         try {
           const response = await fetch(
@@ -1234,7 +1581,10 @@ someone@example.com"
           return;
         }
 
-        if (!window.confirm(`Delete ${summaryIds.length} selected summary item(s)?`)) return;
+        if (!(await openAppModal({
+          title: "Delete Selected",
+          message: `Delete ${summaryIds.length} selected summary item(s)?`,
+        }))) return;
 
         let removedCount = 0;
         for (const summaryId of summaryIds) {
@@ -1263,7 +1613,7 @@ someone@example.com"
         await loadSummaries();
       }
 
-      function markSelectedUnread() {
+      async function sendCombinedReportEmail() {
         if (!requireSignedIn()) return;
         const summaryIds = Array.from(selectedSummaryIds);
         if (!summaryIds.length) {
@@ -1271,11 +1621,37 @@ someone@example.com"
           return;
         }
 
-        const readSummaryIds = getReadSummaryIds(currentUserId);
-        summaryIds.forEach((summaryId) => readSummaryIds.delete(summaryId));
-        saveReadSummaryIds(currentUserId, readSummaryIds);
-        setRunStatus(`Marked ${summaryIds.length} summary item(s) as unread.`);
-        loadSummaries();
+        if (!(await openAppModal({
+          title: "Email Report",
+          message: "Would you like to send a combined report to your email?",
+        }))) {
+          return;
+        }
+
+        emailReportButton.disabled = true;
+        setRunStatus(`Sending combined report for ${summaryIds.length} selected item(s)...`, true);
+
+        try {
+          const response = await fetch("/summaries/combined/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              summary_ids: summaryIds,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to send combined report.");
+            return;
+          }
+          setRunStatus(`Sent combined report to ${data.recipient}.`);
+        } catch (error) {
+          setRunStatus(`Failed to send combined report: ${error.message}`);
+        } finally {
+          emailReportButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
       }
 
       async function sendChat() {
@@ -1337,6 +1713,11 @@ someone@example.com"
         }
 
         detailStatus.textContent = `Viewing ${summary.filename}`;
+        currentDisplayedSummaryTitle = summary.title || summary.summary_id || "Summary";
+        currentDisplayedSummaryMarkdown =
+          summary.summary_markdown ||
+          summary.content_markdown ||
+          buildMarkdownFromSummary(summary);
         sendSummaryEmailButton.hidden = false;
         summaryDetail.className = "";
         summaryDetail.innerHTML = `
@@ -1386,6 +1767,8 @@ someone@example.com"
           }
 
           currentSummaryId = null;
+          currentDisplayedSummaryTitle = data.title || "Combined Report";
+          currentDisplayedSummaryMarkdown = data.combined_markdown || "";
           detailStatus.textContent = `Viewing combined summary for ${data.count} selected item(s).`;
           summaryDetail.className = "";
           summaryDetail.innerHTML = `
@@ -1402,6 +1785,88 @@ someone@example.com"
           setRunStatus(`Failed to build combined summary: ${error.message}`);
         } finally {
           combinedSummaryButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      async function refineCurrentSummary() {
+        if (!requireSignedIn()) return;
+        if (!currentDisplayedSummaryMarkdown) {
+          setRunStatus("Select or build a summary first.");
+          return;
+        }
+
+        const savedPreferences = getSavedSummaryPreferences();
+        const preferenceMessage = savedPreferences.length
+          ? `Your saved summary preferences will also be applied:\n- ${savedPreferences.join("\n- ")}`
+          : "You do not have any saved summary preferences yet.";
+
+        const refineResult = await openAppModal({
+          title: "Refine Summary",
+          message: `How would you like this summary to be different?\n\n${preferenceMessage}`,
+          withInput: true,
+          inputValue: "",
+          inputPlaceholder: "Describe how you want the summary rewritten",
+          confirmLabel: "Refine",
+          cancelLabel: "Cancel",
+        });
+        const instructions = refineResult?.value || "";
+        if (!refineResult?.confirmed || !instructions.trim()) {
+          return;
+        }
+        const savePreference = await openAppModal({
+          title: "Save Preference",
+          message: "Add this instruction to your saved summary preferences for future summaries?",
+        });
+
+        refineSummaryButton.disabled = true;
+        sendSummaryEmailButton.hidden = true;
+        detailStatus.textContent = "Refining summary...";
+        summaryDetail.innerHTML = "Refining summary...";
+        setRunStatus("Refining the current summary...", true);
+
+        try {
+          const response = await fetch("/summaries/refine", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              title: currentDisplayedSummaryTitle,
+              markdown: currentDisplayedSummaryMarkdown,
+              instructions: instructions.trim(),
+              save_preference: savePreference,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            detailStatus.textContent = "Failed to refine summary.";
+            summaryDetail.textContent = data.detail || "Unknown error.";
+            setRunStatus(data.detail || "Failed to refine summary.");
+            return;
+          }
+
+          currentDisplayedSummaryTitle = data.title || currentDisplayedSummaryTitle || "Refined Summary";
+          currentDisplayedSummaryMarkdown = data.refined_markdown || "";
+          if (currentProfile?.settings) {
+            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
+          }
+          renderSummaryPreferences((data.summary_style_preferences || currentProfile?.settings?.summary_style_preferences || []));
+          detailStatus.textContent = "Viewing refined summary.";
+          summaryDetail.className = "";
+          summaryDetail.innerHTML = `
+            <div class="detail-section">
+              <h3>${escapeHtml(currentDisplayedSummaryTitle)}</h3>
+              <p class="meta">Refined for your preferred focus and organization.</p>
+            </div>
+            ${renderMarkdownSummary(currentDisplayedSummaryMarkdown)}
+          `;
+          setRunStatus("Refined summary ready.");
+        } catch (error) {
+          detailStatus.textContent = "Failed to refine summary.";
+          summaryDetail.textContent = error.message;
+          setRunStatus(`Failed to refine summary: ${error.message}`);
+        } finally {
+          refineSummaryButton.disabled = false;
           runProgress.classList.remove("active");
         }
       }
@@ -1428,32 +1893,43 @@ someone@example.com"
           .join("");
       }
 
-      function selectAllNewSummaries() {
+      function toggleSelectAllSummaries() {
         if (!requireSignedIn()) return;
-        const readSummaryIds = getReadSummaryIds(currentUserId);
-        const unreadIds = currentSummaries
-          .filter((summary) => !readSummaryIds.has(summary.summary_id))
-          .map((summary) => summary.summary_id);
-
-        if (!unreadIds.length) {
-          setRunStatus("No unread summaries to select.");
+        const allSummaryIds = currentSummaries.map((summary) => summary.summary_id);
+        if (!allSummaryIds.length) {
+          setRunStatus("No summaries available.");
           return;
         }
 
-        selectedSummaryIds = new Set(unreadIds);
+        const allSelected =
+          allSummaryIds.length > 0 &&
+          allSummaryIds.every((summaryId) => selectedSummaryIds.has(summaryId));
+
+        selectedSummaryIds = allSelected ? new Set() : new Set(allSummaryIds);
         document.querySelectorAll(".summary-card").forEach((card) => {
           const checkbox = card.querySelector(".summary-check");
           if (checkbox) {
             checkbox.checked = selectedSummaryIds.has(card.dataset.summaryId);
           }
         });
-        setRunStatus(`Selected ${unreadIds.length} unread summary item(s).`);
+        setRunStatus(
+          allSelected
+            ? "Deselected all summary items."
+            : `Selected ${allSummaryIds.length} summary item(s).`
+        );
       }
 
       async function sendCurrentSummaryEmail() {
         if (!requireSignedIn()) return;
         if (!currentSummaryId) {
           setRunStatus("Select a summary first.");
+          return;
+        }
+
+        if (!(await openAppModal({
+          title: "Send to Email",
+          message: "Would you like to send this summary to your email?",
+        }))) {
           return;
         }
 
@@ -1490,21 +1966,29 @@ someone@example.com"
       runButton.addEventListener("click", runSummarizer);
       logoutButton.addEventListener("click", logout);
       saveProfileButton.addEventListener("click", saveProfile);
+      addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
       toggleProfileButton.addEventListener("click", () => togglePanel(profileBody, toggleProfileButton));
       toggleContactsButton.addEventListener("click", () => togglePanel(contactsBody, toggleContactsButton));
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
-      selectAllNewButton.addEventListener("click", selectAllNewSummaries);
+      selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
       combinedSummaryButton.addEventListener("click", generateCombinedSummary);
       deleteSelectedButton.addEventListener("click", deleteSelectedSummaries);
-      markUnreadButton.addEventListener("click", markSelectedUnread);
+      emailReportButton.addEventListener("click", sendCombinedReportEmail);
+      refineSummaryButton.addEventListener("click", refineCurrentSummary);
       sendSummaryEmailButton.addEventListener("click", sendCurrentSummaryEmail);
       chatSendButton.addEventListener("click", sendChat);
       chatInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           sendChat();
+        }
+      });
+      summaryPreferenceInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          addSummaryPreference();
         }
       });
       loadCurrentSession();

@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: email-summaries-dashboard
+    runtime: python
+    rootDir: Email_Summarizer
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    plan: starter
+    envVars:
+      - key: EMAIL_SUMMARIZER_STORAGE_DIR
+        value: /var/data/storage
+      - key: EMAIL_SUMMARIZER_OUTPUT_DIR
+        value: /var/data/output
+      - key: EMAIL_SUMMARIZER_COOKIE_SECURE
+        value: "true"
+      - key: EMAIL_SUMMARIZER_PUBLIC_BASE_URL
+        sync: false
+      - key: EMAIL_SUMMARIZER_CORS_ORIGINS
+        sync: false
+      - key: EMAIL_SUMMARIZER_COOKIE_DOMAIN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: IMAP_SERVER
+        value: imap.gmail.com
+      - key: IMAP_PORT
+        value: "993"
+      - key: IMAP_FOLDER
+        value: INBOX
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+    disk:
+      name: email-summaries-data
+      mountPath: /var/data
+      sizeGB: 10
