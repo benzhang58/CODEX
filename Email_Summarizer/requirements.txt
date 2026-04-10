@@ -1,0 +1,9 @@
+openai
+pandas
+openpyxl
+pypdf
+python-docx
+html2text
+python-dotenv
+fastapi
+uvicorn

@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Email Summaries Dashboard</title>
+    <style>
+      :root {
+        --bg: #f5f5f7;
+        --panel: rgba(255, 255, 255, 0.9);
+        --border: #d9d9de;
+        --text: #111111;
+        --muted: #6e6e73;
+        --accent: #111111;
+        --accent-soft: #f0f0f2;
+        --surface-soft: #fafafa;
+        --shadow: 0 14px 40px rgba(17, 17, 17, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(0, 0, 0, 0.035), transparent 32%),
+          linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+      }
+
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        gap: 20px;
+      }
+
+      .topbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .controls {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+
+      .icon-actions {
+        gap: 8px;
+      }
+
+      .icon-button {
+        width: 42px;
+        height: 42px;
+        min-width: 42px;
+        padding: 0;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .icon-button svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .tooltip-wrap {
+        position: relative;
+        display: inline-flex;
+      }
+
+      .tooltip-wrap::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 8px);
+        transform: translateX(-50%) translateY(4px);
+        background: #111111;
+        color: #ffffff;
+        padding: 6px 8px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.1;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.14s ease, transform 0.14s ease;
+        z-index: 20;
+      }
+
+      .tooltip-wrap:hover::after,
+      .tooltip-wrap:focus-within::after {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      .auth-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      .account-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+        max-width: 100%;
+        padding: 12px 14px;
+      }
+
+      .account-copy {
+        display: grid;
+        gap: 2px;
+      }
+
+      .account-copy strong {
+        font-size: 14px;
+        line-height: 1.2;
+      }
+
+      .account-copy .meta {
+        margin-bottom: 0;
+        font-size: 12px;
+      }
+
+      .account-actions {
+        display: flex;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 0;
+      }
+
+      .account-actions button {
+        min-height: 46px;
+      }
+
+      .top-account-grid {
+        display: grid;
+        grid-template-columns: minmax(320px, 1.05fr) minmax(320px, 0.95fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      .profile-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px 16px;
+      }
+
+      .field-group {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field-group label {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .inline-field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .inline-field label {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.2;
+      }
+
+      .field-group.full-width {
+        grid-column: 1 / -1;
+      }
+
+      .muted-copy {
+        color: var(--muted);
+        line-height: 1.5;
+        margin: 0 0 16px;
+      }
+
+      .auth-card {
+        max-width: 520px;
+        width: 100%;
+        justify-self: start;
+      }
+
+      .secondary-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 11px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        min-height: 46px;
+      }
+
+      .auth-actions {
+        margin-bottom: 0;
+      }
+
+      .auth-actions > * {
+        flex: 1 1 0;
+      }
+
+      .auth-actions.double-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .title {
+        font-size: 36px;
+        font-weight: 650;
+        letter-spacing: -0.04em;
+        margin: 0;
+        margin-right: auto;
+      }
+
+      input,
+      textarea,
+      button {
+        font: inherit;
+        padding: 11px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+      }
+
+      input,
+      textarea {
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+      }
+
+      button {
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+      }
+
+      button:hover {
+        background: #000000;
+        border-color: #000000;
+      }
+
+      button:active {
+        transform: translateY(1px);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 20px;
+      }
+
+      .upper-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: stretch;
+      }
+
+      .upper-grid .panel {
+        height: 100%;
+      }
+
+      .upper-grid .panel.is-collapsed {
+        height: auto;
+        align-self: start;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        padding: 20px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .panel.is-collapsed {
+        padding-top: 14px;
+        padding-bottom: 14px;
+      }
+
+      .panel h2 {
+        margin-top: 0;
+        margin-bottom: 16px;
+        font-size: 25px;
+        font-weight: 650;
+        letter-spacing: -0.03em;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .panel.is-collapsed .panel-header {
+        margin-bottom: 0;
+      }
+
+      .panel-header h2 {
+        margin: 0;
+      }
+
+      .panel-toggle {
+        background: var(--surface-soft);
+        color: var(--text);
+        border: 1px solid var(--border);
+        width: 34px;
+        min-width: 34px;
+        height: 34px;
+        padding: 0;
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      .panel-body.collapsed {
+        display: none;
+      }
+
+      .settings-panel {
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 110px;
+        font: inherit;
+        padding: 12px;
+        resize: vertical;
+      }
+
+      .summary-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .summary-card {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        padding: 14px;
+        border-radius: 18px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+      }
+
+      .summary-card:hover {
+        transform: translateY(-1px);
+        border-color: #bfc0c4;
+      }
+
+      .summary-card-main {
+        flex: 1;
+        text-align: left;
+        background: transparent;
+        border: 0;
+        color: inherit;
+        padding: 0;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .summary-check {
+        margin-top: 10px;
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+      }
+
+      .summary-unread {
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #111111;
+        color: #ffffff;
+        font-size: 12px;
+      }
+
+      .summary-card.active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .summary-card h3 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+
+      .preview {
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .detail-empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .detail-section {
+        margin-bottom: 20px;
+      }
+
+      .detail-section h3 {
+        margin: 0 0 8px;
+        font-size: 17px;
+        color: var(--text);
+      }
+
+      .detail-section p,
+      .detail-section li {
+        margin: 0;
+        line-height: 1.5;
+      }
+
+      .detail-section p + p {
+        margin-top: 10px;
+      }
+
+      .detail-section ul {
+        margin: 0;
+        padding-left: 22px;
+      }
+
+      .detail-section li + li {
+        margin-top: 6px;
+      }
+
+      .markdown-box {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 14px;
+      }
+
+      .summary-rendered p {
+        white-space: normal;
+      }
+
+      .status {
+        color: var(--muted);
+        margin-bottom: 14px;
+      }
+
+      .run-status {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 5px 12px;
+        color: var(--muted);
+        white-space: pre-wrap;
+        font-size: 13px;
+        line-height: 1.15;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        align-self: start;
+        min-height: 0;
+        height: auto;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      .progress-track {
+        width: 100%;
+        max-width: 220px;
+        height: 8px;
+        background: #e7e7ea;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 6px;
+        display: none;
+      }
+
+      .progress-track.active {
+        display: block;
+      }
+
+      .progress-bar {
+        width: 35%;
+        height: 100%;
+        background: linear-gradient(90deg, #111111, #4d4d4f);
+        border-radius: 999px;
+        animation: progress-slide 1.2s ease-in-out infinite;
+      }
+
+      @keyframes progress-slide {
+        0% {
+          transform: translateX(-120%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 8px;
+        line-height: 1.4;
+      }
+
+      .profile-note {
+        margin-bottom: 16px;
+      }
+
+      .chat-panel {
+      }
+
+      .layout {
+        margin-top: 0;
+      }
+
+      .chat-log {
+        display: grid;
+        gap: 12px;
+        max-height: 420px;
+        overflow-y: auto;
+        margin-bottom: 14px;
+      }
+
+      .chat-message {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.95);
+      }
+
+      .chat-message.user {
+        background: #f3f4f6;
+      }
+
+      .chat-message.assistant {
+        background: #ffffff;
+      }
+
+      .chat-role {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .chat-text {
+        white-space: pre-wrap;
+        line-height: 1.5;
+      }
+
+      .attachment-links {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+      }
+
+      .attachment-links a {
+        display: block;
+        color: var(--accent);
+        margin-top: 6px;
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .attachment-links a:hover {
+        text-decoration: underline;
+      }
+
+      @media (max-width: 900px) {
+        .profile-grid,
+        .top-account-grid,
+        .upper-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="top-account-grid">
+        <section id="accountBar" class="panel account-bar" hidden>
+          <div class="account-copy">
+            <strong id="accountName">Not signed in</strong>
+            <div id="accountEmail" class="meta"></div>
+          </div>
+          <div class="controls account-actions">
+            <button id="logoutButton">Log Out</button>
+          </div>
+        </section>
+
+        <section id="profilePanel" class="panel" hidden>
+          <div class="panel-header">
+            <h2>Profile</h2>
+            <button id="toggleProfileButton" class="panel-toggle" type="button" aria-label="Minimize profile">-</button>
+          </div>
+          <div id="profileBody" class="panel-body">
+            <div class="hint profile-note">
+              The rest of the connection settings use the app defaults behind the scenes. You only need to set the email login here.
+            </div>
+            <div class="profile-grid">
+              <div class="field-group">
+                <label for="profileEmailInput">Email</label>
+                <input id="profileEmailInput" type="email" placeholder="you@example.com" />
+              </div>
+              <div class="field-group">
+                <label for="imapUserInput">Email</label>
+                <input id="imapUserInput" placeholder="you@example.com" />
+              </div>
+              <div class="field-group">
+                <label for="imapPasswordInput">Email Password</label>
+                <input id="imapPasswordInput" type="password" placeholder="Password or app password" />
+              </div>
+            </div>
+            <div class="controls">
+              <button id="saveProfileButton">Save Profile</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="topbar">
+        <h1 class="title">Email Summaries Dashboard</h1>
+        <input id="userIdInput" value="" placeholder="Signed in account" readonly hidden />
+        <div class="inline-field">
+          <label for="daysBackInput">Days back to check</label>
+          <input id="daysBackInput" type="number" min="1" value="7" style="width: 120px" />
+        </div>
+        <button id="runButton">Run Summarizer</button>
+      </div>
+
+      <div id="runStatus" class="run-status">
+        <div id="runStatusText">Dashboard ready.</div>
+        <div id="runProgress" class="progress-track">
+          <div class="progress-bar"></div>
+        </div>
+      </div>
+
+      <div class="upper-grid">
+        <section class="panel settings-panel is-collapsed">
+          <div class="panel-header">
+            <h2>Contacts</h2>
+            <button id="toggleContactsButton" class="panel-toggle" type="button" aria-label="Expand contacts">+</button>
+          </div>
+          <div id="contactsBody" class="panel-body collapsed">
+            <div class="controls">
+              <button id="loadWhitelistButton">Current Selected Contacts</button>
+              <button id="saveWhitelistButton">Set Contact List</button>
+            </div>
+            <textarea
+              id="whitelistTextarea"
+              placeholder="Enter one email per line, for example:
+rian2023p@gmail.com
+someone@example.com"
+            ></textarea>
+            <div class="hint">
+              One email address per line.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel chat-panel is-collapsed">
+          <div class="panel-header">
+            <h2>AI Assistant</h2>
+            <button id="toggleChatButton" class="panel-toggle" type="button" aria-label="Expand AI Assistant">+</button>
+          </div>
+          <div id="chatBody" class="panel-body collapsed">
+            <div id="chatStatus" class="status">
+              Ask a question about any of your emails.
+            </div>
+            <div id="chatLog" class="chat-log"></div>
+            <div class="controls">
+              <input
+                id="chatInput"
+                style="flex: 1; min-width: 280px"
+                placeholder="Ask something like: What deadlines have been mentioned recently?"
+              />
+              <button id="chatSendButton">Send</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="layout">
+        <section class="panel">
+          <h2 id="summariesHeading">Summaries</h2>
+          <div class="controls icon-actions">
+            <span class="tooltip-wrap" data-tooltip="Select All New">
+              <button id="selectAllNewButton" class="icon-button" type="button" aria-label="Select All New">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="4" width="6" height="6" rx="1"></rect>
+                  <rect x="14" y="4" width="6" height="6" rx="1"></rect>
+                  <rect x="4" y="14" width="6" height="6" rx="1"></rect>
+                  <path d="m14 17 2.5 2.5L21 15"></path>
+                </svg>
+              </button>
+            </span>
+            <span class="tooltip-wrap" data-tooltip="Combined Summary">
+              <button id="combinedSummaryButton" class="icon-button" type="button" aria-label="Combined Summary">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h10"></path>
+                  <path d="M4 12h16"></path>
+                  <path d="M4 17h12"></path>
+                  <path d="m17 6 3 3-3 3"></path>
+                </svg>
+              </button>
+            </span>
+            <span class="tooltip-wrap" data-tooltip="Delete Selected">
+              <button id="deleteSelectedButton" class="icon-button" type="button" aria-label="Delete Selected">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h16"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                  <path d="M6 7l1 12h10l1-12"></path>
+                  <path d="M9 7V4h6v3"></path>
+                </svg>
+              </button>
+            </span>
+            <span class="tooltip-wrap" data-tooltip="Mark Unread">
+              <button id="markUnreadButton" class="icon-button" type="button" aria-label="Mark Unread">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h16v10H4z"></path>
+                  <path d="m4 8 8 6 8-6"></path>
+                  <circle cx="18.5" cy="5.5" r="2.5"></circle>
+                </svg>
+              </button>
+            </span>
+          </div>
+          <div id="listStatus" class="status">Loading summaries...</div>
+          <div id="summaryList" class="summary-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Summary</h2>
+            <span class="tooltip-wrap" data-tooltip="Send to Email">
+              <button id="sendSummaryEmailButton" class="icon-button" type="button" aria-label="Send to Email" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 6h16v12H4z"></path>
+                  <path d="m4 7 8 6 8-6"></path>
+                </svg>
+              </button>
+            </span>
+          </div>
+          <div id="detailStatus" class="status">Select a summary to view it.</div>
+          <div id="summaryDetail" class="detail-empty">No summary selected yet.</div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const accountBar = document.getElementById("accountBar");
+      const accountName = document.getElementById("accountName");
+      const accountEmail = document.getElementById("accountEmail");
+      const logoutButton = document.getElementById("logoutButton");
+      const profilePanel = document.getElementById("profilePanel");
+      const toggleProfileButton = document.getElementById("toggleProfileButton");
+      const profileBody = document.getElementById("profileBody");
+      const profileEmailInput = document.getElementById("profileEmailInput");
+      const imapUserInput = document.getElementById("imapUserInput");
+      const imapPasswordInput = document.getElementById("imapPasswordInput");
+      const saveProfileButton = document.getElementById("saveProfileButton");
+      const userIdInput = document.getElementById("userIdInput");
+      const runButton = document.getElementById("runButton");
+      const daysBackInput = document.getElementById("daysBackInput");
+      const loadWhitelistButton = document.getElementById("loadWhitelistButton");
+      const saveWhitelistButton = document.getElementById("saveWhitelistButton");
+      const toggleContactsButton = document.getElementById("toggleContactsButton");
+      const toggleChatButton = document.getElementById("toggleChatButton");
+      const contactsBody = document.getElementById("contactsBody");
+      const chatBody = document.getElementById("chatBody");
+      const whitelistTextarea = document.getElementById("whitelistTextarea");
+      const chatStatus = document.getElementById("chatStatus");
+      const chatLog = document.getElementById("chatLog");
+      const chatInput = document.getElementById("chatInput");
+      const chatSendButton = document.getElementById("chatSendButton");
+      const selectAllNewButton = document.getElementById("selectAllNewButton");
+      const combinedSummaryButton = document.getElementById("combinedSummaryButton");
+      const deleteSelectedButton = document.getElementById("deleteSelectedButton");
+      const markUnreadButton = document.getElementById("markUnreadButton");
+      const sendSummaryEmailButton = document.getElementById("sendSummaryEmailButton");
+      const summariesHeading = document.getElementById("summariesHeading");
+      const listStatus = document.getElementById("listStatus");
+      const summaryList = document.getElementById("summaryList");
+      const detailStatus = document.getElementById("detailStatus");
+      const summaryDetail = document.getElementById("summaryDetail");
+      const runStatus = document.getElementById("runStatus");
+      const runStatusText = document.getElementById("runStatusText");
+      const runProgress = document.getElementById("runProgress");
+
+      let currentUserId = null;
+      let currentProfile = null;
+      let currentSummaryId = null;
+      let selectedSummaryIds = new Set();
+      let currentSummaries = [];
+
+      function getReadSummaryIds(userId) {
+        try {
+          const raw = localStorage.getItem(`readSummaries:${userId}`);
+          return new Set(raw ? JSON.parse(raw) : []);
+        } catch {
+          return new Set();
+        }
+      }
+
+      function saveReadSummaryIds(userId, readIds) {
+        localStorage.setItem(`readSummaries:${userId}`, JSON.stringify(Array.from(readIds)));
+      }
+
+      function updateSummariesHeading(unreadCount) {
+        summariesHeading.textContent = unreadCount > 0 ? `Summaries (${unreadCount} New)` : "Summaries";
+      }
+
+      function togglePanel(bodyEl, buttonEl) {
+        const collapsed = bodyEl.classList.toggle("collapsed");
+        buttonEl.textContent = collapsed ? "+" : "-";
+        buttonEl.closest(".panel").classList.toggle("is-collapsed", collapsed);
+      }
+
+      function setRunStatus(message, loading = false) {
+        runStatusText.textContent = message;
+        runProgress.classList.toggle("active", loading);
+      }
+
+      function requireSignedIn() {
+        if (currentUserId) return true;
+        setRunStatus("Log in or create an account first.");
+        return false;
+      }
+
+      function applyProfileToForm(profile) {
+        currentProfile = profile;
+        currentUserId = profile.user_id;
+        userIdInput.value = profile.user_id;
+        accountName.textContent = profile.email || profile.user_id;
+        accountEmail.textContent = profile.google_connected
+          ? `Signed in${profile.user_id ? ` as ${profile.user_id}` : ""} · Google connected`
+          : `Signed in${profile.user_id ? ` as ${profile.user_id}` : ""}`;
+        accountBar.hidden = false;
+        profilePanel.hidden = false;
+
+        const settings = profile.settings || {};
+        profileEmailInput.value = profile.email || "";
+        imapUserInput.value = settings.imap_user || profile.email || "";
+        imapPasswordInput.value = settings.imap_password || "";
+      }
+
+      function resetSignedOutState() {
+        currentProfile = null;
+        currentUserId = null;
+        currentSummaryId = null;
+        selectedSummaryIds = new Set();
+        currentSummaries = [];
+        accountBar.hidden = true;
+        profilePanel.hidden = true;
+        userIdInput.value = "";
+        whitelistTextarea.value = "";
+        summaryList.innerHTML = "";
+        summaryDetail.innerHTML = "No summary selected yet.";
+        sendSummaryEmailButton.hidden = true;
+        chatLog.innerHTML = "";
+        listStatus.textContent = "Log in to view saved summaries.";
+        detailStatus.textContent = "Log in to view a summary.";
+        updateSummariesHeading(0);
+      }
+
+      async function loadCurrentSession() {
+        const params = new URLSearchParams(window.location.search);
+        const googleError = params.get("google_error");
+        const response = await fetch("/auth/me");
+        const data = await response.json();
+        if (data.authenticated && data.profile) {
+          applyProfileToForm(data.profile);
+          await loadProfile();
+          await loadWhitelist();
+          await loadSummaries();
+          setRunStatus(`Dashboard ready for ${data.profile.user_id}.`);
+          return true;
+        }
+
+        resetSignedOutState();
+        const redirectUrl = googleError ? `/login?google_error=${encodeURIComponent(googleError)}` : "/login";
+        window.location.href = redirectUrl;
+        return false;
+      }
+
+      async function logout() {
+        await fetch("/auth/logout", { method: "POST" });
+        resetSignedOutState();
+        window.location.href = "/login";
+      }
+
+      async function loadProfile() {
+        if (!requireSignedIn()) return;
+        const response = await fetch(`/profile?user_id=${encodeURIComponent(currentUserId)}`);
+        const data = await response.json();
+        if (!response.ok) {
+          setRunStatus(data.detail || "Failed to load profile.");
+          return;
+        }
+        applyProfileToForm(data.profile);
+      }
+
+      async function saveProfile() {
+        if (!requireSignedIn()) return;
+        saveProfileButton.disabled = true;
+        setRunStatus(`Saving profile for ${currentUserId}...`, true);
+
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentUserId)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: profileEmailInput.value.trim(),
+              imap_user: imapUserInput.value.trim(),
+              imap_password: imapPasswordInput.value,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to save profile.");
+            return;
+          }
+
+          applyProfileToForm(data.profile);
+          setRunStatus(`Saved profile for ${currentUserId}.`);
+        } catch (error) {
+          setRunStatus(`Failed to save profile: ${error.message}`);
+        } finally {
+          saveProfileButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      function appendChatMessage(role, text, attachments = []) {
+        const message = document.createElement("div");
+        message.className = `chat-message ${role}`;
+        const attachmentHtml =
+          attachments.length && role === "assistant"
+            ? `
+              <div class="attachment-links">
+                <strong>Matching attachments</strong>
+                ${attachments
+                  .map(
+                    (attachment) =>
+                      `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(
+                        attachment.filename
+                      )}</a>`
+                  )
+                  .join("")}
+              </div>
+            `
+            : "";
+        message.innerHTML = `
+          <div class="chat-role">${escapeHtml(role)}</div>
+          <div class="chat-text">${escapeHtml(text)}</div>
+          ${attachmentHtml}
+        `;
+        chatLog.appendChild(message);
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      function formatDate(timestamp) {
+        if (!timestamp) return "";
+        if (typeof timestamp === "string") {
+          return new Date(timestamp).toLocaleString();
+        }
+        return new Date(timestamp * 1000).toLocaleString();
+      }
+
+      function renderSection(title, content) {
+        if (!content) return "";
+
+        const lines = String(content)
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        const bulletLines = lines.filter((line) => line.startsWith("- "));
+        const textLines = lines.filter((line) => !line.startsWith("- "));
+
+        const textHtml = textLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+        const bulletHtml = bulletLines.length
+          ? `<ul>${bulletLines.map((line) => `<li>${escapeHtml(line.slice(2))}</li>`).join("")}</ul>`
+          : "";
+
+        return `
+          <div class="detail-section summary-rendered">
+            <h3>${escapeHtml(title)}</h3>
+            <div class="markdown-box">
+              ${textHtml}
+              ${bulletHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      async function loadSummaries() {
+        if (!requireSignedIn()) return;
+        currentSummaryId = null;
+        selectedSummaryIds = new Set();
+        currentSummaries = [];
+        const readSummaryIds = getReadSummaryIds(currentUserId);
+        listStatus.textContent = `Loading summaries for ${currentUserId}...`;
+        summaryList.innerHTML = "";
+        summaryDetail.innerHTML = "No summary selected yet.";
+        sendSummaryEmailButton.hidden = true;
+        detailStatus.textContent = "Select a summary to view it.";
+
+        const response = await fetch(`/summaries?user_id=${encodeURIComponent(currentUserId)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          listStatus.textContent = "Failed to load summaries.";
+          return;
+        }
+
+        const summaries = data.summaries || [];
+        currentSummaries = summaries;
+        if (!summaries.length) {
+          listStatus.textContent = data.message || "No summaries found.";
+          return;
+        }
+
+        listStatus.textContent = `${summaries.length} summary file(s) found.`;
+        const unreadCount = summaries.filter((summary) => !readSummaryIds.has(summary.summary_id)).length;
+        updateSummariesHeading(unreadCount);
+
+        summaries.forEach((summary) => {
+          const isUnread = !readSummaryIds.has(summary.summary_id);
+          const card = document.createElement("div");
+          card.className = "summary-card";
+          card.dataset.summaryId = summary.summary_id;
+          card.innerHTML = `
+            <input class="summary-check" type="checkbox" aria-label="Select summary" />
+            <button class="summary-card-main" type="button">
+              ${isUnread ? '<div class="summary-unread">New</div>' : ''}
+              <h3>${escapeHtml(summary.title || summary.summary_id)}</h3>
+              <div class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</div>
+              <div class="preview">${escapeHtml(summary.preview || "No preview available.")}</div>
+            </button>
+          `;
+
+          card.querySelector(".summary-card-main").addEventListener("click", () => {
+            document.querySelectorAll(".summary-card").forEach((item) => item.classList.remove("active"));
+            card.classList.add("active");
+            if (!readSummaryIds.has(summary.summary_id)) {
+              readSummaryIds.add(summary.summary_id);
+              saveReadSummaryIds(currentUserId, readSummaryIds);
+              const badge = card.querySelector(".summary-unread");
+              if (badge) badge.remove();
+              updateSummariesHeading(Math.max(0, summaries.filter((item) => !readSummaryIds.has(item.summary_id)).length));
+            }
+            loadSummaryDetail(summary.summary_id);
+          });
+
+          card.querySelector(".summary-check").addEventListener("change", (event) => {
+            if (event.target.checked) {
+              selectedSummaryIds.add(summary.summary_id);
+            } else {
+              selectedSummaryIds.delete(summary.summary_id);
+            }
+          });
+
+          summaryList.appendChild(card);
+        });
+      }
+
+      async function loadWhitelist() {
+        if (!requireSignedIn()) return;
+        setRunStatus(`Loading contacts for ${currentUserId}...`);
+
+        const response = await fetch(`/whitelist?user_id=${encodeURIComponent(currentUserId)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          setRunStatus(data.detail || `Failed to load contacts for ${currentUserId}.`);
+          return;
+        }
+
+        whitelistTextarea.value = (data.contacts || []).join("\n");
+        setRunStatus(`Loaded ${data.contacts.length} contact(s).`);
+      }
+
+      async function saveWhitelist() {
+        if (!requireSignedIn()) return;
+        const contacts = whitelistTextarea.value
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        setRunStatus(`Saving contacts for ${currentUserId}...`, true);
+        saveWhitelistButton.disabled = true;
+
+        try {
+          const response = await fetch("/whitelist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              contacts,
+            }),
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            setRunStatus(data.detail || `Failed to save contacts for ${currentUserId}.`);
+            return;
+          }
+
+          whitelistTextarea.value = (data.contacts || []).join("\n");
+          setRunStatus(`Saved ${data.contacts.length} contact(s).`);
+        } catch (error) {
+          setRunStatus(`Failed to save contacts: ${error.message}`);
+        } finally {
+          saveWhitelistButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      async function runSummarizer() {
+        if (!requireSignedIn()) return;
+        const daysBack = Number(daysBackInput.value || 7);
+        setRunStatus(`Running summarizer for ${currentUserId} over the last ${daysBack} day(s)...`, true);
+        runButton.disabled = true;
+
+        try {
+          const response = await fetch("/run-summarizer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              days_back: daysBack,
+            }),
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            const detail = data.detail || data;
+            setRunStatus(`Run failed for ${currentUserId}. ${detail.stderr || "No error details returned."}`);
+            return;
+          }
+
+          const stats = data.stats || {};
+          setRunStatus(
+            `Run finished for ${currentUserId}. New emails summarized: ${stats.new_email_records_saved ?? 0}. Already accounted for: ${stats.already_processed_count ?? 0}. New contact summaries added: ${stats.new_contact_summaries_saved ?? 0}.`
+          );
+          await loadSummaries();
+        } catch (error) {
+          setRunStatus(`Run failed: ${error.message}`);
+        } finally {
+          runButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      async function deleteSummary(summaryId) {
+        if (!requireSignedIn()) return;
+        if (!window.confirm("Delete this saved summary?")) return;
+
+        try {
+          const response = await fetch(
+            `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`,
+            { method: "DELETE" }
+          );
+          const data = await response.json();
+
+          if (!response.ok) {
+            setRunStatus(data.detail || `Failed to delete ${summaryId}.`);
+            return;
+          }
+
+          setRunStatus(`Deleted summary. Removed ${data.removed_email_ids?.length || 0} linked email record(s).`);
+          if (currentSummaryId === summaryId) {
+            currentSummaryId = null;
+            summaryDetail.innerHTML = "No summary selected yet.";
+            sendSummaryEmailButton.hidden = true;
+            detailStatus.textContent = "Select a summary to view it.";
+          }
+          await loadSummaries();
+        } catch (error) {
+          setRunStatus(`Failed to delete summary: ${error.message}`);
+        }
+      }
+
+      async function deleteSelectedSummaries() {
+        if (!requireSignedIn()) return;
+        const summaryIds = Array.from(selectedSummaryIds);
+        if (!summaryIds.length) {
+          setRunStatus("Select at least one summary first.");
+          return;
+        }
+
+        if (!window.confirm(`Delete ${summaryIds.length} selected summary item(s)?`)) return;
+
+        let removedCount = 0;
+        for (const summaryId of summaryIds) {
+          try {
+            const response = await fetch(
+              `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`,
+              { method: "DELETE" }
+            );
+            if (response.ok) {
+              removedCount += 1;
+              if (currentSummaryId === summaryId) {
+                currentSummaryId = null;
+                summaryDetail.innerHTML = "No summary selected yet.";
+                sendSummaryEmailButton.hidden = true;
+                detailStatus.textContent = "Select a summary to view it.";
+              }
+            }
+          } catch (error) {
+            setRunStatus(`Failed while deleting summaries: ${error.message}`);
+            return;
+          }
+        }
+
+        setRunStatus(`Deleted ${removedCount} selected summary item(s).`);
+        selectedSummaryIds = new Set();
+        await loadSummaries();
+      }
+
+      function markSelectedUnread() {
+        if (!requireSignedIn()) return;
+        const summaryIds = Array.from(selectedSummaryIds);
+        if (!summaryIds.length) {
+          setRunStatus("Select at least one summary first.");
+          return;
+        }
+
+        const readSummaryIds = getReadSummaryIds(currentUserId);
+        summaryIds.forEach((summaryId) => readSummaryIds.delete(summaryId));
+        saveReadSummaryIds(currentUserId, readSummaryIds);
+        setRunStatus(`Marked ${summaryIds.length} summary item(s) as unread.`);
+        loadSummaries();
+      }
+
+      async function sendChat() {
+        if (!requireSignedIn()) return;
+        const question = chatInput.value.trim();
+        if (!question) return;
+
+        appendChatMessage("user", question);
+        chatInput.value = "";
+        chatStatus.textContent = `Thinking over all saved summaries for ${currentUserId}...`;
+        chatSendButton.disabled = true;
+
+        try {
+          const response = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              question,
+            }),
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            appendChatMessage("assistant", data.detail || "Chat request failed.");
+            chatStatus.textContent = "Chat request failed.";
+            return;
+          }
+
+          appendChatMessage("assistant", data.answer || "No answer returned.", data.attachment_matches || []);
+          const attachmentNote =
+            data.attachment_matches && data.attachment_matches.length
+              ? ` ${data.attachment_matches.length} matching attachment(s) linked below.`
+              : "";
+          chatStatus.textContent = `Answer generated using ${data.summary_count} saved summary file(s) and ${data.email_count || 0} email record(s).${attachmentNote}`;
+        } catch (error) {
+          appendChatMessage("assistant", `Chat request failed: ${error.message}`);
+          chatStatus.textContent = "Chat request failed.";
+        } finally {
+          chatSendButton.disabled = false;
+        }
+      }
+
+      async function loadSummaryDetail(summaryId) {
+        currentSummaryId = summaryId;
+        detailStatus.textContent = `Loading ${summaryId}...`;
+        summaryDetail.innerHTML = "";
+
+        const response = await fetch(
+          `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`
+        );
+        const summary = await response.json();
+
+        if (!response.ok) {
+          detailStatus.textContent = "Failed to load summary detail.";
+          sendSummaryEmailButton.hidden = true;
+          summaryDetail.textContent = summary.detail || "Unknown error.";
+          return;
+        }
+
+        detailStatus.textContent = `Viewing ${summary.filename}`;
+        sendSummaryEmailButton.hidden = false;
+        summaryDetail.className = "";
+        summaryDetail.innerHTML = `
+          <div class="detail-section">
+            <h3>${escapeHtml(summary.title)}</h3>
+            <p class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</p>
+          </div>
+          ${renderSection("Executive Summary", summary.executive_summary)}
+          ${renderSection("Main Topics", summary.main_topics)}
+          ${renderSection("New Developments", summary.new_developments)}
+          ${renderSection("Action Items / Asks", summary.action_items)}
+          ${renderSection("Deadlines / Dates / Meetings", summary.deadlines)}
+          ${renderSection("Attachment Summary", summary.attachment_summary)}
+          ${renderSection("Bottom Line", summary.bottom_line)}
+        `;
+      }
+
+      async function generateCombinedSummary() {
+        if (!requireSignedIn()) return;
+        const summaryIds = Array.from(selectedSummaryIds);
+        if (!summaryIds.length) {
+          setRunStatus("Select at least one summary first.");
+          return;
+        }
+
+        combinedSummaryButton.disabled = true;
+        sendSummaryEmailButton.hidden = true;
+        detailStatus.textContent = `Building combined summary from ${summaryIds.length} selected item(s)...`;
+        summaryDetail.innerHTML = "Generating combined report...";
+        setRunStatus(`Generating combined summary from ${summaryIds.length} selected item(s)...`, true);
+
+        try {
+          const response = await fetch("/summaries/combined", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              summary_ids: summaryIds,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            detailStatus.textContent = "Failed to build combined summary.";
+            summaryDetail.textContent = data.detail || "Unknown error.";
+            setRunStatus(data.detail || "Failed to build combined summary.");
+            return;
+          }
+
+          currentSummaryId = null;
+          detailStatus.textContent = `Viewing combined summary for ${data.count} selected item(s).`;
+          summaryDetail.className = "";
+          summaryDetail.innerHTML = `
+            <div class="detail-section">
+              <h3>${escapeHtml(data.title || "Combined Summary")}</h3>
+              <p class="meta">${escapeHtml(data.summary_ids.join(", "))}</p>
+            </div>
+            ${renderMarkdownSummary(data.combined_markdown || "")}
+          `;
+          setRunStatus(`Combined summary generated from ${data.count} selected item(s).`);
+        } catch (error) {
+          detailStatus.textContent = "Failed to build combined summary.";
+          summaryDetail.textContent = error.message;
+          setRunStatus(`Failed to build combined summary: ${error.message}`);
+        } finally {
+          combinedSummaryButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      function renderMarkdownSummary(markdown) {
+        const sections = String(markdown || "")
+          .split(/^##\s+/m)
+          .map((chunk, index) => {
+            if (index === 0) {
+              return { title: "", content: chunk.trim() };
+            }
+            const [titleLine, ...rest] = chunk.split("\n");
+            return { title: titleLine.trim(), content: rest.join("\n").trim() };
+          })
+          .filter((section) => section.title || section.content);
+
+        return sections
+          .map((section) => {
+            if (!section.title) {
+              return renderSection("Overview", section.content);
+            }
+            return renderSection(section.title, section.content);
+          })
+          .join("");
+      }
+
+      function selectAllNewSummaries() {
+        if (!requireSignedIn()) return;
+        const readSummaryIds = getReadSummaryIds(currentUserId);
+        const unreadIds = currentSummaries
+          .filter((summary) => !readSummaryIds.has(summary.summary_id))
+          .map((summary) => summary.summary_id);
+
+        if (!unreadIds.length) {
+          setRunStatus("No unread summaries to select.");
+          return;
+        }
+
+        selectedSummaryIds = new Set(unreadIds);
+        document.querySelectorAll(".summary-card").forEach((card) => {
+          const checkbox = card.querySelector(".summary-check");
+          if (checkbox) {
+            checkbox.checked = selectedSummaryIds.has(card.dataset.summaryId);
+          }
+        });
+        setRunStatus(`Selected ${unreadIds.length} unread summary item(s).`);
+      }
+
+      async function sendCurrentSummaryEmail() {
+        if (!requireSignedIn()) return;
+        if (!currentSummaryId) {
+          setRunStatus("Select a summary first.");
+          return;
+        }
+
+        sendSummaryEmailButton.disabled = true;
+        setRunStatus(`Sending ${currentSummaryId} to your email...`, true);
+        try {
+          const response = await fetch(
+            `/summaries/${encodeURIComponent(currentSummaryId)}/send-email?user_id=${encodeURIComponent(currentUserId)}`,
+            { method: "POST" }
+          );
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to send summary email.");
+            return;
+          }
+          setRunStatus(`Sent summary to ${data.recipient}.`);
+        } catch (error) {
+          setRunStatus(`Failed to send summary email: ${error.message}`);
+        } finally {
+          sendSummaryEmailButton.disabled = false;
+          runProgress.classList.remove("active");
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      runButton.addEventListener("click", runSummarizer);
+      logoutButton.addEventListener("click", logout);
+      saveProfileButton.addEventListener("click", saveProfile);
+      loadWhitelistButton.addEventListener("click", loadWhitelist);
+      saveWhitelistButton.addEventListener("click", saveWhitelist);
+      toggleProfileButton.addEventListener("click", () => togglePanel(profileBody, toggleProfileButton));
+      toggleContactsButton.addEventListener("click", () => togglePanel(contactsBody, toggleContactsButton));
+      toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
+      selectAllNewButton.addEventListener("click", selectAllNewSummaries);
+      combinedSummaryButton.addEventListener("click", generateCombinedSummary);
+      deleteSelectedButton.addEventListener("click", deleteSelectedSummaries);
+      markUnreadButton.addEventListener("click", markSelectedUnread);
+      sendSummaryEmailButton.addEventListener("click", sendCurrentSummaryEmail);
+      chatSendButton.addEventListener("click", sendChat);
+      chatInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          sendChat();
+        }
+      });
+      loadCurrentSession();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local secrets and environment config
+.env
+.env.*
+!.env.example
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Local product data and generated outputs
+Email_Summarizer/data/
+Email_Summarizer/email_summaries_output/
+
+# Local debug/runtime files
+*.log

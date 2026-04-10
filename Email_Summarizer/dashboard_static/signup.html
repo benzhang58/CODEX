@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create Account</title>
+    <style>
+      :root {
+        --bg: #f5f5f7;
+        --panel: rgba(255, 255, 255, 0.92);
+        --border: #d9d9de;
+        --text: #111111;
+        --muted: #6e6e73;
+        --accent: #111111;
+        --shadow: 0 14px 40px rgba(17, 17, 17, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(0, 0, 0, 0.035), transparent 32%),
+          linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+      }
+
+      .card {
+        width: min(100%, 540px);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 36px;
+        font-weight: 650;
+        letter-spacing: -0.04em;
+      }
+
+      p {
+        margin: 0 0 18px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      input,
+      button,
+      a {
+        font: inherit;
+      }
+
+      input {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-top: 18px;
+      }
+
+      button {
+        padding: 12px 16px;
+        border-radius: 14px;
+        border: 1px solid #111111;
+        background: #111111;
+        color: #ffffff;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .secondary-link {
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .secondary-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .status {
+        margin-top: 16px;
+        color: var(--muted);
+        min-height: 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Create Account</h1>
+      <p>
+        This creates your dashboard account using your email address. For the simplest setup, your email password will also be used as the initial mailbox password, and you can edit it later in Profile if your provider needs an app password instead.
+      </p>
+
+      <div class="field">
+        <label for="emailInput">Email</label>
+        <input id="emailInput" type="email" placeholder="you@example.com" />
+      </div>
+
+      <div class="field">
+        <label for="passwordInput">Password</label>
+        <input id="passwordInput" type="password" placeholder="At least 8 characters" />
+      </div>
+
+      <div class="actions">
+        <button id="createButton" type="button">Create Account</button>
+        <a class="secondary-button" href="/auth/google/start">Continue with Google</a>
+        <a class="secondary-link" href="/dashboard">Back to Login</a>
+      </div>
+
+      <div id="status" class="status"></div>
+    </main>
+
+    <script>
+      const emailInput = document.getElementById("emailInput");
+      const passwordInput = document.getElementById("passwordInput");
+      const createButton = document.getElementById("createButton");
+      const status = document.getElementById("status");
+
+      async function signup() {
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+
+        if (!email || !password) {
+          status.textContent = "Enter your email and password first.";
+          return;
+        }
+
+        createButton.disabled = true;
+        status.textContent = "Creating account...";
+
+        try {
+          const response = await fetch("/auth/signup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            status.textContent = data.detail || "Failed to create account.";
+            return;
+          }
+
+          window.location.href = "/dashboard";
+        } catch (error) {
+          status.textContent = `Failed to create account: ${error.message}`;
+        } finally {
+          createButton.disabled = false;
+        }
+      }
+
+      createButton.addEventListener("click", signup);
+      passwordInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          signup();
+        }
+      });
+    </script>
+  </body>
+</html>
