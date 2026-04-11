@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Email Dashboard Done Preview</title>
+    <style>
+      :root {
+        --bg: #f3f3f0;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-strong: rgba(255, 255, 255, 0.96);
+        --line: rgba(17, 17, 17, 0.1);
+        --text: #101010;
+        --muted: #6e6e68;
+        --soft: #efeee9;
+        --soft-2: #e7e5de;
+        --accent: #111111;
+        --shadow: 0 30px 80px rgba(15, 15, 15, 0.08);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 24%),
+          linear-gradient(180deg, #fbfbf9 0%, var(--bg) 100%);
+      }
+
+      .page {
+        max-width: 1460px;
+        margin: 0 auto;
+        padding: 28px;
+        display: grid;
+        gap: 22px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        backdrop-filter: blur(18px);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 24px 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 40px;
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+
+      .hero p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .pill {
+        padding: 10px 16px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 0.92fr 1.08fr;
+        gap: 22px;
+        align-items: start;
+      }
+
+      .module {
+        padding: 22px 24px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .module-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .module-title {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .action-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .icon-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .icon-button,
+      .mode-button {
+        border: 1px solid rgba(17, 17, 17, 0.12);
+        background: var(--accent);
+        color: #fff;
+        border-radius: 18px;
+        height: 54px;
+        min-width: 54px;
+        padding: 0 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .icon-button svg {
+        width: 20px;
+        height: 20px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .mode-button.secondary {
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--text);
+      }
+
+      .mode-button.active {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .status-line {
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .summary-list {
+        display: grid;
+        gap: 14px;
+        max-height: 68vh;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      .summary-card {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 16px;
+        align-items: start;
+        padding: 20px;
+        border-radius: 20px;
+        border: 1px solid rgba(17, 17, 17, 0.12);
+        background: rgba(255, 255, 255, 0.74);
+        cursor: pointer;
+      }
+
+      .summary-card:hover {
+        background: var(--soft);
+      }
+
+      .summary-card.active {
+        background: var(--soft);
+        border-color: rgba(17, 17, 17, 0.16);
+      }
+
+      .summary-card input {
+        width: 28px;
+        height: 28px;
+        margin: 4px 0 0;
+      }
+
+      .summary-card h3 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.12;
+        letter-spacing: -0.035em;
+      }
+
+      .summary-card .meta {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .summary-card .tag {
+        display: inline-flex;
+        margin-top: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(17, 17, 17, 0.08);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .detail {
+        display: grid;
+        gap: 18px;
+      }
+
+      .detail-header {
+        display: grid;
+        gap: 10px;
+      }
+
+      .detail-header h2 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1;
+        letter-spacing: -0.035em;
+      }
+
+      .detail-meta {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .detail-block {
+        padding: 18px 20px;
+        border-radius: 18px;
+        background: var(--soft);
+        border: 1px solid rgba(17, 17, 17, 0.08);
+      }
+
+      .detail-block h3 {
+        margin: 0 0 12px;
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .detail-block p,
+      .detail-block li {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .detail-block ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .note {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 1080px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="panel hero">
+        <div>
+          <h1>Done Flow Preview</h1>
+          <p>Separate concept preview. This does not change the live dashboard.</p>
+        </div>
+        <div class="pill">Preview Only</div>
+      </section>
+
+      <div class="layout">
+        <section class="panel module">
+          <div class="module-header">
+            <h2 class="module-title" id="leftTitle">Summaries</h2>
+          </div>
+
+          <div class="action-row">
+            <div class="icon-actions">
+              <button class="icon-button" id="selectAllButton" type="button" title="Select All">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="4" width="6" height="6" rx="1"></rect>
+                  <rect x="14" y="4" width="6" height="6" rx="1"></rect>
+                  <rect x="4" y="14" width="6" height="6" rx="1"></rect>
+                  <path d="m14 17 2.5 2.5L21 15"></path>
+                </svg>
+              </button>
+              <button class="icon-button" id="deleteButton" type="button" title="Delete Selected">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h16"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                  <path d="M6 7l1 12h10l1-12"></path>
+                  <path d="M9 7V4h6v3"></path>
+                </svg>
+              </button>
+              <button class="icon-button" id="emailButton" type="button" title="Email Report">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 6h16v12H4z"></path>
+                  <path d="m4 8 8 6 8-6"></path>
+                </svg>
+              </button>
+              <button class="icon-button" id="refineButton" type="button" title="Refine Summary">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m4 20 4.5-1 9.5-9.5-3.5-3.5L5 15.5 4 20z"></path>
+                  <path d="m13.5 6 3.5 3.5"></path>
+                </svg>
+              </button>
+              <button class="icon-button" id="doneActionButton" type="button" title="Mark as Done">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m5 12 4 4L19 6"></path>
+                </svg>
+              </button>
+            </div>
+
+            <button class="mode-button secondary" id="toggleDoneViewButton" type="button">See Done</button>
+          </div>
+
+          <div class="status-line" id="listStatus">0 Summaries Selected</div>
+          <div class="summary-list" id="summaryList"></div>
+        </section>
+
+        <section class="panel module">
+          <div class="module-header">
+            <h2 class="module-title">Summary</h2>
+          </div>
+          <div class="detail" id="detailPane"></div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const inboxSummaries = [
+        {
+          id: "rian",
+          title: "Rian (rian2023p@gmail.com)",
+          updated: "4/10/2026, 3:28 PM",
+          executive:
+            "Rian acknowledges your work on the tax documents and gives follow-up instructions for finalizing the filing.",
+          topics: [
+            "Tax filing next steps",
+            "Spreadsheet adjustments",
+            "Document handling guidance",
+          ],
+        },
+        {
+          id: "vi",
+          title: "Vi Luong (viluong@slccpas.com)",
+          updated: "4/10/2026, 3:28 PM",
+          executive:
+            "Vi sent the finalized return package and asked for the signed e-file forms back before the deadline.",
+          topics: [
+            "2025 return documents",
+            "E-file signature request",
+            "Tax payment timing",
+          ],
+        },
+        {
+          id: "raymond",
+          title: "Raymond (raymond@example.com)",
+          updated: "4/10/2026, 1:12 PM",
+          executive:
+            "Raymond sent a short note with a follow-up question about the attached tax paperwork.",
+          topics: [
+            "Attachment follow-up",
+            "Clarification request",
+          ],
+        },
+      ];
+
+      const doneSummaries = [
+        {
+          id: "goku",
+          title: "Goku (goku@example.com)",
+          updated: "4/09/2026, 8:12 PM",
+          executive:
+            "Older summary already handled and moved out of the active queue.",
+          topics: [
+            "Handled previously",
+            "No active follow-up",
+          ],
+        },
+      ];
+
+      let showDone = false;
+      let activeSummaries = [...inboxSummaries];
+      let archivedSummaries = [...doneSummaries];
+      let selectedIds = [];
+
+      const summaryList = document.getElementById("summaryList");
+      const listStatus = document.getElementById("listStatus");
+      const detailPane = document.getElementById("detailPane");
+      const leftTitle = document.getElementById("leftTitle");
+      const toggleDoneViewButton = document.getElementById("toggleDoneViewButton");
+      const doneActionButton = document.getElementById("doneActionButton");
+
+      function hasSelected(id) {
+        return selectedIds.includes(id);
+      }
+
+      function updateStatus() {
+        listStatus.textContent = `${selectedIds.length} Summaries Selected`;
+      }
+
+      function getCurrentCollection() {
+        return showDone ? archivedSummaries : activeSummaries;
+      }
+
+      function renderDetail() {
+        const selected = getCurrentCollection().filter((item) => selectedIds.includes(item.id));
+
+        if (!selected.length) {
+          detailPane.innerHTML = `
+            <div class="detail-header">
+              <h2>No summary selected</h2>
+              <div class="detail-meta">Check one or more summaries to preview the result.</div>
+            </div>
+          `;
+          return;
+        }
+
+        if (selected.length === 1) {
+          const summary = selected[0];
+          detailPane.innerHTML = `
+            <div class="detail-header">
+              <h2>${summary.title}</h2>
+              <div class="detail-meta">Updated: ${summary.updated}</div>
+            </div>
+            <div class="detail-block">
+              <h3>Executive Summary</h3>
+              <p>${summary.executive}</p>
+            </div>
+            <div class="detail-block">
+              <h3>Main Topics</h3>
+              <ul>${summary.topics.map((topic) => `<li>${topic}</li>`).join("")}</ul>
+            </div>
+          `;
+          return;
+        }
+
+        detailPane.innerHTML = `
+          <div class="detail-header">
+            <h2>Combined Report (${selected.length} Selected)</h2>
+            <div class="detail-meta">Order follows the order you checked them.</div>
+          </div>
+          ${selected
+            .map(
+              (summary) => `
+                <div class="detail-block">
+                  <h3>${summary.title}</h3>
+                  <p>${summary.executive}</p>
+                </div>
+              `
+            )
+            .join("")}
+        `;
+      }
+
+      function renderList() {
+        const items = getCurrentCollection();
+        leftTitle.textContent = showDone ? "Done" : "Summaries";
+        toggleDoneViewButton.textContent = showDone ? "Back to Summaries" : "See Done";
+        toggleDoneViewButton.classList.toggle("active", showDone);
+        doneActionButton.title = showDone ? "Mark as New" : "Mark as Done";
+        doneActionButton.innerHTML = showDone
+          ? `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h16"></path>
+              <path d="M12 4v16"></path>
+            </svg>
+          `
+          : `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m5 12 4 4L19 6"></path>
+            </svg>
+          `;
+
+        summaryList.innerHTML = items
+          .map(
+            (summary) => `
+              <div class="summary-card${hasSelected(summary.id) ? " active" : ""}" data-id="${summary.id}">
+                <input type="checkbox" ${hasSelected(summary.id) ? "checked" : ""} />
+                <div>
+                  <h3>${summary.title}</h3>
+                  <div class="meta">Updated: ${summary.updated}</div>
+                  <div class="tag">${showDone ? "Done" : "Active"}</div>
+                </div>
+              </div>
+            `
+          )
+          .join("");
+
+        summaryList.querySelectorAll(".summary-card").forEach((card) => {
+          card.addEventListener("click", () => {
+            const id = card.dataset.id;
+            if (hasSelected(id)) {
+              selectedIds = selectedIds.filter((item) => item !== id);
+            } else {
+              selectedIds.push(id);
+            }
+            renderList();
+            updateStatus();
+            renderDetail();
+          });
+        });
+      }
+
+      function moveSelectedToDone() {
+        if (!selectedIds.length) return;
+        if (!showDone) {
+          const moved = activeSummaries.filter((item) => selectedIds.includes(item.id));
+          activeSummaries = activeSummaries.filter((item) => !selectedIds.includes(item.id));
+          archivedSummaries = [...moved, ...archivedSummaries];
+        } else {
+          const moved = archivedSummaries.filter((item) => selectedIds.includes(item.id));
+          archivedSummaries = archivedSummaries.filter((item) => !selectedIds.includes(item.id));
+          activeSummaries = [...moved, ...activeSummaries];
+        }
+        selectedIds = [];
+        renderList();
+        updateStatus();
+        renderDetail();
+      }
+
+      document.getElementById("selectAllButton").addEventListener("click", () => {
+        const items = getCurrentCollection().map((item) => item.id);
+        const allSelected = items.length > 0 && items.every((id) => selectedIds.includes(id));
+        selectedIds = allSelected ? [] : [...items];
+        renderList();
+        updateStatus();
+        renderDetail();
+      });
+
+      document.getElementById("deleteButton").addEventListener("click", () => {
+        const set = new Set(selectedIds);
+        if (showDone) {
+          archivedSummaries = archivedSummaries.filter((item) => !set.has(item.id));
+        } else {
+          activeSummaries = activeSummaries.filter((item) => !set.has(item.id));
+        }
+        selectedIds = [];
+        renderList();
+        updateStatus();
+        renderDetail();
+      });
+
+      document.getElementById("emailButton").addEventListener("click", () => {
+        alert("Preview only: this would email the current combined report.");
+      });
+
+      document.getElementById("refineButton").addEventListener("click", () => {
+        alert("Preview only: this would refine the current visible summary/report.");
+      });
+
+      doneActionButton.addEventListener("click", moveSelectedToDone);
+
+      toggleDoneViewButton.addEventListener("click", () => {
+        showDone = !showDone;
+        selectedIds = [];
+        renderList();
+        updateStatus();
+        renderDetail();
+      });
+
+      renderList();
+      updateStatus();
+      renderDetail();
+    </script>
+  </body>
+</html>

@@ -190,6 +190,8 @@
               <button class="theme-chip" type="button" data-theme="default">Default</button>
               <button class="theme-chip" type="button" data-theme="stone">Stone</button>
               <button class="theme-chip" type="button" data-theme="mist">Mist</button>
+              <button class="theme-chip" type="button" data-theme="green">Green</button>
+              <button class="theme-chip" type="button" data-theme="purple">Purple</button>
             </div>
           </div>
         </div>
@@ -257,6 +259,16 @@
           document.documentElement.style.setProperty("--accent-soft", "#e4ecef");
           document.documentElement.style.setProperty("--surface-soft", "#e8eeef");
           document.documentElement.style.setProperty("--surface-soft-2", "#dce5e8");
+        } else if (theme === "green") {
+          document.documentElement.style.setProperty("--bg", "#eef3ee");
+          document.documentElement.style.setProperty("--accent-soft", "#dfeadf");
+          document.documentElement.style.setProperty("--surface-soft", "#e6efe6");
+          document.documentElement.style.setProperty("--surface-soft-2", "#d8e5d8");
+        } else if (theme === "purple") {
+          document.documentElement.style.setProperty("--bg", "#f2eef6");
+          document.documentElement.style.setProperty("--accent-soft", "#e7ddf0");
+          document.documentElement.style.setProperty("--surface-soft", "#eee7f5");
+          document.documentElement.style.setProperty("--surface-soft-2", "#e1d7eb");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");

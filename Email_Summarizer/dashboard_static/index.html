@@ -181,7 +181,7 @@
 
       .top-account-grid {
         display: grid;
-        grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+        grid-template-columns: 0.92fr 1.08fr;
         gap: 20px;
         align-items: start;
       }
@@ -481,8 +481,10 @@
       }
 
       .upper-grid .panel.is-collapsed {
-        height: auto;
+        height: auto !important;
+        min-height: 0;
         align-self: start;
+        overflow: hidden;
       }
 
       .panel {
@@ -562,6 +564,36 @@
         max-height: 72vh;
         overflow-y: auto;
         padding-right: 8px;
+      }
+
+      .summary-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .mode-button {
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.84);
+        color: var(--text);
+        border-radius: 16px;
+        height: 42px;
+        padding: 0 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        cursor: pointer;
+      }
+
+      .mode-button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
       }
 
       .summary-card {
@@ -792,7 +824,17 @@
       }
 
       .chat-panel .panel-body.collapsed {
-        display: none;
+        display: none !important;
+      }
+
+      .chat-panel.is-collapsed .panel-body {
+        display: none !important;
+      }
+
+      .chat-panel.is-collapsed .status,
+      .chat-panel.is-collapsed .chat-log,
+      .chat-panel.is-collapsed .controls {
+        display: none !important;
       }
 
       .chat-panel:not(.is-collapsed) .panel-body {
@@ -1055,55 +1097,55 @@ someone@example.com"
       <div class="layout">
         <section class="panel">
           <h2 id="summariesHeading">Summaries</h2>
-          <div class="controls icon-actions">
-            <span class="tooltip-wrap" data-tooltip="Select All">
-              <button id="selectAllNewButton" class="icon-button" type="button" aria-label="Select All">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="4" y="4" width="6" height="6" rx="1"></rect>
-                  <rect x="14" y="4" width="6" height="6" rx="1"></rect>
-                  <rect x="4" y="14" width="6" height="6" rx="1"></rect>
-                  <path d="m14 17 2.5 2.5L21 15"></path>
-                </svg>
-              </button>
-            </span>
-            <span class="tooltip-wrap" data-tooltip="Combined Summary">
-              <button id="combinedSummaryButton" class="icon-button" type="button" aria-label="Combined Summary">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7h10"></path>
-                  <path d="M4 12h16"></path>
-                  <path d="M4 17h12"></path>
-                  <path d="m17 6 3 3-3 3"></path>
-                </svg>
-              </button>
-            </span>
-            <span class="tooltip-wrap" data-tooltip="Delete Selected">
-              <button id="deleteSelectedButton" class="icon-button" type="button" aria-label="Delete Selected">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7h16"></path>
-                  <path d="M10 11v6"></path>
-                  <path d="M14 11v6"></path>
-                  <path d="M6 7l1 12h10l1-12"></path>
-                  <path d="M9 7V4h6v3"></path>
-                </svg>
-              </button>
-            </span>
-            <span class="tooltip-wrap" data-tooltip="Email Report">
-              <button id="emailReportButton" class="icon-button" type="button" aria-label="Email Report">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 6h16v12H4z"></path>
-                  <path d="m4 7 8 6 8-6"></path>
-                  <path d="M8 4h8"></path>
-                </svg>
-              </button>
-            </span>
-            <span class="tooltip-wrap" data-tooltip="Refine Summary">
-              <button id="refineSummaryButton" class="icon-button" type="button" aria-label="Refine Summary">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 20h4l10-10-4-4L4 16v4z"></path>
-                  <path d="m12 6 4 4"></path>
-                </svg>
-              </button>
-            </span>
+          <div class="summary-actions">
+            <div class="controls icon-actions">
+              <span class="tooltip-wrap" data-tooltip="Select All">
+                <button id="selectAllNewButton" class="icon-button" type="button" aria-label="Select All">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="4" width="6" height="6" rx="1"></rect>
+                    <rect x="14" y="4" width="6" height="6" rx="1"></rect>
+                    <rect x="4" y="14" width="6" height="6" rx="1"></rect>
+                    <path d="m14 17 2.5 2.5L21 15"></path>
+                  </svg>
+                </button>
+              </span>
+              <span class="tooltip-wrap" data-tooltip="Delete Selected">
+                <button id="deleteSelectedButton" class="icon-button" type="button" aria-label="Delete Selected">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 7h16"></path>
+                    <path d="M10 11v6"></path>
+                    <path d="M14 11v6"></path>
+                    <path d="M6 7l1 12h10l1-12"></path>
+                    <path d="M9 7V4h6v3"></path>
+                  </svg>
+                </button>
+              </span>
+              <span class="tooltip-wrap" data-tooltip="Email Report">
+                <button id="emailReportButton" class="icon-button" type="button" aria-label="Email Report">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 6h16v12H4z"></path>
+                    <path d="m4 7 8 6 8-6"></path>
+                    <path d="M8 4h8"></path>
+                  </svg>
+                </button>
+              </span>
+              <span class="tooltip-wrap" data-tooltip="Refine Summary">
+                <button id="refineSummaryButton" class="icon-button" type="button" aria-label="Refine Summary">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 20h4l10-10-4-4L4 16v4z"></path>
+                    <path d="m12 6 4 4"></path>
+                  </svg>
+                </button>
+              </span>
+              <span class="tooltip-wrap" data-tooltip="Mark as Done">
+                <button id="doneToggleButton" class="icon-button" type="button" aria-label="Mark as Done">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m5 12 4 4L19 6"></path>
+                  </svg>
+                </button>
+              </span>
+            </div>
+            <button id="toggleDoneViewButton" class="mode-button" type="button">See Done</button>
           </div>
           <div id="listStatus" class="status">Loading summaries...</div>
           <div id="summaryList" class="summary-list"></div>
@@ -1168,7 +1210,6 @@ someone@example.com"
       const chatInput = document.getElementById("chatInput");
       const chatSendButton = document.getElementById("chatSendButton");
       const selectAllNewButton = document.getElementById("selectAllNewButton");
-      const combinedSummaryButton = document.getElementById("combinedSummaryButton");
       const deleteSelectedButton = document.getElementById("deleteSelectedButton");
       const emailReportButton = document.getElementById("emailReportButton");
       const refineSummaryButton = document.getElementById("refineSummaryButton");
@@ -1187,17 +1228,22 @@ someone@example.com"
       const appModalInput = document.getElementById("appModalInput");
       const appModalCancelButton = document.getElementById("appModalCancelButton");
       const appModalConfirmButton = document.getElementById("appModalConfirmButton");
+      const doneToggleButton = document.getElementById("doneToggleButton");
+      const toggleDoneViewButton = document.getElementById("toggleDoneViewButton");
 
       let currentUserId = null;
       let currentProfile = null;
       let currentSummaryId = null;
       let currentDisplayedSummaryTitle = "";
       let currentDisplayedSummaryMarkdown = "";
-      let selectedSummaryIds = new Set();
+      let selectedSummaryIds = [];
       let currentSummaries = [];
+      let allSummaries = [];
       let activeModalResolver = null;
       let contactsLoadedForUser = null;
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+      let summaryViewRequestToken = 0;
+      let showingDoneSummaries = false;
 
       function getReadSummaryIds(userId) {
         try {
@@ -1212,8 +1258,56 @@ someone@example.com"
         localStorage.setItem(`readSummaries:${userId}`, JSON.stringify(Array.from(readIds)));
       }
 
+      function getDoneSummaryIds(userId) {
+        try {
+          const raw = localStorage.getItem(`doneSummaries:${userId}`);
+          return new Set(raw ? JSON.parse(raw) : []);
+        } catch {
+          return new Set();
+        }
+      }
+
+      function saveDoneSummaryIds(userId, doneIds) {
+        localStorage.setItem(`doneSummaries:${userId}`, JSON.stringify(Array.from(doneIds)));
+      }
+
       function updateSummariesHeading(unreadCount) {
+        if (showingDoneSummaries) {
+          summariesHeading.textContent = "Done";
+          return;
+        }
         summariesHeading.textContent = unreadCount > 0 ? `Summaries (${unreadCount} New)` : "Summaries";
+      }
+
+      function updateListStatusText(unreadCount = 0) {
+        if (selectedSummaryIds.length > 0) {
+          listStatus.textContent = `${selectedSummaryIds.length} Summaries Selected`;
+          return;
+        }
+        if (showingDoneSummaries) {
+          listStatus.textContent = `${currentSummaries.length} Done Summaries`;
+          return;
+        }
+        listStatus.textContent = unreadCount > 0 ? `${unreadCount} New Summaries` : "0 Summaries Selected";
+      }
+
+      function syncDoneViewControls() {
+        toggleDoneViewButton.textContent = showingDoneSummaries ? "Back to Summaries" : "See Done";
+        toggleDoneViewButton.classList.toggle("active", showingDoneSummaries);
+        doneToggleButton.setAttribute("aria-label", showingDoneSummaries ? "Mark as New" : "Mark as Done");
+        doneToggleButton.parentElement.dataset.tooltip = showingDoneSummaries ? "Mark as New" : "Mark as Done";
+        doneToggleButton.innerHTML = showingDoneSummaries
+          ? `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h16"></path>
+              <path d="M12 4v16"></path>
+            </svg>
+          `
+          : `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m5 12 4 4L19 6"></path>
+            </svg>
+          `;
       }
 
       function applyTheme(theme) {
@@ -1229,6 +1323,16 @@ someone@example.com"
           document.documentElement.style.setProperty("--accent-soft", "#e4ecef");
           document.documentElement.style.setProperty("--surface-soft", "#e8eeef");
           document.documentElement.style.setProperty("--surface-soft-2", "#dce5e8");
+        } else if (theme === "green") {
+          document.documentElement.style.setProperty("--bg", "#eef3ee");
+          document.documentElement.style.setProperty("--accent-soft", "#dfeadf");
+          document.documentElement.style.setProperty("--surface-soft", "#e6efe6");
+          document.documentElement.style.setProperty("--surface-soft-2", "#d8e5d8");
+        } else if (theme === "purple") {
+          document.documentElement.style.setProperty("--bg", "#f2eef6");
+          document.documentElement.style.setProperty("--accent-soft", "#e7ddf0");
+          document.documentElement.style.setProperty("--surface-soft", "#eee7f5");
+          document.documentElement.style.setProperty("--surface-soft-2", "#e1d7eb");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
@@ -1362,8 +1466,10 @@ someone@example.com"
         currentProfile = null;
         currentUserId = null;
         currentSummaryId = null;
-        selectedSummaryIds = new Set();
+        selectedSummaryIds = [];
         currentSummaries = [];
+        allSummaries = [];
+        showingDoneSummaries = false;
         contactsLoadedForUser = null;
         accountBar.hidden = true;
         profilePanel.hidden = true;
@@ -1377,6 +1483,7 @@ someone@example.com"
         listStatus.textContent = "Log in to view saved summaries.";
         detailStatus.textContent = "Log in to view a summary.";
         updateSummariesHeading(0);
+        syncDoneViewControls();
       }
 
       async function loadCurrentSession() {
@@ -1555,13 +1662,116 @@ someone@example.com"
         return sections.join("\n\n").trim();
       }
 
+      function hasSelectedSummary(summaryId) {
+        return selectedSummaryIds.includes(summaryId);
+      }
+
+      function addSelectedSummary(summaryId) {
+        if (!hasSelectedSummary(summaryId)) {
+          selectedSummaryIds.push(summaryId);
+        }
+      }
+
+      function removeSelectedSummary(summaryId) {
+        selectedSummaryIds = selectedSummaryIds.filter((id) => id !== summaryId);
+      }
+
+      function getVisibleSummaries() {
+        const doneIds = getDoneSummaryIds(currentUserId);
+        return allSummaries.filter((summary) =>
+          showingDoneSummaries ? doneIds.has(summary.summary_id) : !doneIds.has(summary.summary_id)
+        );
+      }
+
+      function syncSummaryCheckboxes() {
+        document.querySelectorAll(".summary-card").forEach((card) => {
+          const checkbox = card.querySelector(".summary-check");
+          if (checkbox) {
+            checkbox.checked = hasSelectedSummary(card.dataset.summaryId);
+          }
+        });
+      }
+
+      function renderSummaryList(readSummaryIds) {
+        currentSummaries = getVisibleSummaries();
+        summaryList.innerHTML = "";
+
+        currentSummaries.forEach((summary) => {
+          const isUnread = !readSummaryIds.has(summary.summary_id);
+          const card = document.createElement("div");
+          card.className = "summary-card";
+          card.dataset.summaryId = summary.summary_id;
+          card.innerHTML = `
+            <input class="summary-check" type="checkbox" aria-label="Select summary" />
+            <div class="summary-card-main">
+              ${!showingDoneSummaries && isUnread ? '<div class="summary-unread">New</div>' : ''}
+              <h3>${escapeHtml(formatSummaryCardTitle(summary))}</h3>
+              <div class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</div>
+            </div>
+          `;
+
+          const checkbox = card.querySelector(".summary-check");
+
+          card.addEventListener("click", async () => {
+            document.querySelectorAll(".summary-card").forEach((item) => item.classList.remove("active"));
+            card.classList.add("active");
+            if (hasSelectedSummary(summary.summary_id)) {
+              removeSelectedSummary(summary.summary_id);
+              checkbox.checked = false;
+            } else {
+              addSelectedSummary(summary.summary_id);
+              checkbox.checked = true;
+            }
+            if (!showingDoneSummaries && !readSummaryIds.has(summary.summary_id)) {
+              readSummaryIds.add(summary.summary_id);
+              saveReadSummaryIds(currentUserId, readSummaryIds);
+              const badge = card.querySelector(".summary-unread");
+              if (badge) badge.remove();
+              updateSummariesHeading(Math.max(0, allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length));
+            }
+            updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
+            await updateSelectedSummaryView();
+          });
+
+          summaryList.appendChild(card);
+        });
+      }
+
+      function renderEmptySummaryState() {
+        currentSummaryId = null;
+        currentDisplayedSummaryTitle = "";
+        currentDisplayedSummaryMarkdown = "";
+        detailStatus.textContent = "Select a summary to view it.";
+        summaryDetail.className = "";
+        summaryDetail.innerHTML = "No summary selected yet.";
+        sendSummaryEmailButton.hidden = true;
+      }
+
+      async function updateSelectedSummaryView() {
+        if (!requireSignedIn()) return;
+        const selectedCount = selectedSummaryIds.length;
+
+        if (!selectedCount) {
+          renderEmptySummaryState();
+          return;
+        }
+
+        if (selectedCount === 1) {
+          await loadSummaryDetail(selectedSummaryIds[0], { preserveSelection: true });
+          return;
+        }
+
+        await generateCombinedSummary({ summaryIds: [...selectedSummaryIds], automatic: true });
+      }
+
       async function loadSummaries() {
         if (!requireSignedIn()) return;
         currentSummaryId = null;
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
-        selectedSummaryIds = new Set();
+        selectedSummaryIds = [];
         currentSummaries = [];
+        allSummaries = [];
         const readSummaryIds = getReadSummaryIds(currentUserId);
         listStatus.textContent = `Loading summaries for ${currentUserId}...`;
         summaryList.innerHTML = "";
@@ -1578,56 +1788,23 @@ someone@example.com"
         }
 
         const summaries = data.summaries || [];
-        currentSummaries = summaries;
-        if (!summaries.length) {
-          listStatus.textContent = data.message || "No summaries found.";
-          return;
+        allSummaries = summaries;
+        const summaryIds = new Set(summaries.map((summary) => summary.summary_id));
+        const doneSummaryIds = getDoneSummaryIds(currentUserId);
+        const reconciledDoneIds = new Set([...doneSummaryIds].filter((summaryId) => summaryIds.has(summaryId)));
+        if (reconciledDoneIds.size !== doneSummaryIds.size) {
+          saveDoneSummaryIds(currentUserId, reconciledDoneIds);
         }
 
         const unreadCount = summaries.filter((summary) => !readSummaryIds.has(summary.summary_id)).length;
         updateSummariesHeading(unreadCount);
-        listStatus.textContent = unreadCount > 0 ? `${unreadCount} New Summaries` : "No New Summaries";
+        syncDoneViewControls();
+        updateListStatusText(unreadCount);
+        renderSummaryList(readSummaryIds);
 
-        summaries.forEach((summary) => {
-          const isUnread = !readSummaryIds.has(summary.summary_id);
-          const card = document.createElement("div");
-          card.className = "summary-card";
-          card.dataset.summaryId = summary.summary_id;
-          card.innerHTML = `
-            <input class="summary-check" type="checkbox" aria-label="Select summary" />
-            <div class="summary-card-main">
-              ${isUnread ? '<div class="summary-unread">New</div>' : ''}
-              <h3>${escapeHtml(formatSummaryCardTitle(summary))}</h3>
-              <div class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</div>
-            </div>
-          `;
-
-          const checkbox = card.querySelector(".summary-check");
-          const syncSelection = (checked) => {
-            checkbox.checked = checked;
-            if (checked) {
-              selectedSummaryIds.add(summary.summary_id);
-            } else {
-              selectedSummaryIds.delete(summary.summary_id);
-            }
-          };
-
-          card.addEventListener("click", () => {
-            document.querySelectorAll(".summary-card").forEach((item) => item.classList.remove("active"));
-            card.classList.add("active");
-            syncSelection(!checkbox.checked);
-            if (!readSummaryIds.has(summary.summary_id)) {
-              readSummaryIds.add(summary.summary_id);
-              saveReadSummaryIds(currentUserId, readSummaryIds);
-              const badge = card.querySelector(".summary-unread");
-              if (badge) badge.remove();
-              updateSummariesHeading(Math.max(0, summaries.filter((item) => !readSummaryIds.has(item.summary_id)).length));
-            }
-            loadSummaryDetail(summary.summary_id);
-          });
-
-          summaryList.appendChild(card);
-        });
+        if (!currentSummaries.length) {
+          listStatus.textContent = showingDoneSummaries ? "0 Done Summaries" : (data.message || "No current summaries.");
+        }
       }
 
       async function loadWhitelist(force = false) {
@@ -1754,7 +1931,7 @@ someone@example.com"
 
       async function deleteSelectedSummaries() {
         if (!requireSignedIn()) return;
-        const summaryIds = Array.from(selectedSummaryIds);
+        const summaryIds = [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
           return;
@@ -1767,6 +1944,7 @@ someone@example.com"
 
         let removedCount = 0;
         try {
+          const doneIds = getDoneSummaryIds(currentUserId);
           const results = await Promise.all(
             summaryIds.map(async (summaryId) => {
               const response = await fetch(
@@ -1777,6 +1955,8 @@ someone@example.com"
             })
           );
           removedCount = results.filter((result) => result.ok).length;
+          results.filter((result) => result.ok).forEach((result) => doneIds.delete(result.summaryId));
+          saveDoneSummaryIds(currentUserId, doneIds);
           if (results.some((result) => result.summaryId === currentSummaryId && result.ok)) {
             currentSummaryId = null;
             summaryDetail.innerHTML = "No summary selected yet.";
@@ -1789,13 +1969,13 @@ someone@example.com"
         }
 
         setRunStatus(`Deleted ${removedCount} selected summary item(s).`);
-        selectedSummaryIds = new Set();
+        selectedSummaryIds = [];
         await loadSummaries();
       }
 
       async function sendCombinedReportEmail() {
         if (!requireSignedIn()) return;
-        const summaryIds = Array.from(selectedSummaryIds);
+        const summaryIds = [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
           return;
@@ -1874,7 +2054,9 @@ someone@example.com"
         }
       }
 
-      async function loadSummaryDetail(summaryId) {
+      async function loadSummaryDetail(summaryId, options = {}) {
+        const { preserveSelection = false } = options;
+        const requestToken = ++summaryViewRequestToken;
         currentSummaryId = summaryId;
         detailStatus.textContent = "Loading summary...";
         summaryDetail.innerHTML = "";
@@ -1883,6 +2065,9 @@ someone@example.com"
           `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`
         );
         const summary = await response.json();
+        if (requestToken !== summaryViewRequestToken) {
+          return;
+        }
 
         if (!response.ok) {
           detailStatus.textContent = "Failed to load summary detail.";
@@ -1912,21 +2097,29 @@ someone@example.com"
           ${renderSection("Attachment Summary", summary.attachment_summary)}
           ${renderSection("Bottom Line", summary.bottom_line)}
         `;
+
+        if (!preserveSelection) {
+          selectedSummaryIds = [summaryId];
+          syncSummaryCheckboxes();
+        }
       }
 
-      async function generateCombinedSummary() {
+      async function generateCombinedSummary(options = {}) {
         if (!requireSignedIn()) return;
-        const summaryIds = Array.from(selectedSummaryIds);
+        const summaryIds = options.summaryIds || [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
           return;
         }
 
-        combinedSummaryButton.disabled = true;
+        const requestToken = ++summaryViewRequestToken;
+        const automatic = Boolean(options.automatic);
         sendSummaryEmailButton.hidden = true;
         detailStatus.textContent = `Building report from ${summaryIds.length} selected summaries...`;
         summaryDetail.innerHTML = "Generating combined report...";
-        setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
+        if (!automatic) {
+          setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
+        }
 
         try {
           const response = await fetch("/summaries/combined", {
@@ -1938,6 +2131,9 @@ someone@example.com"
             }),
           });
           const data = await response.json();
+          if (requestToken !== summaryViewRequestToken) {
+            return;
+          }
           if (!response.ok) {
             detailStatus.textContent = "Failed to build combined summary.";
             summaryDetail.textContent = data.detail || "Unknown error.";
@@ -1948,22 +2144,25 @@ someone@example.com"
           currentSummaryId = null;
           currentDisplayedSummaryTitle = data.title || "Combined Report";
           currentDisplayedSummaryMarkdown = data.combined_markdown || "";
-          detailStatus.textContent = `Combined report from ${data.count} selected summaries.`;
+          detailStatus.textContent = "";
           summaryDetail.className = "";
           summaryDetail.innerHTML = `
             <div class="detail-section">
               <h3>${escapeHtml(data.title || "Combined Summary")}</h3>
-              <p class="meta">${escapeHtml(data.summary_ids.join(", "))}</p>
             </div>
             ${renderMarkdownSummary(data.combined_markdown || "")}
           `;
-          setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
+          if (!automatic) {
+            setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
+          }
         } catch (error) {
+          if (requestToken !== summaryViewRequestToken) {
+            return;
+          }
           detailStatus.textContent = "Failed to build combined summary.";
           summaryDetail.textContent = error.message;
           setRunStatus(`Failed to build combined summary: ${error.message}`);
         } finally {
-          combinedSummaryButton.disabled = false;
         }
       }
 
@@ -2080,20 +2279,51 @@ someone@example.com"
 
         const allSelected =
           allSummaryIds.length > 0 &&
-          allSummaryIds.every((summaryId) => selectedSummaryIds.has(summaryId));
+          allSummaryIds.every((summaryId) => hasSelectedSummary(summaryId));
 
-        selectedSummaryIds = allSelected ? new Set() : new Set(allSummaryIds);
-        document.querySelectorAll(".summary-card").forEach((card) => {
-          const checkbox = card.querySelector(".summary-check");
-          if (checkbox) {
-            checkbox.checked = selectedSummaryIds.has(card.dataset.summaryId);
-          }
-        });
+        selectedSummaryIds = allSelected ? [] : [...allSummaryIds];
+        syncSummaryCheckboxes();
         setRunStatus(
           allSelected
             ? "Deselected all summary items."
             : `Selected ${allSummaryIds.length} summary item(s).`
         );
+        updateListStatusText(currentSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        updateSelectedSummaryView();
+      }
+
+      function toggleDoneView() {
+        if (!requireSignedIn()) return;
+        showingDoneSummaries = !showingDoneSummaries;
+        selectedSummaryIds = [];
+        syncDoneViewControls();
+        renderSummaryList(getReadSummaryIds(currentUserId));
+        updateSummariesHeading(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        updateListStatusText(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        renderEmptySummaryState();
+      }
+
+      function toggleDoneForSelectedSummaries() {
+        if (!requireSignedIn()) return;
+        if (!selectedSummaryIds.length) {
+          setRunStatus(showingDoneSummaries ? "Select at least one done summary first." : "Select at least one summary first.");
+          return;
+        }
+
+        const doneIds = getDoneSummaryIds(currentUserId);
+        if (showingDoneSummaries) {
+          selectedSummaryIds.forEach((summaryId) => doneIds.delete(summaryId));
+          setRunStatus(`Moved ${selectedSummaryIds.length} summary item(s) back to active.`);
+        } else {
+          selectedSummaryIds.forEach((summaryId) => doneIds.add(summaryId));
+          setRunStatus(`Marked ${selectedSummaryIds.length} summary item(s) as done.`);
+        }
+        saveDoneSummaryIds(currentUserId, doneIds);
+        selectedSummaryIds = [];
+        renderSummaryList(getReadSummaryIds(currentUserId));
+        updateSummariesHeading(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        updateListStatusText(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        renderEmptySummaryState();
       }
 
       async function sendCurrentSummaryEmail() {
@@ -2160,7 +2390,8 @@ someone@example.com"
       });
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
-      combinedSummaryButton.addEventListener("click", generateCombinedSummary);
+      doneToggleButton.addEventListener("click", toggleDoneForSelectedSummaries);
+      toggleDoneViewButton.addEventListener("click", toggleDoneView);
       deleteSelectedButton.addEventListener("click", deleteSelectedSummaries);
       emailReportButton.addEventListener("click", sendCombinedReportEmail);
       refineSummaryButton.addEventListener("click", refineCurrentSummary);
@@ -2178,6 +2409,9 @@ someone@example.com"
           addSummaryPreference();
         }
       });
+      setPanelCollapsed(contactsBody, toggleContactsButton, true);
+      setPanelCollapsed(chatBody, toggleChatButton, true);
+      syncDoneViewControls();
       applyTheme(currentTheme);
       loadCurrentSession();
     </script>

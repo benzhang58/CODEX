@@ -208,6 +208,11 @@ def dashboard_preview() -> FileResponse:
     return FileResponse(STATIC_DIR / "preview.html")
 
 
+@app.get("/dashboard-done-preview")
+def dashboard_done_preview() -> FileResponse:
+    return FileResponse(STATIC_DIR / "done_preview.html")
+
+
 @app.get("/settings")
 def settings_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "settings.html")
