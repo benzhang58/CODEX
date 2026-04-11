@@ -61,6 +61,8 @@ APP_DATA_DIR = APP_STORAGE_DIR / "app"
 DB_PATH = APP_DATA_DIR / "app.db"
 SESSION_COOKIE_NAME = "email_dashboard_session"
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
+GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
+GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
 GOOGLE_OAUTH_SCOPES = [
     "openid",
     "email",
@@ -286,18 +288,40 @@ def auth_google_start(next: str = "/dashboard") -> RedirectResponse:
         "&prompt=consent"
         f"&state={quote(state, safe='')}"
     )
-    return RedirectResponse(auth_url)
+    response = RedirectResponse(auth_url)
+    response.set_cookie(
+        GOOGLE_OAUTH_STATE_COOKIE,
+        state,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        domain=SESSION_COOKIE_DOMAIN,
+        path="/",
+        max_age=600,
+    )
+    response.set_cookie(
+        GOOGLE_OAUTH_NEXT_COOKIE,
+        next,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        domain=SESSION_COOKIE_DOMAIN,
+        path="/",
+        max_age=600,
+    )
+    return response
 
 
 @app.get("/auth/google/callback")
-def auth_google_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None) -> RedirectResponse:
+def auth_google_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None) -> RedirectResponse:
     if error:
         return RedirectResponse(f"/dashboard?google_error={quote(error, safe='')}")
-    if not code or not state or state not in GOOGLE_OAUTH_STATE:
+    cookie_state = request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)
+    if not code or not state or not cookie_state or state != cookie_state:
         return RedirectResponse("/dashboard?google_error=invalid_callback")
 
     config = get_google_oauth_config()
-    next_url = GOOGLE_OAUTH_STATE.pop(state, {}).get("next") or "/dashboard"
+    next_url = request.cookies.get(GOOGLE_OAUTH_NEXT_COOKIE) or GOOGLE_OAUTH_STATE.pop(state, {}).get("next") or "/dashboard"
 
     try:
         token_payload = post_form_json(
@@ -311,18 +335,30 @@ def auth_google_callback(code: Optional[str] = None, state: Optional[str] = None
             },
         )
     except HTTPException:
-        return RedirectResponse("/dashboard?google_error=token_exchange_failed")
+        response = RedirectResponse("/dashboard?google_error=token_exchange_failed")
+        response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
     access_token = token_payload.get("access_token")
     if not access_token:
-        return RedirectResponse("/dashboard?google_error=missing_access_token")
+        response = RedirectResponse("/dashboard?google_error=missing_access_token")
+        response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
 
     try:
         userinfo = get_json_with_bearer("https://openidconnect.googleapis.com/v1/userinfo", access_token)
     except HTTPException:
-        return RedirectResponse("/dashboard?google_error=userinfo_failed")
+        response = RedirectResponse("/dashboard?google_error=userinfo_failed")
+        response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
     email = str(userinfo.get("email", "")).strip().lower()
     if not email:
-        return RedirectResponse("/dashboard?google_error=no_email_returned")
+        response = RedirectResponse("/dashboard?google_error=no_email_returned")
+        response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
 
     profile = find_profile_by_email(email)
     if not profile:
@@ -359,6 +395,8 @@ def auth_google_callback(code: Optional[str] = None, state: Optional[str] = None
 
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
+    response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+    response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
     return response
 
 
