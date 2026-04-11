@@ -285,7 +285,6 @@ def auth_google_start(next: str = "/dashboard") -> RedirectResponse:
         "&response_type=code"
         f"&scope={quote(scope, safe='')}"
         "&access_type=offline"
-        "&prompt=consent"
         f"&state={quote(state, safe='')}"
     )
     response = RedirectResponse(auth_url)
