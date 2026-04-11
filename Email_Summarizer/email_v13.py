@@ -103,6 +103,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
     app_db_path = cwd / "data" / "app" / "app.db"
     payload = None
     source_label = ""
+    config_reference_path: Optional[Path] = None
 
     if app_db_path.exists():
         connection = sqlite3.connect(app_db_path)
@@ -121,6 +122,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
                 "settings": json.loads(row["settings_json"] or "{}"),
             }
             source_label = f"database profile: {app_db_path}"
+            config_reference_path = app_db_path
 
     if payload is None:
         profile_path = cwd / "data" / "users" / user_id / "profile.json"
@@ -128,6 +130,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
             raise FileNotFoundError(f"No profile.json found for user '{user_id}'.")
         payload = json.loads(profile_path.read_text(encoding="utf-8"))
         source_label = f"profile: {profile_path}"
+        config_reference_path = profile_path
 
     settings = payload.get("settings") or {}
     email_value = str(payload.get("email", "")).strip().lower()
@@ -192,7 +195,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
         os.environ.setdefault("PROFILE_EMAIL", str(payload["email"]))
 
     logger.info(f"Loaded config from {source_label}")
-    return cwd / "data" / "users" / user_id / "profile.json"
+    return config_reference_path or base_env_path or cwd
 
 
 def select_client_env() -> Path:
