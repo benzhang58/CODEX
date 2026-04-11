@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Email Summaries Dashboard</title>
+    <title>Email Dashboard</title>
     <style>
       :root {
         --bg: #f5f5f7;
@@ -434,6 +434,9 @@
       .summary-list {
         display: grid;
         gap: 12px;
+        max-height: 72vh;
+        overflow-y: auto;
+        padding-right: 6px;
       }
 
       .summary-card {
@@ -507,6 +510,12 @@
       .detail-empty {
         color: var(--muted);
         font-style: italic;
+      }
+
+      #summaryDetail {
+        max-height: 72vh;
+        overflow-y: auto;
+        padding-right: 6px;
       }
 
       .detail-section {
@@ -794,7 +803,7 @@
       </div>
 
       <div class="topbar">
-        <h1 class="title">Email Summaries Dashboard</h1>
+        <h1 class="title">Email Dashboard</h1>
         <input id="userIdInput" value="" placeholder="Signed in account" readonly hidden />
         <div class="inline-field">
           <label for="daysBackInput">Days back to check</label>
@@ -1122,8 +1131,8 @@ someone@example.com"
         userIdInput.value = profile.user_id;
         accountName.textContent = profile.email || profile.user_id;
         accountEmail.textContent = profile.google_connected
-          ? `Signed in${profile.user_id ? ` as ${profile.user_id}` : ""} · Google connected`
-          : `Signed in${profile.user_id ? ` as ${profile.user_id}` : ""}`;
+          ? "Signed in · Google connected"
+          : "Signed in";
         accountBar.hidden = false;
         profilePanel.hidden = false;
         setPanelCollapsed(profileBody, toggleProfileButton, true);
@@ -1164,7 +1173,7 @@ someone@example.com"
           await loadProfile();
           await loadWhitelist();
           await loadSummaries();
-          setRunStatus(`Dashboard ready for ${data.profile.user_id}.`);
+          setRunStatus("Dashboard ready.");
           return true;
         }
 
@@ -1452,18 +1461,18 @@ someone@example.com"
 
       async function loadWhitelist() {
         if (!requireSignedIn()) return;
-        setRunStatus(`Loading contacts for ${currentUserId}...`);
+        setRunStatus("Loading contacts...");
 
         const response = await fetch(`/whitelist?user_id=${encodeURIComponent(currentUserId)}`);
         const data = await response.json();
 
         if (!response.ok) {
-          setRunStatus(data.detail || `Failed to load contacts for ${currentUserId}.`);
+          setRunStatus(data.detail || "Failed to load contacts.");
           return;
         }
 
         whitelistTextarea.value = (data.contacts || []).join("\n");
-        setRunStatus(`Loaded ${data.contacts.length} contact(s).`);
+        setRunStatus(`${data.contacts.length} contacts loaded.`);
       }
 
       async function saveWhitelist() {
@@ -1473,7 +1482,7 @@ someone@example.com"
           .map((line) => line.trim())
           .filter(Boolean);
 
-        setRunStatus(`Saving contacts for ${currentUserId}...`, true);
+        setRunStatus("Saving contacts...", true);
         saveWhitelistButton.disabled = true;
 
         try {
@@ -1488,12 +1497,12 @@ someone@example.com"
           const data = await response.json();
 
           if (!response.ok) {
-            setRunStatus(data.detail || `Failed to save contacts for ${currentUserId}.`);
+            setRunStatus(data.detail || "Failed to save contacts.");
             return;
           }
 
           whitelistTextarea.value = (data.contacts || []).join("\n");
-          setRunStatus(`Saved ${data.contacts.length} contact(s).`);
+          setRunStatus("Contacts updated.");
         } catch (error) {
           setRunStatus(`Failed to save contacts: ${error.message}`);
         } finally {
@@ -1506,7 +1515,7 @@ someone@example.com"
         if (!requireSignedIn()) return;
         const daysBack = Number(daysBackInput.value || 7);
         setRunStatus(
-          `Running summarizer for ${currentUserId} over the last ${daysBack} day(s)...\n${estimateRunTime(daysBack)}`,
+          `Checking the last ${daysBack} day(s) for new emails...\n${estimateRunTime(daysBack)}`,
           true
         );
         runButton.disabled = true;
@@ -1524,13 +1533,13 @@ someone@example.com"
           const data = await response.json();
           if (!response.ok) {
             const detail = data.detail || data;
-            setRunStatus(`Run failed for ${currentUserId}. ${detail.stderr || "No error details returned."}`);
+            setRunStatus(`Run failed. ${detail.stderr || "No error details returned."}`);
             return;
           }
 
           const stats = data.stats || {};
           setRunStatus(
-            `Run finished for ${currentUserId}. New emails summarized: ${stats.new_email_records_saved ?? 0}. Already accounted for: ${stats.already_processed_count ?? 0}. New contact summaries added: ${stats.new_contact_summaries_saved ?? 0}.`
+            `Summary run complete. ${stats.new_email_records_saved ?? 0} new emails summarized. ${stats.already_processed_count ?? 0} already covered. ${stats.new_contact_summaries_saved ?? 0} new summaries added.`
           );
           await loadSummaries();
         } catch (error) {
@@ -1629,7 +1638,7 @@ someone@example.com"
         }
 
         emailReportButton.disabled = true;
-        setRunStatus(`Sending combined report for ${summaryIds.length} selected item(s)...`, true);
+        setRunStatus(`Sending report for ${summaryIds.length} selected summaries...`, true);
 
         try {
           const response = await fetch("/summaries/combined/send-email", {
@@ -1661,7 +1670,7 @@ someone@example.com"
 
         appendChatMessage("user", question);
         chatInput.value = "";
-        chatStatus.textContent = `Thinking over all saved summaries for ${currentUserId}...`;
+        chatStatus.textContent = "Thinking...";
         chatSendButton.disabled = true;
 
         try {
@@ -1686,7 +1695,7 @@ someone@example.com"
             data.attachment_matches && data.attachment_matches.length
               ? ` ${data.attachment_matches.length} matching attachment(s) linked below.`
               : "";
-          chatStatus.textContent = `Answer generated using ${data.summary_count} saved summary file(s) and ${data.email_count || 0} email record(s).${attachmentNote}`;
+          chatStatus.textContent = `Answer generated from ${data.summary_count} saved summaries and ${data.email_count || 0} emails.${attachmentNote}`;
         } catch (error) {
           appendChatMessage("assistant", `Chat request failed: ${error.message}`);
           chatStatus.textContent = "Chat request failed.";
@@ -1697,7 +1706,7 @@ someone@example.com"
 
       async function loadSummaryDetail(summaryId) {
         currentSummaryId = summaryId;
-        detailStatus.textContent = `Loading ${summaryId}...`;
+        detailStatus.textContent = "Loading summary...";
         summaryDetail.innerHTML = "";
 
         const response = await fetch(
@@ -1712,7 +1721,7 @@ someone@example.com"
           return;
         }
 
-        detailStatus.textContent = `Viewing ${summary.filename}`;
+        detailStatus.textContent = "";
         currentDisplayedSummaryTitle = summary.title || summary.summary_id || "Summary";
         currentDisplayedSummaryMarkdown =
           summary.summary_markdown ||
@@ -1745,9 +1754,9 @@ someone@example.com"
 
         combinedSummaryButton.disabled = true;
         sendSummaryEmailButton.hidden = true;
-        detailStatus.textContent = `Building combined summary from ${summaryIds.length} selected item(s)...`;
+        detailStatus.textContent = `Building report from ${summaryIds.length} selected summaries...`;
         summaryDetail.innerHTML = "Generating combined report...";
-        setRunStatus(`Generating combined summary from ${summaryIds.length} selected item(s)...`, true);
+        setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
 
         try {
           const response = await fetch("/summaries/combined", {
@@ -1769,7 +1778,7 @@ someone@example.com"
           currentSummaryId = null;
           currentDisplayedSummaryTitle = data.title || "Combined Report";
           currentDisplayedSummaryMarkdown = data.combined_markdown || "";
-          detailStatus.textContent = `Viewing combined summary for ${data.count} selected item(s).`;
+          detailStatus.textContent = `Combined report from ${data.count} selected summaries.`;
           summaryDetail.className = "";
           summaryDetail.innerHTML = `
             <div class="detail-section">
@@ -1778,7 +1787,7 @@ someone@example.com"
             </div>
             ${renderMarkdownSummary(data.combined_markdown || "")}
           `;
-          setRunStatus(`Combined summary generated from ${data.count} selected item(s).`);
+          setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
         } catch (error) {
           detailStatus.textContent = "Failed to build combined summary.";
           summaryDetail.textContent = error.message;
@@ -1851,7 +1860,7 @@ someone@example.com"
             currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
           }
           renderSummaryPreferences((data.summary_style_preferences || currentProfile?.settings?.summary_style_preferences || []));
-          detailStatus.textContent = "Viewing refined summary.";
+          detailStatus.textContent = "Refined summary ready.";
           summaryDetail.className = "";
           summaryDetail.innerHTML = `
             <div class="detail-section">
