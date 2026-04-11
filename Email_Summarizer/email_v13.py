@@ -100,7 +100,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
     if base_env_path.exists():
         load_dotenv(base_env_path, override=True)
 
-    app_db_path = cwd / "data" / "app" / "app.db"
+    app_db_path = APP_STORAGE_DIR / "app" / "app.db"
     payload = None
     source_label = ""
     config_reference_path: Optional[Path] = None
@@ -125,7 +125,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
             config_reference_path = app_db_path
 
     if payload is None:
-        profile_path = cwd / "data" / "users" / user_id / "profile.json"
+        profile_path = APP_STORAGE_DIR / "users" / user_id / "profile.json"
         if not profile_path.exists():
             raise FileNotFoundError(f"No profile.json found for user '{user_id}'.")
         payload = json.loads(profile_path.read_text(encoding="utf-8"))
