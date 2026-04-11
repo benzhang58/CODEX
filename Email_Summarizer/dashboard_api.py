@@ -8,6 +8,7 @@ import smtplib
 import sqlite3
 import subprocess
 import unicodedata
+from functools import lru_cache
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -200,6 +201,11 @@ def login_page() -> FileResponse:
 @app.get("/dashboard")
 def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/dashboard-preview")
+def dashboard_preview() -> FileResponse:
+    return FileResponse(STATIC_DIR / "preview.html")
 
 
 @app.get("/signup")
@@ -1015,9 +1021,14 @@ def summarize_preview(content: str) -> str:
     return lines[0][:280]
 
 
+@lru_cache(maxsize=512)
+def read_text_cached(path_str: str, mtime_ns: int, size: int) -> str:
+    return Path(path_str).read_text(encoding="utf-8")
+
+
 def load_summary_file(summary_path: Path) -> Dict[str, Any]:
-    content = summary_path.read_text(encoding="utf-8")
     stat = summary_path.stat()
+    content = read_text_cached(str(summary_path), stat.st_mtime_ns, stat.st_size)
 
     return {
         "summary_id": summary_path.stem,
@@ -1035,14 +1046,26 @@ def load_summary_file(summary_path: Path) -> Dict[str, Any]:
 
 
 def load_summary_json(summary_path: Path) -> Dict[str, Any]:
-    payload = json.loads(summary_path.read_text(encoding="utf-8"))
     stat = summary_path.stat()
+    payload = json.loads(read_text_cached(str(summary_path), stat.st_mtime_ns, stat.st_size))
     payload.setdefault("summary_id", summary_path.stem)
     payload.setdefault("user_id", summary_path.parent.parent.name)
     payload.setdefault("filename", summary_path.name)
     payload.setdefault("preview", payload.get("executive_summary") or payload.get("bottom_line") or "")
     payload.setdefault("updated_at", payload.get("created_at") or stat.st_mtime)
     return payload
+
+
+def load_summary_json_preview(summary_path: Path) -> Dict[str, Any]:
+    payload = load_summary_json(summary_path)
+    return {
+        "summary_id": payload.get("summary_id", summary_path.stem),
+        "user_id": payload.get("user_id", summary_path.parent.parent.name),
+        "filename": payload.get("filename", summary_path.name),
+        "title": payload.get("title", summary_path.stem),
+        "preview": payload.get("preview", ""),
+        "updated_at": payload.get("updated_at"),
+    }
 
 
 def load_processed_uids_for_user(user_id: str) -> List[str]:
@@ -1075,7 +1098,8 @@ def get_chat_ready_summaries(user_id: str) -> List[Dict[str, Any]]:
 
 
 def load_email_json(email_path: Path) -> Dict[str, Any]:
-    payload = json.loads(email_path.read_text(encoding="utf-8"))
+    stat = email_path.stat()
+    payload = json.loads(read_text_cached(str(email_path), stat.st_mtime_ns, stat.st_size))
     payload.setdefault("email_id", email_path.stem)
     return payload
 
@@ -1799,17 +1823,14 @@ def list_summaries(request: Request, user_id: Optional[str] = Query(None, descri
     if json_summaries_dir.exists():
         summary_files = sorted(json_summaries_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
         summaries = [
-            load_summary_json(path)
+            load_summary_json_preview(path)
             for path in summary_files
             if not path.stem.startswith("overall_master_")
         ]
-        for summary in summaries:
-            summary.pop("summary_markdown", None)
-            summary.pop("contact_summaries", None)
         return {"user_id": user_id, "count": len(summaries), "summaries": summaries, "source": "json"}
 
     if not summaries_dir.exists():
-        return {"user_id": user_id, "summaries": [], "message": f"No summaries folder found for user '{user_id}'."}
+        return {"user_id": user_id, "summaries": [], "message": "No current summaries."}
 
     summary_files = sorted(summaries_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
     summaries = [load_summary_file(path) for path in summary_files]

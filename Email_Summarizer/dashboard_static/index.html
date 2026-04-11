@@ -6,16 +6,23 @@
     <title>Email Dashboard</title>
     <style>
       :root {
-        --bg: #f5f5f7;
-        --panel: rgba(255, 255, 255, 0.9);
-        --border: #d9d9de;
-        --text: #111111;
-        --muted: #6e6e73;
+        --bg: #f3f3f0;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-strong: rgba(255, 255, 255, 0.96);
+        --border: rgba(17, 17, 17, 0.1);
+        --border-strong: rgba(17, 17, 17, 0.18);
+        --text: #101010;
+        --muted: #6e6e68;
         --accent: #111111;
-        --accent-soft: #f0f0f2;
-        --surface-soft: #fafafa;
-        --shadow: 0 14px 40px rgba(17, 17, 17, 0.06);
+        --accent-soft: #ecebe6;
+        --surface-soft: #efeee9;
+        --surface-soft-2: #e7e5de;
+        --shadow: 0 30px 80px rgba(15, 15, 15, 0.08);
         --top-card-height: 92px;
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
       }
 
       * {
@@ -24,26 +31,43 @@
 
       body {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         color: var(--text);
         background:
-          radial-gradient(circle at top left, rgba(0, 0, 0, 0.035), transparent 32%),
-          linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+          radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 26%),
+          radial-gradient(circle at top right, rgba(0, 0, 0, 0.025), transparent 22%),
+          linear-gradient(180deg, #fbfbf9 0%, var(--bg) 100%);
       }
 
       .page {
-        max-width: 1200px;
+        max-width: 1380px;
         margin: 0 auto;
-        padding: 24px;
+        padding: 28px;
         display: grid;
-        gap: 20px;
+        gap: 22px;
       }
 
       .topbar {
         display: flex;
-        gap: 12px;
-        align-items: flex-end;
+        gap: 14px;
+        align-items: center;
         flex-wrap: wrap;
+        padding: 22px 24px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--panel);
+        backdrop-filter: blur(18px);
+        box-shadow: var(--shadow);
+      }
+
+      .title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-right: auto;
+        min-width: 0;
+        flex-wrap: wrap;
+        min-height: 54px;
       }
 
       .controls {
@@ -63,7 +87,7 @@
         height: 42px;
         min-width: 42px;
         padding: 0;
-        border-radius: 12px;
+        border-radius: 14px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -112,7 +136,7 @@
       .auth-grid {
         display: grid;
         grid-template-columns: 1fr;
-        gap: 20px;
+        gap: 22px;
       }
 
       .account-bar {
@@ -123,22 +147,23 @@
         width: 100%;
         max-width: 100%;
         min-height: var(--top-card-height);
-        padding: 10px 14px;
+        padding: 14px 18px;
       }
 
       .account-copy {
         display: grid;
-        gap: 2px;
+        gap: 4px;
       }
 
       .account-copy strong {
-        font-size: 14px;
+        font-size: 18px;
         line-height: 1.2;
+        letter-spacing: -0.03em;
       }
 
       .account-copy .meta {
         margin-bottom: 0;
-        font-size: 12px;
+        font-size: 13px;
       }
 
       .account-actions {
@@ -150,8 +175,8 @@
 
       .account-actions button {
         min-height: 38px;
-        padding-top: 9px;
-        padding-bottom: 9px;
+        padding-top: 10px;
+        padding-bottom: 10px;
       }
 
       .top-account-grid {
@@ -175,22 +200,6 @@
         align-items: center;
       }
 
-      .profile-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 14px;
-      }
-
-      .field-group {
-        display: grid;
-        gap: 6px;
-      }
-
-      .field-group label {
-        font-size: 14px;
-        color: var(--muted);
-      }
-
       .inline-field {
         display: grid;
         gap: 4px;
@@ -202,17 +211,30 @@
         line-height: 1.2;
       }
 
-      .field-group.full-width {
-        grid-column: 1 / -1;
-      }
-
-      .profile-actions {
-        margin-top: 14px;
-        margin-bottom: 0;
-      }
-
       .profile-preferences {
-        margin-top: 18px;
+        margin-top: 0;
+      }
+
+      .settings-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.9);
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .settings-badge svg {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
 
       .profile-preferences .markdown-box {
@@ -239,10 +261,10 @@
         align-items: center;
         justify-content: space-between;
         gap: 10px;
-        padding: 10px 12px;
+        padding: 12px 14px;
         border: 1px solid var(--border);
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.92);
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.9);
       }
 
       .preference-item span {
@@ -279,9 +301,9 @@
         align-items: center;
         justify-content: center;
         padding: 11px 14px;
-        border-radius: 14px;
+        border-radius: 16px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.9);
         color: var(--text);
         text-decoration: none;
         font-weight: 600;
@@ -303,27 +325,82 @@
       }
 
       .title {
-        font-size: 36px;
-        font-weight: 650;
-        letter-spacing: -0.04em;
+        font-size: clamp(32px, 5vw, 48px);
+        font-weight: 700;
+        letter-spacing: -0.05em;
         margin: 0;
-        margin-right: auto;
+        line-height: 0.98;
+        min-height: 54px;
+        display: flex;
+        align-items: center;
+      }
+
+      .title-status {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.3;
+        max-width: 420px;
+      }
+
+      .title-status.active {
+        display: inline-flex;
+      }
+
+      .runner {
+        position: relative;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+      }
+
+      .runner svg {
+        width: 22px;
+        height: 22px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        animation: runner-bob 0.8s ease-in-out infinite alternate;
+      }
+
+      .runner.active svg .leg-a {
+        animation: leg-a 0.5s ease-in-out infinite alternate;
+        transform-origin: 11px 14px;
+      }
+
+      .runner.active svg .leg-b {
+        animation: leg-b 0.5s ease-in-out infinite alternate;
+        transform-origin: 11px 14px;
+      }
+
+      .runner.active svg .arm-a {
+        animation: arm-a 0.5s ease-in-out infinite alternate;
+        transform-origin: 11px 10px;
+      }
+
+      .runner.active svg .arm-b {
+        animation: arm-b 0.5s ease-in-out infinite alternate;
+        transform-origin: 11px 10px;
       }
 
       input,
       textarea,
       button {
         font: inherit;
-        padding: 11px 14px;
-        border-radius: 14px;
+        padding: 13px 16px;
+        border-radius: 16px;
         border: 1px solid var(--border);
       }
 
       input,
       textarea {
-        background: rgba(255, 255, 255, 0.92);
+        background: var(--panel-strong);
         color: var(--text);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
       }
 
       button {
@@ -346,14 +423,14 @@
 
       .layout {
         display: grid;
-        grid-template-columns: 360px 1fr;
-        gap: 20px;
+        grid-template-columns: 0.92fr 1.08fr;
+        gap: 22px;
       }
 
       .upper-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
+        grid-template-columns: 0.92fr 1.08fr;
+        gap: 22px;
         align-items: stretch;
       }
 
@@ -369,23 +446,23 @@
       .panel {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 22px;
-        padding: 20px;
+        border-radius: var(--radius-xl);
+        padding: 22px 24px;
         box-shadow: var(--shadow);
-        backdrop-filter: blur(14px);
+        backdrop-filter: blur(18px);
       }
 
       .panel.is-collapsed {
-        padding-top: 14px;
-        padding-bottom: 14px;
+        padding-top: 16px;
+        padding-bottom: 16px;
       }
 
       .panel h2 {
         margin-top: 0;
         margin-bottom: 16px;
-        font-size: 25px;
-        font-weight: 650;
-        letter-spacing: -0.03em;
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.04em;
       }
 
       .panel-header {
@@ -398,14 +475,20 @@
 
       .panel.is-collapsed .panel-header {
         margin-bottom: 0;
+        min-height: 34px;
+        align-items: center;
       }
 
       .panel-header h2 {
         margin: 0;
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        line-height: 1;
       }
 
       .panel-toggle {
-        background: var(--surface-soft);
+        background: rgba(255, 255, 255, 0.78);
         color: var(--text);
         border: 1px solid var(--border);
         width: 34px;
@@ -425,9 +508,9 @@
 
       textarea {
         width: 100%;
-        min-height: 110px;
+        min-height: 128px;
         font: inherit;
-        padding: 12px;
+        padding: 14px 16px;
         resize: vertical;
       }
 
@@ -436,27 +519,29 @@
         gap: 12px;
         max-height: 72vh;
         overflow-y: auto;
-        padding-right: 6px;
+        padding-right: 8px;
       }
 
       .summary-card {
         width: 100%;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid transparent;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 244, 0.96));
         color: var(--text);
-        padding: 14px;
-        border-radius: 18px;
+        padding: 18px 18px 16px;
+        border-radius: 20px;
         display: flex;
-        gap: 10px;
+        gap: 12px;
         align-items: flex-start;
-        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+        box-shadow: 0 12px 28px rgba(17, 17, 17, 0.05);
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         cursor: pointer;
       }
 
       .summary-card:hover {
         transform: translateY(-1px);
-        border-color: var(--accent);
-        background: var(--accent-soft);
+        border-color: var(--border-strong);
+        background: linear-gradient(180deg, rgba(241, 240, 234, 0.98), rgba(235, 233, 226, 0.98));
+        box-shadow: 0 18px 34px rgba(17, 17, 17, 0.08);
       }
 
       .summary-card-main {
@@ -468,7 +553,7 @@
       }
 
       .summary-check {
-        margin-top: 10px;
+        margin-top: 12px;
         width: 18px;
         height: 18px;
         accent-color: var(--accent);
@@ -478,21 +563,26 @@
       .summary-unread {
         display: inline-block;
         margin-bottom: 8px;
-        padding: 4px 8px;
+        padding: 6px 10px;
         border-radius: 999px;
-        background: #111111;
-        color: #ffffff;
-        font-size: 12px;
+        background: rgba(17, 17, 17, 0.07);
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .summary-card.active {
-        border-color: var(--accent);
-        background: var(--accent-soft);
+        border-color: var(--border-strong);
+        background: linear-gradient(180deg, rgba(241, 240, 234, 0.98), rgba(235, 233, 226, 0.98));
       }
 
       .summary-card h3 {
         margin: 0 0 8px;
-        font-size: 16px;
+        font-size: 20px;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
       }
 
       .meta {
@@ -509,29 +599,45 @@
 
       .detail-empty {
         color: var(--muted);
-        font-style: italic;
+        font-size: 15px;
       }
 
       #summaryDetail {
         max-height: 72vh;
         overflow-y: auto;
-        padding-right: 6px;
+        padding-right: 10px;
+        display: grid;
+        gap: 20px;
       }
 
       .detail-section {
-        margin-bottom: 20px;
+        margin-bottom: 0;
+        display: grid;
+        gap: 12px;
+        padding-top: 18px;
+        border-top: 1px solid rgba(17, 17, 17, 0.08);
+      }
+
+      .detail-section:first-child {
+        padding-top: 0;
+        border-top: 0;
       }
 
       .detail-section h3 {
-        margin: 0 0 8px;
-        font-size: 17px;
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
         color: var(--text);
       }
 
       .detail-section p,
       .detail-section li {
         margin: 0;
-        line-height: 1.5;
+        line-height: 1.65;
+        font-size: 16px;
       }
 
       .detail-section p + p {
@@ -550,8 +656,8 @@
       .markdown-box {
         background: var(--surface-soft);
         border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 14px;
+        border-radius: 20px;
+        padding: 16px 18px;
       }
 
       .summary-rendered p {
@@ -561,24 +667,8 @@
       .status {
         color: var(--muted);
         margin-bottom: 14px;
-      }
-
-      .run-status {
-        width: 100%;
-        background: rgba(255, 255, 255, 0.9);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 5px 12px;
-        color: var(--muted);
-        white-space: pre-wrap;
         font-size: 13px;
-        line-height: 1.15;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        align-self: start;
-        min-height: 0;
-        height: auto;
+        line-height: 1.45;
       }
 
       [hidden] {
@@ -587,9 +677,9 @@
 
       .progress-track {
         width: 100%;
-        max-width: 220px;
+        max-width: 240px;
         height: 8px;
-        background: #e7e7ea;
+        background: var(--surface-soft-2);
         border-radius: 999px;
         overflow: hidden;
         margin-top: 6px;
@@ -603,7 +693,7 @@
       .progress-bar {
         width: 35%;
         height: 100%;
-        background: linear-gradient(90deg, #111111, #4d4d4f);
+        background: linear-gradient(90deg, #111111, #4a4a46);
         border-radius: 999px;
         animation: progress-slide 1.2s ease-in-out infinite;
       }
@@ -617,11 +707,36 @@
         }
       }
 
+      @keyframes runner-bob {
+        0% { transform: translateY(0); }
+        100% { transform: translateY(-1px); }
+      }
+
+      @keyframes leg-a {
+        0% { transform: rotate(18deg); }
+        100% { transform: rotate(-18deg); }
+      }
+
+      @keyframes leg-b {
+        0% { transform: rotate(-16deg); }
+        100% { transform: rotate(16deg); }
+      }
+
+      @keyframes arm-a {
+        0% { transform: rotate(-20deg); }
+        100% { transform: rotate(20deg); }
+      }
+
+      @keyframes arm-b {
+        0% { transform: rotate(16deg); }
+        100% { transform: rotate(-16deg); }
+      }
+
       .hint {
         color: var(--muted);
         font-size: 13px;
         margin-top: 8px;
-        line-height: 1.4;
+        line-height: 1.45;
       }
 
       .profile-note {
@@ -641,21 +756,24 @@
         max-height: 420px;
         overflow-y: auto;
         margin-bottom: 14px;
+        padding-right: 6px;
       }
 
       .chat-message {
         border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 12px 14px;
-        background: rgba(255, 255, 255, 0.95);
+        border-radius: 18px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.9);
       }
 
       .chat-message.user {
-        background: #f3f4f6;
+        background: var(--accent);
+        color: #ffffff;
+        border-color: var(--accent);
       }
 
       .chat-message.assistant {
-        background: #ffffff;
+        background: rgba(255, 255, 255, 0.9);
       }
 
       .chat-role {
@@ -708,12 +826,12 @@
         width: min(520px, 100%);
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 22px;
+        border-radius: var(--radius-xl);
         box-shadow: var(--shadow);
-        backdrop-filter: blur(14px);
-        padding: 22px;
+        backdrop-filter: blur(18px);
+        padding: 24px;
         display: grid;
-        gap: 14px;
+        gap: 16px;
       }
 
       .modal-card h3 {
@@ -749,6 +867,10 @@
         .layout {
           grid-template-columns: 1fr;
         }
+
+        .topbar {
+          align-items: stretch;
+        }
       }
     </style>
   </head>
@@ -767,25 +889,16 @@
 
         <section id="profilePanel" class="panel" hidden>
           <div class="panel-header">
-            <h2>Profile</h2>
-            <button id="toggleProfileButton" class="panel-toggle" type="button" aria-label="Minimize profile">-</button>
+            <h2>Settings</h2>
+            <button id="toggleProfileButton" class="panel-toggle" type="button" aria-label="Minimize settings">-</button>
           </div>
           <div id="profileBody" class="panel-body">
-            <div class="hint profile-note">
-              The rest of the connection settings use the app defaults behind the scenes. You only need to set the email login here.
-            </div>
-            <div class="profile-grid">
-              <div class="field-group">
-                <label for="profileEmailInput">Email</label>
-                <input id="profileEmailInput" type="email" placeholder="you@example.com" />
-              </div>
-              <div class="field-group">
-                <label for="imapPasswordInput">Email Password</label>
-                <input id="imapPasswordInput" type="password" placeholder="Password or app password" />
-              </div>
-            </div>
-            <div class="controls profile-actions">
-              <button id="saveProfileButton">Save Profile</button>
+            <div id="settingsConnectionStatus" class="settings-badge">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.7 1.7 0 0 1 0 2.4 1.7 1.7 0 0 1-2.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.7 1.7 0 0 1-1.7 1.7h-.3A1.7 1.7 0 0 1 11.8 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.7 1.7 0 0 1-2.4 0 1.7 1.7 0 0 1 0-2.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H7a1.7 1.7 0 0 1-1.7-1.7v-.3A1.7 1.7 0 0 1 7 10.2h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.7 1.7 0 0 1 0-2.4 1.7 1.7 0 0 1 2.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.7 1.7 0 0 1 13.7 3.3h.3A1.7 1.7 0 0 1 15.7 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.7 1.7 0 0 1 2.4 0 1.7 1.7 0 0 1 0 2.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2A1.7 1.7 0 0 1 22.7 12v.3A1.7 1.7 0 0 1 21 14h-.2a1 1 0 0 0-.9.6z"></path>
+              </svg>
+              <span id="settingsConnectionText">Connection settings are managed automatically.</span>
             </div>
             <div class="detail-section summary-rendered profile-preferences">
               <h3>Summary Preferences</h3>
@@ -803,20 +916,29 @@
       </div>
 
       <div class="topbar">
-        <h1 class="title">Email Dashboard</h1>
+        <div class="title-wrap">
+          <h1 class="title">Email Dashboard</h1>
+          <div id="titleStatus" class="title-status" aria-live="polite">
+            <span id="runnerIcon" class="runner" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="13" cy="5" r="2"></circle>
+                <path d="M12 8l3 3"></path>
+                <path d="M15 11l3 1"></path>
+                <path class="arm-a" d="M12 9l-3 2"></path>
+                <path d="M15 11l-1 4"></path>
+                <path class="leg-a" d="M14 15l-4 4"></path>
+                <path class="leg-b" d="M14 15l5 3"></path>
+              </svg>
+            </span>
+            <span id="runStatusText"></span>
+          </div>
+        </div>
         <input id="userIdInput" value="" placeholder="Signed in account" readonly hidden />
         <div class="inline-field">
           <label for="daysBackInput">Days back to check</label>
           <input id="daysBackInput" type="number" min="1" value="7" style="width: 120px" />
         </div>
         <button id="runButton">Run Summarizer</button>
-      </div>
-
-      <div id="runStatus" class="run-status">
-        <div id="runStatusText">Dashboard ready.</div>
-        <div id="runProgress" class="progress-track">
-          <div class="progress-bar"></div>
-        </div>
       </div>
 
       <div class="upper-grid">
@@ -959,9 +1081,7 @@ someone@example.com"
       const profilePanel = document.getElementById("profilePanel");
       const toggleProfileButton = document.getElementById("toggleProfileButton");
       const profileBody = document.getElementById("profileBody");
-      const profileEmailInput = document.getElementById("profileEmailInput");
-      const imapPasswordInput = document.getElementById("imapPasswordInput");
-      const saveProfileButton = document.getElementById("saveProfileButton");
+      const settingsConnectionText = document.getElementById("settingsConnectionText");
       const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
       const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
       const summaryPreferenceList = document.getElementById("summaryPreferenceList");
@@ -990,9 +1110,9 @@ someone@example.com"
       const summaryList = document.getElementById("summaryList");
       const detailStatus = document.getElementById("detailStatus");
       const summaryDetail = document.getElementById("summaryDetail");
-      const runStatus = document.getElementById("runStatus");
+      const titleStatus = document.getElementById("titleStatus");
+      const runnerIcon = document.getElementById("runnerIcon");
       const runStatusText = document.getElementById("runStatusText");
-      const runProgress = document.getElementById("runProgress");
       const appModal = document.getElementById("appModal");
       const appModalTitle = document.getElementById("appModalTitle");
       const appModalMessage = document.getElementById("appModalMessage");
@@ -1008,6 +1128,7 @@ someone@example.com"
       let selectedSummaryIds = new Set();
       let currentSummaries = [];
       let activeModalResolver = null;
+      let contactsLoadedForUser = null;
 
       function getReadSummaryIds(userId) {
         try {
@@ -1039,8 +1160,10 @@ someone@example.com"
       }
 
       function setRunStatus(message, loading = false) {
-        runStatusText.textContent = message;
-        runProgress.classList.toggle("active", loading);
+        const visibleMessage = String(message || "").trim();
+        runStatusText.textContent = visibleMessage;
+        titleStatus.classList.toggle("active", Boolean(visibleMessage));
+        runnerIcon.classList.toggle("active", loading);
       }
 
       function closeAppModal(result = null) {
@@ -1138,8 +1261,9 @@ someone@example.com"
         setPanelCollapsed(profileBody, toggleProfileButton, true);
 
         const settings = profile.settings || {};
-        profileEmailInput.value = profile.email || "";
-        imapPasswordInput.value = settings.imap_password || "";
+        settingsConnectionText.textContent = profile.google_connected
+          ? "Connected with Google"
+          : "Connection settings follow your current sign-in method.";
         renderSummaryPreferences(settings.summary_style_preferences || []);
       }
 
@@ -1149,6 +1273,7 @@ someone@example.com"
         currentSummaryId = null;
         selectedSummaryIds = new Set();
         currentSummaries = [];
+        contactsLoadedForUser = null;
         accountBar.hidden = true;
         profilePanel.hidden = true;
         userIdInput.value = "";
@@ -1170,10 +1295,8 @@ someone@example.com"
         const data = await response.json();
         if (data.authenticated && data.profile) {
           applyProfileToForm(data.profile);
-          await loadProfile();
-          await loadWhitelist();
           await loadSummaries();
-          setRunStatus("Dashboard ready.");
+          setRunStatus("");
           return true;
         }
 
@@ -1187,48 +1310,6 @@ someone@example.com"
         await fetch("/auth/logout", { method: "POST" });
         resetSignedOutState();
         window.location.href = "/login";
-      }
-
-      async function loadProfile() {
-        if (!requireSignedIn()) return;
-        const response = await fetch(`/profile?user_id=${encodeURIComponent(currentUserId)}`);
-        const data = await response.json();
-        if (!response.ok) {
-          setRunStatus(data.detail || "Failed to load profile.");
-          return;
-        }
-        applyProfileToForm(data.profile);
-      }
-
-      async function saveProfile() {
-        if (!requireSignedIn()) return;
-        saveProfileButton.disabled = true;
-        setRunStatus(`Saving profile for ${currentUserId}...`, true);
-
-        try {
-          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentUserId)}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: profileEmailInput.value.trim(),
-              imap_user: profileEmailInput.value.trim(),
-              imap_password: imapPasswordInput.value,
-            }),
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            setRunStatus(data.detail || "Failed to save profile.");
-            return;
-          }
-
-          applyProfileToForm(data.profile);
-          setRunStatus(`Saved profile for ${currentUserId}.`);
-        } catch (error) {
-          setRunStatus(`Failed to save profile: ${error.message}`);
-        } finally {
-          saveProfileButton.disabled = false;
-          runProgress.classList.remove("active");
-        }
       }
 
       async function addSummaryPreference() {
@@ -1262,7 +1343,6 @@ someone@example.com"
           setRunStatus(`Failed to save summary preference: ${error.message}`);
         } finally {
           addSummaryPreferenceButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1459,8 +1539,9 @@ someone@example.com"
         });
       }
 
-      async function loadWhitelist() {
+      async function loadWhitelist(force = false) {
         if (!requireSignedIn()) return;
+        if (!force && contactsLoadedForUser === currentUserId) return;
         setRunStatus("Loading contacts...");
 
         const response = await fetch(`/whitelist?user_id=${encodeURIComponent(currentUserId)}`);
@@ -1472,6 +1553,7 @@ someone@example.com"
         }
 
         whitelistTextarea.value = (data.contacts || []).join("\n");
+        contactsLoadedForUser = currentUserId;
         setRunStatus(`${data.contacts.length} contacts loaded.`);
       }
 
@@ -1502,12 +1584,12 @@ someone@example.com"
           }
 
           whitelistTextarea.value = (data.contacts || []).join("\n");
+          contactsLoadedForUser = currentUserId;
           setRunStatus("Contacts updated.");
         } catch (error) {
           setRunStatus(`Failed to save contacts: ${error.message}`);
         } finally {
           saveWhitelistButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1546,7 +1628,6 @@ someone@example.com"
           setRunStatus(`Run failed: ${error.message}`);
         } finally {
           runButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1596,25 +1677,26 @@ someone@example.com"
         }))) return;
 
         let removedCount = 0;
-        for (const summaryId of summaryIds) {
-          try {
-            const response = await fetch(
-              `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`,
-              { method: "DELETE" }
-            );
-            if (response.ok) {
-              removedCount += 1;
-              if (currentSummaryId === summaryId) {
-                currentSummaryId = null;
-                summaryDetail.innerHTML = "No summary selected yet.";
-                sendSummaryEmailButton.hidden = true;
-                detailStatus.textContent = "Select a summary to view it.";
-              }
-            }
-          } catch (error) {
-            setRunStatus(`Failed while deleting summaries: ${error.message}`);
-            return;
+        try {
+          const results = await Promise.all(
+            summaryIds.map(async (summaryId) => {
+              const response = await fetch(
+                `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`,
+                { method: "DELETE" }
+              );
+              return { summaryId, ok: response.ok };
+            })
+          );
+          removedCount = results.filter((result) => result.ok).length;
+          if (results.some((result) => result.summaryId === currentSummaryId && result.ok)) {
+            currentSummaryId = null;
+            summaryDetail.innerHTML = "No summary selected yet.";
+            sendSummaryEmailButton.hidden = true;
+            detailStatus.textContent = "Select a summary to view it.";
           }
+        } catch (error) {
+          setRunStatus(`Failed while deleting summaries: ${error.message}`);
+          return;
         }
 
         setRunStatus(`Deleted ${removedCount} selected summary item(s).`);
@@ -1659,7 +1741,6 @@ someone@example.com"
           setRunStatus(`Failed to send combined report: ${error.message}`);
         } finally {
           emailReportButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1794,7 +1875,6 @@ someone@example.com"
           setRunStatus(`Failed to build combined summary: ${error.message}`);
         } finally {
           combinedSummaryButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1876,7 +1956,6 @@ someone@example.com"
           setRunStatus(`Failed to refine summary: ${error.message}`);
         } finally {
           refineSummaryButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1959,7 +2038,6 @@ someone@example.com"
           setRunStatus(`Failed to send summary email: ${error.message}`);
         } finally {
           sendSummaryEmailButton.disabled = false;
-          runProgress.classList.remove("active");
         }
       }
 
@@ -1974,12 +2052,17 @@ someone@example.com"
 
       runButton.addEventListener("click", runSummarizer);
       logoutButton.addEventListener("click", logout);
-      saveProfileButton.addEventListener("click", saveProfile);
       addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
       toggleProfileButton.addEventListener("click", () => togglePanel(profileBody, toggleProfileButton));
-      toggleContactsButton.addEventListener("click", () => togglePanel(contactsBody, toggleContactsButton));
+      toggleContactsButton.addEventListener("click", async () => {
+        const willOpen = contactsBody.classList.contains("collapsed");
+        togglePanel(contactsBody, toggleContactsButton);
+        if (willOpen) {
+          await loadWhitelist();
+        }
+      });
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
       combinedSummaryButton.addEventListener("click", generateCombinedSummary);
