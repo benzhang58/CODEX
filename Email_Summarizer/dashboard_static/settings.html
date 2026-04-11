@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings</title>
+    <style>
+      :root {
+        --bg: #f3f3f0;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-strong: rgba(255, 255, 255, 0.96);
+        --border: rgba(17, 17, 17, 0.1);
+        --text: #101010;
+        --muted: #6e6e68;
+        --accent: #111111;
+        --accent-soft: #ecebe6;
+        --surface-soft: #efeee9;
+        --surface-soft-2: #e7e5de;
+        --shadow: 0 30px 80px rgba(15, 15, 15, 0.08);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 26%),
+          radial-gradient(circle at top right, rgba(0, 0, 0, 0.025), transparent 22%),
+          linear-gradient(180deg, #fbfbf9 0%, var(--bg) 100%);
+      }
+
+      .page {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 28px;
+        display: grid;
+        gap: 22px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        padding: 22px 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 46px);
+        line-height: 0.98;
+        letter-spacing: -0.05em;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      button, a.button {
+        font: inherit;
+        padding: 12px 16px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .secondary {
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--text);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+      }
+
+      .section {
+        display: grid;
+        gap: 14px;
+      }
+
+      .section h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.88);
+        padding: 16px 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .row strong {
+        font-size: 15px;
+        letter-spacing: -0.02em;
+      }
+
+      .row span {
+        color: var(--muted);
+        text-align: right;
+      }
+
+      .theme-options {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .theme-chip {
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .theme-chip.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .howto {
+        white-space: pre-line;
+      }
+
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel topbar">
+        <div>
+          <h1>Settings</h1>
+          <p>Account information, theme preferences, and simple help.</p>
+        </div>
+        <a class="button secondary" href="/dashboard">Back to Dashboard</a>
+      </section>
+
+      <section class="grid">
+        <div class="section">
+          <h2>Background Color</h2>
+          <div class="card">
+            <div class="theme-options">
+              <button class="theme-chip" type="button" data-theme="default">Default</button>
+              <button class="theme-chip" type="button" data-theme="stone">Stone</button>
+              <button class="theme-chip" type="button" data-theme="mist">Mist</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Login Info</h2>
+          <div class="card">
+            <div class="row">
+              <strong>Email</strong>
+              <span id="settingsLoginEmail">Loading...</span>
+            </div>
+            <div class="row">
+              <strong>Sign-In</strong>
+              <span id="settingsLoginMethod">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-to" class="section">
+        <h2>How to</h2>
+        <div class="card">
+          <p class="howto">1. Log in to your account.
+
+2. Add the people you want to track in Contacts.
+
+3. Click Run Summarizer to check recent emails from those people.
+
+4. New summaries will appear in Summaries on the left side of the dashboard.
+
+5. Click any summary to read the main points, action items, deadlines, and attachments.
+
+6. Use AI Assistant if you want to ask questions in plain English.
+
+7. Use Combined Report if you want one overview from several summaries.
+
+8. Use Refine Summary if you want the summaries written in a style that fits you better.</p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>FAQ</h2>
+        <div class="card">
+          <p>Coming soon.</p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const themeChips = Array.from(document.querySelectorAll(".theme-chip"));
+      const settingsLoginEmail = document.getElementById("settingsLoginEmail");
+      const settingsLoginMethod = document.getElementById("settingsLoginMethod");
+      let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+
+      function applyTheme(theme) {
+        currentTheme = theme;
+        localStorage.setItem("emailDashboardTheme", theme);
+        if (theme === "stone") {
+          document.documentElement.style.setProperty("--bg", "#eeeae3");
+          document.documentElement.style.setProperty("--accent-soft", "#e8e1d5");
+          document.documentElement.style.setProperty("--surface-soft", "#ebe4d9");
+          document.documentElement.style.setProperty("--surface-soft-2", "#e0d7ca");
+        } else if (theme === "mist") {
+          document.documentElement.style.setProperty("--bg", "#eef2f3");
+          document.documentElement.style.setProperty("--accent-soft", "#e4ecef");
+          document.documentElement.style.setProperty("--surface-soft", "#e8eeef");
+          document.documentElement.style.setProperty("--surface-soft-2", "#dce5e8");
+        } else {
+          document.documentElement.style.setProperty("--bg", "#f3f3f0");
+          document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
+          document.documentElement.style.setProperty("--surface-soft", "#efeee9");
+          document.documentElement.style.setProperty("--surface-soft-2", "#e7e5de");
+        }
+
+        themeChips.forEach((chip) => {
+          chip.classList.toggle("active", chip.dataset.theme === theme);
+        });
+      }
+
+      async function loadSession() {
+        const response = await fetch("/auth/me");
+        const data = await response.json();
+        if (!data.authenticated || !data.profile) {
+          window.location.href = "/login";
+          return;
+        }
+        settingsLoginEmail.textContent = data.profile.email || "Not available";
+        settingsLoginMethod.textContent = data.profile.google_connected ? "Google OAuth" : "Standard";
+      }
+
+      themeChips.forEach((chip) => {
+        chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
+      });
+
+      applyTheme(currentTheme);
+      loadSession();
+    </script>
+  </body>
+</html>

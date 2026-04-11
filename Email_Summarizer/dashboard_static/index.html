@@ -237,6 +237,48 @@
         stroke-linejoin: round;
       }
 
+      .settings-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .settings-toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .settings-menu-toggle,
+      .settings-help-toggle {
+        width: 42px;
+        height: 42px;
+        min-width: 42px;
+        padding: 0;
+        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .settings-menu-toggle svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .settings-help-toggle {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
       .profile-preferences .markdown-box {
         display: grid;
         gap: 14px;
@@ -749,6 +791,10 @@
         min-height: 0;
       }
 
+      .chat-panel .panel-body.collapsed {
+        display: none;
+      }
+
       .chat-panel:not(.is-collapsed) .panel-body {
         max-height: 72vh;
         overflow-y: auto;
@@ -902,12 +948,23 @@
             <button id="toggleProfileButton" class="panel-toggle" type="button" aria-label="Minimize settings">-</button>
           </div>
           <div id="profileBody" class="panel-body">
+            <div class="settings-toolbar">
             <div id="settingsConnectionStatus" class="settings-badge">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.7 1.7 0 0 1 0 2.4 1.7 1.7 0 0 1-2.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.7 1.7 0 0 1-1.7 1.7h-.3A1.7 1.7 0 0 1 11.8 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.7 1.7 0 0 1-2.4 0 1.7 1.7 0 0 1 0-2.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H7a1.7 1.7 0 0 1-1.7-1.7v-.3A1.7 1.7 0 0 1 7 10.2h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.7 1.7 0 0 1 0-2.4 1.7 1.7 0 0 1 2.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.7 1.7 0 0 1 13.7 3.3h.3A1.7 1.7 0 0 1 15.7 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.7 1.7 0 0 1 2.4 0 1.7 1.7 0 0 1 0 2.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2A1.7 1.7 0 0 1 22.7 12v.3A1.7 1.7 0 0 1 21 14h-.2a1 1 0 0 0-.9.6z"></path>
-              </svg>
-              <span id="settingsConnectionText">Connection settings are managed automatically.</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.7 1.7 0 0 1 0 2.4 1.7 1.7 0 0 1-2.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.7 1.7 0 0 1-1.7 1.7h-.3A1.7 1.7 0 0 1 11.8 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.7 1.7 0 0 1-2.4 0 1.7 1.7 0 0 1 0-2.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H7a1.7 1.7 0 0 1-1.7-1.7v-.3A1.7 1.7 0 0 1 7 10.2h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.7 1.7 0 0 1 0-2.4 1.7 1.7 0 0 1 2.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.7 1.7 0 0 1 13.7 3.3h.3A1.7 1.7 0 0 1 15.7 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.7 1.7 0 0 1 2.4 0 1.7 1.7 0 0 1 0 2.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2A1.7 1.7 0 0 1 22.7 12v.3A1.7 1.7 0 0 1 21 14h-.2a1 1 0 0 0-.9.6z"></path>
+                </svg>
+                <span id="settingsConnectionText">Connection settings are managed automatically.</span>
+              </div>
+              <div class="settings-toolbar-actions">
+                <button id="settingsHelpButton" class="settings-help-toggle" type="button" aria-label="How to use this website">?</button>
+                <button id="settingsMenuButton" class="settings-menu-toggle" type="button" aria-label="Open settings page">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.7 1.7 0 0 1 0 2.4 1.7 1.7 0 0 1-2.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.7 1.7 0 0 1-1.7 1.7h-.3A1.7 1.7 0 0 1 11.8 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.7 1.7 0 0 1-2.4 0 1.7 1.7 0 0 1 0-2.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H7a1.7 1.7 0 0 1-1.7-1.7v-.3A1.7 1.7 0 0 1 7 10.2h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.7 1.7 0 0 1 0-2.4 1.7 1.7 0 0 1 2.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.7 1.7 0 0 1 13.7 3.3h.3A1.7 1.7 0 0 1 15.7 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.7 1.7 0 0 1 2.4 0 1.7 1.7 0 0 1 0 2.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2A1.7 1.7 0 0 1 22.7 12v.3A1.7 1.7 0 0 1 21 14h-.2a1 1 0 0 0-.9.6z"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div class="detail-section summary-rendered profile-preferences">
               <h3>Summary Preferences</h3>
@@ -1091,6 +1148,8 @@ someone@example.com"
       const toggleProfileButton = document.getElementById("toggleProfileButton");
       const profileBody = document.getElementById("profileBody");
       const settingsConnectionText = document.getElementById("settingsConnectionText");
+      const settingsMenuButton = document.getElementById("settingsMenuButton");
+      const settingsHelpButton = document.getElementById("settingsHelpButton");
       const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
       const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
       const summaryPreferenceList = document.getElementById("summaryPreferenceList");
@@ -1138,6 +1197,7 @@ someone@example.com"
       let currentSummaries = [];
       let activeModalResolver = null;
       let contactsLoadedForUser = null;
+      let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
 
       function getReadSummaryIds(userId) {
         try {
@@ -1154,6 +1214,28 @@ someone@example.com"
 
       function updateSummariesHeading(unreadCount) {
         summariesHeading.textContent = unreadCount > 0 ? `Summaries (${unreadCount} New)` : "Summaries";
+      }
+
+      function applyTheme(theme) {
+        currentTheme = theme;
+        localStorage.setItem("emailDashboardTheme", theme);
+        if (theme === "stone") {
+          document.documentElement.style.setProperty("--bg", "#eeeae3");
+          document.documentElement.style.setProperty("--accent-soft", "#e8e1d5");
+          document.documentElement.style.setProperty("--surface-soft", "#ebe4d9");
+          document.documentElement.style.setProperty("--surface-soft-2", "#e0d7ca");
+        } else if (theme === "mist") {
+          document.documentElement.style.setProperty("--bg", "#eef2f3");
+          document.documentElement.style.setProperty("--accent-soft", "#e4ecef");
+          document.documentElement.style.setProperty("--surface-soft", "#e8eeef");
+          document.documentElement.style.setProperty("--surface-soft-2", "#dce5e8");
+        } else {
+          document.documentElement.style.setProperty("--bg", "#f3f3f0");
+          document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
+          document.documentElement.style.setProperty("--surface-soft", "#efeee9");
+          document.documentElement.style.setProperty("--surface-soft-2", "#e7e5de");
+        }
+
       }
 
       function togglePanel(bodyEl, buttonEl) {
@@ -2062,6 +2144,12 @@ someone@example.com"
       addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
+      settingsMenuButton.addEventListener("click", () => {
+        window.location.href = "/settings";
+      });
+      settingsHelpButton.addEventListener("click", () => {
+        window.location.href = "/settings#how-to";
+      });
       toggleProfileButton.addEventListener("click", () => togglePanel(profileBody, toggleProfileButton));
       toggleContactsButton.addEventListener("click", async () => {
         const willOpen = contactsBody.classList.contains("collapsed");
@@ -2090,6 +2178,7 @@ someone@example.com"
           addSummaryPreference();
         }
       });
+      applyTheme(currentTheme);
       loadCurrentSession();
     </script>
   </body>
