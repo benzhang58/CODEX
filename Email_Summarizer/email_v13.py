@@ -38,6 +38,8 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from security_utils import decrypt_json_payload
+
 # Don't load .env at import time — we load the right one at runtime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -119,7 +121,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
         if row:
             payload = {
                 "email": row["email"],
-                "settings": json.loads(row["settings_json"] or "{}"),
+                "settings": decrypt_json_payload(row["settings_json"] or "{}", APP_STORAGE_DIR),
             }
             source_label = f"database profile: {app_db_path}"
             config_reference_path = app_db_path
@@ -297,9 +299,9 @@ class EmailRecord:
 class EmailSummarizer:
 
     MAX_STORED_BODY_CHARS = 8000
-    MAX_LATEST_MESSAGE_BODY_CHARS = 1800
-    MAX_OLDER_MESSAGE_BODY_CHARS = 900
-    MAX_ATTACHMENT_PREVIEW_CHARS = 450
+    MAX_LATEST_MESSAGE_BODY_CHARS = 1200
+    MAX_OLDER_MESSAGE_BODY_CHARS = 450
+    MAX_ATTACHMENT_PREVIEW_CHARS = 180
     MAX_SUMMARY_OUTPUT_TOKENS = 5000
 
     def __init__(self, output_base: Path, user_id: str):
@@ -343,6 +345,15 @@ class EmailSummarizer:
         self.profile_email = os.getenv("PROFILE_EMAIL", "").strip().lower()
         self.google_oauth = self._load_google_oauth()
         self.use_gmail_api = self._should_use_gmail_api()
+        self.save_raw_debug = os.getenv("EMAIL_SUMMARIZER_SAVE_RAW_DEBUG", "false").lower() == "true"
+        self.include_attachment_previews_in_llm = os.getenv(
+            "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM",
+            "false",
+        ).lower() == "true"
+        self.raw_email_retention_days = int(os.getenv("EMAIL_SUMMARIZER_RAW_EMAIL_RETENTION_DAYS", "7") or "7")
+        self.attachment_retention_days = int(os.getenv("EMAIL_SUMMARIZER_ATTACHMENT_RETENTION_DAYS", "30") or "30")
+        self.source_email_retention_days = int(os.getenv("EMAIL_SUMMARIZER_SOURCE_EMAIL_RETENTION_DAYS", "0") or "0")
+        self._apply_retention_policy()
 
     @staticmethod
     def _slugify(value: str) -> str:
@@ -372,7 +383,7 @@ class EmailSummarizer:
         if not row or not row["google_oauth_json"]:
             return {}
         try:
-            payload = json.loads(row["google_oauth_json"])
+            payload = decrypt_json_payload(row["google_oauth_json"], APP_STORAGE_DIR)
             return payload if isinstance(payload, dict) else {}
         except Exception:
             return {}
@@ -381,6 +392,34 @@ class EmailSummarizer:
         if not self.profile_email.endswith("@gmail.com"):
             return False
         return bool(self.google_oauth.get("refresh_token") or self.google_oauth.get("access_token"))
+
+    def _prune_path_tree(self, root: Path, retention_days: int):
+        if retention_days <= 0 or not root.exists():
+            return
+        cutoff = datetime.now() - timedelta(days=retention_days)
+        for path in sorted(root.rglob("*"), reverse=True):
+            try:
+                if not path.exists():
+                    continue
+                modified = datetime.fromtimestamp(path.stat().st_mtime)
+                if modified >= cutoff:
+                    continue
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    try:
+                        path.rmdir()
+                    except OSError:
+                        pass
+            except Exception as exc:
+                logger.warning(f"Retention cleanup skipped for {path}: {exc}")
+
+    def _apply_retention_policy(self):
+        self._prune_path_tree(self.raw_dir, self.raw_email_retention_days)
+        self._prune_path_tree(self.attachments_dir, self.attachment_retention_days)
+        self._prune_path_tree(self.json_dir, self.raw_email_retention_days)
+        if self.source_email_retention_days > 0:
+            self._prune_path_tree(self.data_emails_dir, self.source_email_retention_days)
 
     @staticmethod
     def _uid_token(uid: Any) -> str:
@@ -1314,18 +1353,19 @@ class EmailSummarizer:
             # Reconstruct full thread (includes the trigger itself)
             thread = self._fetch_full_thread(mail, msg)
 
-            # Write debug raw file showing the complete thread
-            raw_path = self.raw_dir / f"uid_{uid}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
-            with open(raw_path, "w", encoding="utf-8") as f:
-                f.write(f"TRIGGER: {subject} | From: {sender} | {date_iso}\n")
-                f.write(f"THREAD LENGTH: {len(thread)} messages\n\n")
-                for i, tm in enumerate(thread, 1):
-                    marker = "★ NEW" if tm.message_id == message_id else f"[{i}]"
-                    f.write(f"{marker} {tm.date} | From: {tm.sender}\n")
-                    f.write(tm.body + "\n")
-                    for att in tm.attachments:
-                        f.write(f"  [ATTACHMENT] {att.filename}\n")
-                    f.write("\n" + "-"*60 + "\n\n")
+            raw_path = None
+            if self.save_raw_debug:
+                raw_path = self.raw_dir / f"uid_{uid}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+                with open(raw_path, "w", encoding="utf-8") as f:
+                    f.write(f"TRIGGER: {subject} | From: {sender} | {date_iso}\n")
+                    f.write(f"THREAD LENGTH: {len(thread)} messages\n\n")
+                    for i, tm in enumerate(thread, 1):
+                        marker = "★ NEW" if tm.message_id == message_id else f"[{i}]"
+                        f.write(f"{marker} {tm.date} | From: {tm.sender}\n")
+                        f.write(tm.body + "\n")
+                        for att in tm.attachments:
+                            f.write(f"  [ATTACHMENT] {att.filename}\n")
+                        f.write("\n" + "-"*60 + "\n\n")
 
             return EmailRecord(
                 uid=uid,
@@ -1335,7 +1375,7 @@ class EmailSummarizer:
                 subject=subject,
                 date=date_iso,
                 thread=thread,
-                raw_path=str(raw_path),
+                raw_path=str(raw_path) if raw_path else None,
             )
         except Exception as e:
             logger.error(f"Error parsing email UID {getattr(msg, 'uid', '?')}: {e}")
@@ -1391,7 +1431,10 @@ class EmailSummarizer:
             lines.append(f"=== ALL ATTACHMENTS IN THREAD ({len(unique_attachments)} unique files) ===")
             for att in unique_attachments:
                 lines.append(f"\n── File: {att.filename} ──")
-                lines.append(f"   Preview:\n{self._attachment_preview_for_llm(att.preview)}")
+                if self.include_attachment_previews_in_llm:
+                    lines.append(f"   Preview:\n{self._attachment_preview_for_llm(att.preview)}")
+                else:
+                    lines.append("   Preview withheld for privacy. Use filename only unless local review is required.")
         else:
             lines.append("=== NO ATTACHMENTS IN THIS THREAD ===")
 
@@ -1449,14 +1492,24 @@ class EmailSummarizer:
                         all_attachment_names.append(att.filename)
 
         if all_attachment_names:
-            attachment_instruction = (
-                "## Attachment Summary\n"
-                "You MUST write exactly one bullet point for EACH of the following files — "
-                "do not skip, group, or merge any of them:\n"
-                + "\n".join(f"  - {name}" for name in all_attachment_names)
-                + "\n\nFor each bullet: state the filename, what it contains, "
-                "and why it matters. Do not include who sent it or any dates.\n\n"
-            )
+            if self.include_attachment_previews_in_llm:
+                attachment_instruction = (
+                    "## Attachment Summary\n"
+                    "You MUST write exactly one bullet point for EACH of the following files — "
+                    "do not skip, group, or merge any of them:\n"
+                    + "\n".join(f"  - {name}" for name in all_attachment_names)
+                    + "\n\nFor each bullet: state the filename, what it contains, "
+                    "and why it matters. Do not include who sent it or any dates.\n\n"
+                )
+            else:
+                attachment_instruction = (
+                    "## Attachment Summary\n"
+                    "You MUST write exactly one bullet point for EACH of the following files — "
+                    "do not skip, group, or merge any of them:\n"
+                    + "\n".join(f"  - {name}" for name in all_attachment_names)
+                    + "\n\nPrivacy mode is enabled: do not infer attachment contents from the filename alone. "
+                    "Only describe attachment content if it is explicitly stated in the email text. Otherwise say the file was attached but its contents were not inspected.\n\n"
+                )
         else:
             attachment_instruction = ""
 

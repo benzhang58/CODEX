@@ -25,6 +25,8 @@ from openai import OpenAI
 from dotenv import dotenv_values
 from pydantic import BaseModel
 
+from security_utils import decrypt_json_payload, encrypt_json_payload, maybe_encrypt_legacy_json
+
 PUBLIC_BASE_URL = os.getenv("EMAIL_SUMMARIZER_PUBLIC_BASE_URL", "").strip().rstrip("/")
 
 
@@ -102,6 +104,19 @@ def initialize_database() -> None:
             );
             """
         )
+        rows = connection.execute("SELECT user_id, settings_json, google_oauth_json FROM users").fetchall()
+        for row in rows:
+            encrypted_settings = maybe_encrypt_legacy_json(row["settings_json"] or "{}", APP_STORAGE_DIR)
+            encrypted_google = maybe_encrypt_legacy_json(row["google_oauth_json"] or "{}", APP_STORAGE_DIR)
+            if encrypted_settings != (row["settings_json"] or "") or encrypted_google != (row["google_oauth_json"] or ""):
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET settings_json = ?, google_oauth_json = ?
+                    WHERE user_id = ?
+                    """,
+                    (encrypted_settings, encrypted_google, row["user_id"]),
+                )
 
 
 initialize_database()
@@ -593,19 +608,8 @@ def remove_summary_style_preference(user_id: str, preference: str) -> List[str]:
 
 def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
-        "openai_api_key": settings.get("OPENAI_API_KEY", ""),
         "openai_model": settings.get("OPENAI_MODEL", "gpt-4o"),
         "summary_style_preferences": parse_summary_style_preferences(settings),
-        "imap_server": settings.get("IMAP_SERVER", ""),
-        "imap_port": settings.get("IMAP_PORT", "993"),
-        "imap_user": settings.get("IMAP_USER", ""),
-        "imap_password": settings.get("IMAP_PASSWORD", ""),
-        "imap_folder": settings.get("IMAP_FOLDER", "INBOX"),
-        "smtp_host": settings.get("SMTP_HOST", ""),
-        "smtp_port": settings.get("SMTP_PORT", "465"),
-        "smtp_user": settings.get("SMTP_USER", ""),
-        "smtp_password": settings.get("SMTP_PASSWORD", ""),
-        "summary_recipient": settings.get("SUMMARY_RECIPIENT", ""),
     }
 
 
@@ -691,9 +695,12 @@ def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, s
 
 
 def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
-    settings = merge_non_empty_settings(default_profile_settings(), json.loads(row["settings_json"] or "{}"))
+    settings = merge_non_empty_settings(
+        default_profile_settings(),
+        decrypt_json_payload(row["settings_json"] or "{}", APP_STORAGE_DIR),
+    )
     settings = apply_provider_defaults(settings, row["email"])
-    google_oauth = json.loads(row["google_oauth_json"]) if row["google_oauth_json"] else {}
+    google_oauth = decrypt_json_payload(row["google_oauth_json"] or "{}", APP_STORAGE_DIR)
     return {
         "user_id": row["user_id"],
         "email": row["email"],
@@ -752,8 +759,8 @@ def load_profile_or_404(user_id: str) -> Dict[str, Any]:
 def save_profile(profile: Dict[str, Any]) -> None:
     profile["updated_at"] = datetime.now().isoformat()
     profile.setdefault("created_at", profile["updated_at"])
-    settings_json = json.dumps(profile.get("settings") or {})
-    google_oauth_json = json.dumps(profile.get("google_oauth") or {})
+    settings_json = encrypt_json_payload(profile.get("settings") or {}, APP_STORAGE_DIR)
+    google_oauth_json = encrypt_json_payload(profile.get("google_oauth") or {}, APP_STORAGE_DIR)
 
     with get_db_connection() as connection:
         connection.execute(
@@ -851,10 +858,15 @@ def get_session_user_id(request: Request) -> Optional[str]:
 
 
 def resolve_user_id(request: Request, explicit_user_id: Optional[str] = None) -> str:
-    if explicit_user_id and explicit_user_id.strip():
-        return explicit_user_id.strip()
-
     session_user_id = get_session_user_id(request)
+    explicit = explicit_user_id.strip() if explicit_user_id and explicit_user_id.strip() else None
+
+    if explicit and not session_user_id:
+        raise HTTPException(status_code=401, detail="Please log in first.")
+    if explicit and session_user_id and explicit != session_user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to that user.")
+    if explicit:
+        return explicit
     if session_user_id:
         return session_user_id
 
@@ -1204,15 +1216,21 @@ def _to_ascii_safe(text: str) -> str:
 
 
 @app.get("/attachments")
-def get_attachment(user_id: str = Query(...), path: str = Query(...)) -> FileResponse:
-    requested_path = (BASE_DIR / path).resolve()
-    try:
-        requested_path.relative_to(BASE_DIR.resolve())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid attachment path.") from exc
+def get_attachment(request: Request, user_id: str = Query(...), path: str = Query(...)) -> FileResponse:
+    resolved_user_id = resolve_user_id(request, user_id)
+    requested_path = Path(path).resolve() if Path(path).is_absolute() else (BASE_DIR / path).resolve()
+    allowed_roots = [
+        (OUTPUT_ROOT_DIR / resolved_user_id).resolve(),
+        (APP_STORAGE_DIR / "users" / resolved_user_id).resolve(),
+    ]
+    if not any(
+        requested_path == root or requested_path.is_relative_to(root)
+        for root in allowed_roots
+    ):
+        raise HTTPException(status_code=403, detail="You do not have access to that attachment.")
 
     if not requested_path.exists() or not requested_path.is_file():
-        raise HTTPException(status_code=404, detail=f"Attachment not found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail=f"Attachment not found for user '{resolved_user_id}'.")
 
     return FileResponse(requested_path, filename=requested_path.name)
 
