@@ -954,6 +954,71 @@
         margin-bottom: 0;
       }
 
+      .contacts-modal-card {
+        width: min(560px, 100%);
+      }
+
+      .contacts-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .contacts-modal-header h3 {
+        margin: 0;
+      }
+
+      .contacts-plus-button,
+      .contacts-minus-button {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--accent);
+        color: #fff;
+        font-size: 24px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      .contacts-minus-button {
+        width: 34px;
+        height: 34px;
+        font-size: 20px;
+      }
+
+      .contacts-modal-list {
+        display: grid;
+        gap: 12px;
+        max-height: 340px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      .contacts-modal-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      .contacts-modal-item span {
+        overflow-wrap: anywhere;
+      }
+
+      .contacts-modal-empty {
+        color: var(--muted);
+        padding: 12px 4px;
+      }
+
       @media (max-width: 900px) {
         .profile-grid,
         .top-account-grid,
@@ -1181,6 +1246,20 @@ someone@example.com"
       </div>
     </div>
 
+    <div id="contactsModal" class="modal-overlay" hidden>
+      <div class="modal-card contacts-modal-card">
+        <div class="contacts-modal-header">
+          <h3>Current Contacts</h3>
+          <button id="contactsModalAddButton" class="contacts-plus-button" type="button" aria-label="Add contact">+</button>
+        </div>
+        <div class="modal-copy">These are the contacts currently saved for this account.</div>
+        <div id="contactsModalList" class="contacts-modal-list"></div>
+        <div class="controls modal-actions">
+          <button id="contactsModalCloseButton" class="secondary-button" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const accountBar = document.getElementById("accountBar");
       const accountName = document.getElementById("accountName");
@@ -1228,6 +1307,10 @@ someone@example.com"
       const appModalInput = document.getElementById("appModalInput");
       const appModalCancelButton = document.getElementById("appModalCancelButton");
       const appModalConfirmButton = document.getElementById("appModalConfirmButton");
+      const contactsModal = document.getElementById("contactsModal");
+      const contactsModalList = document.getElementById("contactsModalList");
+      const contactsModalAddButton = document.getElementById("contactsModalAddButton");
+      const contactsModalCloseButton = document.getElementById("contactsModalCloseButton");
       const doneToggleButton = document.getElementById("doneToggleButton");
       const toggleDoneViewButton = document.getElementById("toggleDoneViewButton");
 
@@ -1241,6 +1324,7 @@ someone@example.com"
       let allSummaries = [];
       let activeModalResolver = null;
       let contactsLoadedForUser = null;
+      let currentContacts = [];
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let summaryViewRequestToken = 0;
       let showingDoneSummaries = false;
@@ -1367,6 +1451,10 @@ someone@example.com"
         activeModalResolver = null;
       }
 
+      function closeContactsModal() {
+        contactsModal.hidden = true;
+      }
+
       function openAppModal({
         title,
         message,
@@ -1429,6 +1517,28 @@ someone@example.com"
         return currentProfile?.settings?.summary_style_preferences || [];
       }
 
+      function renderContactsModal() {
+        if (!currentContacts.length) {
+          contactsModalList.innerHTML = `<div class="contacts-modal-empty">No contacts saved yet.</div>`;
+          return;
+        }
+
+        contactsModalList.innerHTML = currentContacts
+          .map(
+            (contact) => `
+              <div class="contacts-modal-item">
+                <span>${escapeHtml(contact)}</span>
+                <button class="contacts-minus-button" type="button" aria-label="Remove contact" data-contact="${escapeHtml(contact)}">−</button>
+              </div>
+            `
+          )
+          .join("");
+
+        contactsModalList.querySelectorAll(".contacts-minus-button").forEach((button) => {
+          button.addEventListener("click", () => removeContactFromModal(button.dataset.contact || ""));
+        });
+      }
+
       function estimateRunTime(daysBack) {
         const days = Number(daysBack || 7);
         if (days <= 3) return "20-40s";
@@ -1475,6 +1585,7 @@ someone@example.com"
         allSummaries = [];
         showingDoneSummaries = false;
         contactsLoadedForUser = null;
+        currentContacts = [];
         accountBar.hidden = true;
         profilePanel.hidden = true;
         userIdInput.value = "";
@@ -1811,7 +1922,7 @@ someone@example.com"
         }
       }
 
-      async function loadWhitelist(force = false) {
+      async function fetchContacts(force = false) {
         if (!requireSignedIn()) return;
         if (!force && contactsLoadedForUser === currentUserId) return;
         setRunStatus("Loading contacts...");
@@ -1824,9 +1935,15 @@ someone@example.com"
           return;
         }
 
-        whitelistTextarea.value = (data.contacts || []).join("\n");
+        currentContacts = data.contacts || [];
         contactsLoadedForUser = currentUserId;
-        setRunStatus(`${data.contacts.length} contacts loaded.`);
+        setRunStatus("");
+      }
+
+      async function loadWhitelist(force = false) {
+        await fetchContacts(force);
+        renderContactsModal();
+        contactsModal.hidden = false;
       }
 
       async function saveWhitelist() {
@@ -1855,13 +1972,69 @@ someone@example.com"
             return;
           }
 
-          whitelistTextarea.value = (data.contacts || []).join("\n");
+          currentContacts = data.contacts || [];
           contactsLoadedForUser = currentUserId;
           setRunStatus("Contacts updated.");
         } catch (error) {
           setRunStatus(`Failed to save contacts: ${error.message}`);
         } finally {
           saveWhitelistButton.disabled = false;
+        }
+      }
+
+      async function persistContacts(contacts, successMessage = "Contacts updated.") {
+        const response = await fetch("/whitelist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: currentUserId,
+            contacts,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Failed to save contacts.");
+        }
+        currentContacts = data.contacts || [];
+        contactsLoadedForUser = currentUserId;
+        setRunStatus(successMessage);
+      }
+
+      async function addContactFromModal() {
+        if (!requireSignedIn()) return;
+        const result = await openAppModal({
+          title: "Add Contact",
+          message: "Enter the email address you want to add.",
+          confirmLabel: "Add",
+          cancelLabel: "Cancel",
+          withInput: true,
+          inputValue: "",
+          inputPlaceholder: "contact@example.com",
+        });
+        if (!result?.confirmed) return;
+
+        const newContact = String(result.value || "").trim().toLowerCase();
+        if (!newContact) return;
+        if (currentContacts.includes(newContact)) {
+          setRunStatus("That contact is already saved.");
+          return;
+        }
+
+        try {
+          await persistContacts([...currentContacts, newContact], "Contact added.");
+          renderContactsModal();
+        } catch (error) {
+          setRunStatus(error.message);
+        }
+      }
+
+      async function removeContactFromModal(contact) {
+        if (!requireSignedIn() || !contact) return;
+        try {
+          await persistContacts(currentContacts.filter((item) => item !== contact), "Contact removed.");
+          renderContactsModal();
+        } catch (error) {
+          setRunStatus(error.message);
         }
       }
 
@@ -2378,6 +2551,8 @@ someone@example.com"
       addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
+      contactsModalAddButton.addEventListener("click", addContactFromModal);
+      contactsModalCloseButton.addEventListener("click", closeContactsModal);
       settingsMenuButton.addEventListener("click", () => {
         window.location.href = "/settings";
       });
@@ -2389,7 +2564,7 @@ someone@example.com"
         const willOpen = contactsBody.classList.contains("collapsed");
         togglePanel(contactsBody, toggleContactsButton);
         if (willOpen) {
-          await loadWhitelist();
+          await fetchContacts();
         }
       });
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
@@ -2411,6 +2586,11 @@ someone@example.com"
         if (event.key === "Enter") {
           event.preventDefault();
           addSummaryPreference();
+        }
+      });
+      contactsModal.addEventListener("click", (event) => {
+        if (event.target === contactsModal) {
+          closeContactsModal();
         }
       });
       setPanelCollapsed(contactsBody, toggleContactsButton, true);
