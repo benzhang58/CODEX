@@ -915,6 +915,14 @@
         z-index: 1000;
       }
 
+      #appModal {
+        z-index: 1100;
+      }
+
+      #contactsModal {
+        z-index: 1000;
+      }
+
       .modal-overlay[hidden] {
         display: none;
       }
@@ -1847,7 +1855,14 @@ someone@example.com"
           appModalCancelButton.onclick = () => {
             closeAppModal(withInput ? { confirmed: false, value: "" } : false);
           };
+          appModalInput.onkeydown = null;
           if (withInput) {
+            appModalInput.onkeydown = (event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                closeAppModal({ confirmed: true, value: appModalInput.value });
+              }
+            };
             appModalInput.focus();
             appModalInput.select();
           } else {
