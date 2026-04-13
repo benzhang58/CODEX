@@ -247,6 +247,11 @@ def dashboard_preview() -> FileResponse:
     return FileResponse(STATIC_DIR / "preview.html")
 
 
+@app.get("/dashboard-modern-preview")
+def dashboard_modern_preview() -> FileResponse:
+    return FileResponse(STATIC_DIR / "modern_preview.html")
+
+
 @app.get("/dashboard-done-preview")
 def dashboard_done_preview() -> FileResponse:
     return FileResponse(STATIC_DIR / "done_preview.html")
