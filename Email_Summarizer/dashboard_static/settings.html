@@ -117,6 +117,44 @@
         gap: 12px;
       }
 
+      .field-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field label {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .field input {
+        width: 100%;
+        font: inherit;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.95);
+        color: var(--text);
+      }
+
+      .inline-note {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .status {
+        min-height: 20px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
       .row {
         display: flex;
         justify-content: space-between;
@@ -211,6 +249,28 @@
         </div>
       </section>
 
+      <section id="mailboxSection" class="section" hidden>
+        <h2>Mailbox Connection</h2>
+        <div class="card">
+          <p class="inline-note">Use this only for non-OAuth providers like 263.com. This updates the mailbox credentials the summarizer uses. It does not change your dashboard login password.</p>
+          <div class="field-grid">
+            <div class="field">
+              <label for="mailboxEmailInput">Mailbox Email</label>
+              <input id="mailboxEmailInput" type="email" placeholder="you@example.com" />
+            </div>
+            <div class="field">
+              <label for="mailboxPasswordInput">Mailbox Password</label>
+              <input id="mailboxPasswordInput" type="password" placeholder="Enter your real email password" />
+            </div>
+          </div>
+          <div class="row">
+            <span id="mailboxServerText">Server: --</span>
+            <button id="saveMailboxButton" type="button">Save Mailbox</button>
+          </div>
+          <div id="mailboxStatus" class="status"></div>
+        </div>
+      </section>
+
       <section id="how-to" class="section">
         <h2>How to</h2>
         <div class="card">
@@ -244,7 +304,14 @@
       const themeChips = Array.from(document.querySelectorAll(".theme-chip"));
       const settingsLoginEmail = document.getElementById("settingsLoginEmail");
       const settingsLoginMethod = document.getElementById("settingsLoginMethod");
+      const mailboxSection = document.getElementById("mailboxSection");
+      const mailboxEmailInput = document.getElementById("mailboxEmailInput");
+      const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
+      const mailboxServerText = document.getElementById("mailboxServerText");
+      const saveMailboxButton = document.getElementById("saveMailboxButton");
+      const mailboxStatus = document.getElementById("mailboxStatus");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+      let currentProfile = null;
 
       function applyTheme(theme) {
         currentTheme = theme;
@@ -288,13 +355,68 @@
           window.location.href = "/login";
           return;
         }
+        currentProfile = data.profile;
         settingsLoginEmail.textContent = data.profile.email || "Not available";
-        settingsLoginMethod.textContent = data.profile.google_connected ? "Google OAuth" : "Standard";
+        settingsLoginMethod.textContent = data.profile.google_connected
+          ? "Google OAuth"
+          : data.profile.microsoft_connected
+            ? "Microsoft OAuth"
+            : "Standard";
+
+        const isPasswordBased = !data.profile.google_connected && !data.profile.microsoft_connected;
+        mailboxSection.hidden = !isPasswordBased;
+        if (isPasswordBased) {
+          mailboxEmailInput.value = data.profile.settings?.imap_user || data.profile.email || "";
+          mailboxServerText.textContent = data.profile.settings?.imap_server
+            ? `Server: ${data.profile.settings.imap_server}:${data.profile.settings.imap_port || ""}`
+            : "Server: detected automatically";
+        }
+      }
+
+      async function saveMailboxSettings() {
+        if (!currentProfile) return;
+        const email = mailboxEmailInput.value.trim();
+        const password = mailboxPasswordInput.value;
+        if (!email || !password) {
+          mailboxStatus.textContent = "Enter the mailbox email and password first.";
+          return;
+        }
+
+        saveMailboxButton.disabled = true;
+        mailboxStatus.textContent = "Saving mailbox settings...";
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || email,
+              imap_user: email,
+              imap_password: password,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            mailboxStatus.textContent = data.detail || "Failed to save mailbox settings.";
+            return;
+          }
+          currentProfile = data.profile;
+          mailboxPasswordInput.value = "";
+          mailboxEmailInput.value = data.profile.settings?.imap_user || email;
+          mailboxServerText.textContent = data.profile.settings?.imap_server
+            ? `Server: ${data.profile.settings.imap_server}:${data.profile.settings.imap_port || ""}`
+            : "Server: detected automatically";
+          mailboxStatus.textContent = "Mailbox settings saved.";
+        } catch (error) {
+          mailboxStatus.textContent = `Failed to save mailbox settings: ${error.message}`;
+        } finally {
+          saveMailboxButton.disabled = false;
+        }
       }
 
       themeChips.forEach((chip) => {
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
+      saveMailboxButton.addEventListener("click", saveMailboxSettings);
 
       applyTheme(currentTheme);
       loadSession();

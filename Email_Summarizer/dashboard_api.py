@@ -72,6 +72,16 @@ GOOGLE_OAUTH_SCOPES = [
     "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
+MICROSOFT_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
+MICROSOFT_OAUTH_STATE_COOKIE = "email_dashboard_microsoft_state"
+MICROSOFT_OAUTH_NEXT_COOKIE = "email_dashboard_microsoft_next"
+MICROSOFT_OAUTH_SCOPES = [
+    "openid",
+    "email",
+    "profile",
+    "offline_access",
+    "User.Read",
+]
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -93,7 +103,8 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 settings_json TEXT NOT NULL,
-                google_oauth_json TEXT
+                google_oauth_json TEXT,
+                microsoft_oauth_json TEXT
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -104,18 +115,30 @@ def initialize_database() -> None:
             );
             """
         )
-        rows = connection.execute("SELECT user_id, settings_json, google_oauth_json FROM users").fetchall()
+        existing_columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "microsoft_oauth_json" not in existing_columns:
+            connection.execute("ALTER TABLE users ADD COLUMN microsoft_oauth_json TEXT")
+
+        rows = connection.execute("SELECT user_id, settings_json, google_oauth_json, microsoft_oauth_json FROM users").fetchall()
         for row in rows:
             encrypted_settings = maybe_encrypt_legacy_json(row["settings_json"] or "{}", APP_STORAGE_DIR)
             encrypted_google = maybe_encrypt_legacy_json(row["google_oauth_json"] or "{}", APP_STORAGE_DIR)
-            if encrypted_settings != (row["settings_json"] or "") or encrypted_google != (row["google_oauth_json"] or ""):
+            encrypted_microsoft = maybe_encrypt_legacy_json(row["microsoft_oauth_json"] or "{}", APP_STORAGE_DIR)
+            if (
+                encrypted_settings != (row["settings_json"] or "")
+                or encrypted_google != (row["google_oauth_json"] or "")
+                or encrypted_microsoft != (row["microsoft_oauth_json"] or "")
+            ):
                 connection.execute(
                     """
                     UPDATE users
-                    SET settings_json = ?, google_oauth_json = ?
+                    SET settings_json = ?, google_oauth_json = ?, microsoft_oauth_json = ?
                     WHERE user_id = ?
                     """,
-                    (encrypted_settings, encrypted_google, row["user_id"]),
+                    (encrypted_settings, encrypted_google, encrypted_microsoft, row["user_id"]),
                 )
 
 
@@ -204,6 +227,7 @@ def deployment_health() -> Dict[str, Any]:
         "output_dir": str(OUTPUT_ROOT_DIR),
         "openai_api_key_configured": bool(get_app_config_value("OPENAI_API_KEY")),
         "google_oauth_configured": bool(get_app_config_value("GOOGLE_CLIENT_ID") and get_app_config_value("GOOGLE_CLIENT_SECRET")),
+        "microsoft_oauth_configured": bool(get_app_config_value("MICROSOFT_CLIENT_ID") and get_app_config_value("MICROSOFT_CLIENT_SECRET")),
         "smtp_host_configured": bool(get_app_config_value("SMTP_HOST")),
     }
 
@@ -430,6 +454,148 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
     return response
 
 
+@app.get("/auth/microsoft/start")
+def auth_microsoft_start(next: str = "/dashboard") -> RedirectResponse:
+    try:
+        config = get_microsoft_oauth_config()
+    except HTTPException:
+        return RedirectResponse("/dashboard?microsoft_error=not_configured")
+
+    state = secrets.token_urlsafe(24)
+    MICROSOFT_OAUTH_STATE[state] = {"next": next}
+    scope = " ".join(MICROSOFT_OAUTH_SCOPES)
+    auth_url = (
+        f"https://login.microsoftonline.com/{quote(config['tenant'], safe='')}/oauth2/v2.0/authorize"
+        f"?client_id={quote(config['client_id'], safe='')}"
+        "&response_type=code"
+        f"&redirect_uri={quote(config['redirect_uri'], safe='')}"
+        "&response_mode=query"
+        f"&scope={quote(scope, safe='')}"
+        f"&state={quote(state, safe='')}"
+    )
+    response = RedirectResponse(auth_url)
+    response.set_cookie(
+        MICROSOFT_OAUTH_STATE_COOKIE,
+        state,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        domain=SESSION_COOKIE_DOMAIN,
+        path="/",
+        max_age=600,
+    )
+    response.set_cookie(
+        MICROSOFT_OAUTH_NEXT_COOKIE,
+        next,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        domain=SESSION_COOKIE_DOMAIN,
+        path="/",
+        max_age=600,
+    )
+    return response
+
+
+@app.get("/auth/microsoft/callback")
+def auth_microsoft_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None) -> RedirectResponse:
+    if error:
+        return RedirectResponse(f"/dashboard?microsoft_error={quote(error, safe='')}")
+
+    cookie_state = request.cookies.get(MICROSOFT_OAUTH_STATE_COOKIE)
+    if not code or not state or not cookie_state or state != cookie_state:
+        return RedirectResponse("/dashboard?microsoft_error=invalid_callback")
+
+    config = get_microsoft_oauth_config()
+    next_url = request.cookies.get(MICROSOFT_OAUTH_NEXT_COOKIE) or MICROSOFT_OAUTH_STATE.pop(state, {}).get("next") or "/dashboard"
+    token_url = f"https://login.microsoftonline.com/{config['tenant']}/oauth2/v2.0/token"
+
+    try:
+        token_payload = post_form_json(
+            token_url,
+            {
+                "code": code,
+                "client_id": config["client_id"],
+                "client_secret": config["client_secret"],
+                "redirect_uri": config["redirect_uri"],
+                "grant_type": "authorization_code",
+                "scope": " ".join(MICROSOFT_OAUTH_SCOPES),
+            },
+            error_prefix="Microsoft token exchange failed",
+        )
+    except HTTPException:
+        response = RedirectResponse("/dashboard?microsoft_error=token_exchange_failed")
+        response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
+
+    access_token = token_payload.get("access_token")
+    if not access_token:
+        response = RedirectResponse("/dashboard?microsoft_error=missing_access_token")
+        response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
+
+    try:
+        userinfo = get_json_with_bearer(
+            "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName,displayName",
+            access_token,
+            error_prefix="Microsoft userinfo request failed",
+        )
+    except HTTPException:
+        response = RedirectResponse("/dashboard?microsoft_error=userinfo_failed")
+        response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
+
+    email = str(userinfo.get("mail") or userinfo.get("userPrincipalName") or "").strip().lower()
+    if not email:
+        response = RedirectResponse("/dashboard?microsoft_error=no_email_returned")
+        response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
+
+    profile = find_profile_by_email(email)
+    if not profile:
+        user_id = user_id_from_email(email)
+        settings = default_profile_settings()
+        settings["IMAP_USER"] = email
+        settings["SMTP_USER"] = email
+        settings["SUMMARY_RECIPIENT"] = email
+        random_password = secrets.token_urlsafe(24)
+        password_hash, password_salt = _hash_password(random_password)
+        now = datetime.now().isoformat()
+        profile = {
+            "user_id": user_id,
+            "email": email,
+            "password_hash": password_hash,
+            "password_salt": password_salt,
+            "created_at": now,
+            "updated_at": now,
+            "settings": settings,
+        }
+
+    profile["microsoft_oauth"] = {
+        "provider": "microsoft",
+        "email": email,
+        "display_name": str(userinfo.get("displayName", "")).strip(),
+        "access_token": token_payload.get("access_token", ""),
+        "refresh_token": token_payload.get("refresh_token", ""),
+        "token_type": token_payload.get("token_type", ""),
+        "scope": token_payload.get("scope", ""),
+        "expires_in": token_payload.get("expires_in", 0),
+        "id_token": token_payload.get("id_token", ""),
+        "updated_at": datetime.now().isoformat(),
+    }
+    save_profile(profile)
+
+    response = RedirectResponse(next_url)
+    create_session(response, profile["user_id"])
+    response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+    response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+    return response
+
+
 @app.get("/auth/me")
 def auth_me(request: Request) -> Dict[str, Any]:
     user_id = get_session_user_id(request)
@@ -505,7 +671,27 @@ def get_google_oauth_config() -> Dict[str, str]:
     }
 
 
-def post_form_json(url: str, data: Dict[str, str]) -> Dict[str, Any]:
+def get_microsoft_oauth_config() -> Dict[str, str]:
+    client_id = get_app_config_value("MICROSOFT_CLIENT_ID")
+    client_secret = get_app_config_value("MICROSOFT_CLIENT_SECRET")
+    tenant = get_app_config_value("MICROSOFT_TENANT_ID") or "common"
+    redirect_uri = get_app_config_value("MICROSOFT_REDIRECT_URI") or (
+        f"{PUBLIC_BASE_URL}/auth/microsoft/callback" if PUBLIC_BASE_URL else "http://127.0.0.1:8000/auth/microsoft/callback"
+    )
+    if not client_id or not client_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Microsoft OAuth is not configured yet. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET first.",
+        )
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "tenant": tenant,
+        "redirect_uri": redirect_uri,
+    }
+
+
+def post_form_json(url: str, data: Dict[str, str], error_prefix: str = "OAuth token exchange failed") -> Dict[str, Any]:
     body = "&".join(f"{quote(str(key), safe='')}={quote(str(value), safe='')}" for key, value in data.items()).encode("utf-8")
     request = UrlRequest(url, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
     try:
@@ -513,17 +699,17 @@ def post_form_json(url: str, data: Dict[str, str]) -> Dict[str, Any]:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         payload = exc.read().decode("utf-8", errors="replace")
-        raise HTTPException(status_code=500, detail=f"Google token exchange failed: {payload}") from exc
+        raise HTTPException(status_code=500, detail=f"{error_prefix}: {payload}") from exc
 
 
-def get_json_with_bearer(url: str, access_token: str) -> Dict[str, Any]:
+def get_json_with_bearer(url: str, access_token: str, error_prefix: str = "OAuth userinfo request failed") -> Dict[str, Any]:
     request = UrlRequest(url, headers={"Authorization": f"Bearer {access_token}"}, method="GET")
     try:
         with urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         payload = exc.read().decode("utf-8", errors="replace")
-        raise HTTPException(status_code=500, detail=f"Google userinfo request failed: {payload}") from exc
+        raise HTTPException(status_code=500, detail=f"{error_prefix}: {payload}") from exc
 
 
 def default_profile_settings() -> Dict[str, str]:
@@ -610,6 +796,9 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
         "openai_model": settings.get("OPENAI_MODEL", "gpt-4o"),
         "summary_style_preferences": parse_summary_style_preferences(settings),
+        "imap_user": settings.get("IMAP_USER", ""),
+        "imap_server": settings.get("IMAP_SERVER", ""),
+        "imap_port": settings.get("IMAP_PORT", ""),
     }
 
 
@@ -701,6 +890,7 @@ def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
     )
     settings = apply_provider_defaults(settings, row["email"])
     google_oauth = decrypt_json_payload(row["google_oauth_json"] or "{}", APP_STORAGE_DIR)
+    microsoft_oauth = decrypt_json_payload(row["microsoft_oauth_json"] or "{}", APP_STORAGE_DIR)
     return {
         "user_id": row["user_id"],
         "email": row["email"],
@@ -710,6 +900,7 @@ def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
         "updated_at": row["updated_at"],
         "settings": settings,
         "google_oauth": google_oauth,
+        "microsoft_oauth": microsoft_oauth,
     }
 
 
@@ -761,12 +952,13 @@ def save_profile(profile: Dict[str, Any]) -> None:
     profile.setdefault("created_at", profile["updated_at"])
     settings_json = encrypt_json_payload(profile.get("settings") or {}, APP_STORAGE_DIR)
     google_oauth_json = encrypt_json_payload(profile.get("google_oauth") or {}, APP_STORAGE_DIR)
+    microsoft_oauth_json = encrypt_json_payload(profile.get("microsoft_oauth") or {}, APP_STORAGE_DIR)
 
     with get_db_connection() as connection:
         connection.execute(
             """
-            INSERT INTO users (user_id, email, password_hash, password_salt, created_at, updated_at, settings_json, google_oauth_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (user_id, email, password_hash, password_salt, created_at, updated_at, settings_json, google_oauth_json, microsoft_oauth_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 email = excluded.email,
                 password_hash = excluded.password_hash,
@@ -774,7 +966,8 @@ def save_profile(profile: Dict[str, Any]) -> None:
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
                 settings_json = excluded.settings_json,
-                google_oauth_json = excluded.google_oauth_json
+                google_oauth_json = excluded.google_oauth_json,
+                microsoft_oauth_json = excluded.microsoft_oauth_json
             """,
             (
                 profile["user_id"],
@@ -785,6 +978,7 @@ def save_profile(profile: Dict[str, Any]) -> None:
                 profile["updated_at"],
                 settings_json,
                 google_oauth_json,
+                microsoft_oauth_json,
             ),
         )
 
@@ -792,13 +986,18 @@ def save_profile(profile: Dict[str, Any]) -> None:
 def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
     settings = profile.get("settings") or {}
     contacts = [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
+    auth_provider = "google" if google_connected else "microsoft" if microsoft_connected else "password"
     return {
         "user_id": profile["user_id"],
         "email": profile.get("email", ""),
         "created_at": profile.get("created_at"),
         "updated_at": profile.get("updated_at"),
         "contacts": contacts,
-        "google_connected": bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token")),
+        "google_connected": google_connected,
+        "microsoft_connected": microsoft_connected,
+        "auth_provider": auth_provider,
         "settings": profile_settings_to_response(settings),
     }
 

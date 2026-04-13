@@ -1450,7 +1450,9 @@ someone@example.com"
         accountName.textContent = profile.email || profile.user_id;
         accountEmail.textContent = profile.google_connected
           ? "Signed in · Google connected"
-          : "Signed in";
+          : profile.microsoft_connected
+            ? "Signed in · Microsoft connected"
+            : "Signed in";
         accountBar.hidden = false;
         profilePanel.hidden = false;
         setPanelCollapsed(profileBody, toggleProfileButton, true);
@@ -1458,7 +1460,9 @@ someone@example.com"
         const settings = profile.settings || {};
         settingsConnectionText.textContent = profile.google_connected
           ? "Connected with Google"
-          : "Connection settings follow your current sign-in method.";
+          : profile.microsoft_connected
+            ? "Connected with Microsoft"
+            : "Connection settings follow your current sign-in method.";
         renderSummaryPreferences(settings.summary_style_preferences || []);
       }
 

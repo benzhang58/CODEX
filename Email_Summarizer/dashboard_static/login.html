@@ -128,7 +128,7 @@
   <body>
     <main class="card">
       <h1>Email Dashboard</h1>
-      <p>Log in with the same email you want this dashboard to summarize for you.</p>
+      <p>Log in with the same email you want this dashboard to summarize for you. Use Microsoft sign-in for Outlook/Hotmail/Microsoft 365. Use email and password for 263.com and other providers.</p>
 
       <div class="field">
         <label for="emailInput">Email</label>
@@ -144,6 +144,7 @@
         <button id="loginButton" type="button">Log In</button>
         <a class="secondary-button" href="/signup">Create Account</a>
         <a class="secondary-button" href="/auth/google/start">Continue with Google</a>
+        <a class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
       </div>
 
       <div id="status" class="status"></div>
@@ -187,6 +188,7 @@
       async function loadSession() {
         const params = new URLSearchParams(window.location.search);
         const googleError = params.get("google_error");
+        const microsoftError = params.get("microsoft_error");
         const response = await fetch("/auth/me");
         const data = await response.json();
         if (data.authenticated) {
@@ -199,6 +201,14 @@
             googleError === "not_configured"
               ? "Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first."
               : `Google sign-in failed: ${googleError.replaceAll("_", " ")}`;
+          return;
+        }
+
+        if (microsoftError) {
+          status.textContent =
+            microsoftError === "not_configured"
+              ? "Microsoft sign-in is not configured yet. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET first."
+              : `Microsoft sign-in failed: ${microsoftError.replaceAll("_", " ")}`;
         }
       }
 
