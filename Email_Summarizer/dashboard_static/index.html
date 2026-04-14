@@ -204,11 +204,16 @@
         display: grid;
         grid-template-columns: 0.92fr 1.08fr;
         gap: 20px;
-        align-items: start;
+        align-items: stretch;
+      }
+
+      .top-account-grid > .panel {
+        box-sizing: border-box;
+        min-height: var(--top-card-height);
+        height: var(--top-card-height);
       }
 
       #profilePanel {
-        min-height: var(--top-card-height);
         padding: 14px 18px;
         display: flex;
         align-items: center;
@@ -639,6 +644,56 @@
         padding: 16px 18px;
       }
 
+      .thread-records {
+        display: grid;
+        gap: 18px;
+      }
+
+      .thread-record {
+        display: grid;
+        gap: 14px;
+      }
+
+      .thread-record-header h3 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        letter-spacing: -0.02em;
+      }
+
+      .thread-message-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .thread-message-card {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 16px 18px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .thread-message-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .thread-message-meta {
+        display: grid;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .thread-message-body {
+        white-space: pre-wrap;
+        line-height: 1.6;
+        font-size: 15px;
+        color: var(--text);
+      }
+
       .summary-rendered p {
         white-space: normal;
       }
@@ -883,14 +938,14 @@
       }
 
       .contacts-person-button {
-        background: rgba(255, 255, 255, 0.95);
-        color: var(--text);
+        background: var(--accent);
+        color: #fff;
       }
 
       .contacts-person-button svg {
         width: 16px;
         height: 16px;
-        stroke: currentColor;
+        stroke: #ffffff;
         fill: none;
         stroke-width: 1.9;
         stroke-linecap: round;
@@ -1463,14 +1518,24 @@
         <section class="panel summary-detail-panel">
           <div class="panel-header">
             <h2>Summary</h2>
-            <span class="tooltip-wrap" data-tooltip="Send to Email">
-              <button id="sendSummaryEmailButton" class="icon-button" type="button" aria-label="Send to Email" hidden>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 6h16v12H4z"></path>
-                  <path d="m4 7 8 6 8-6"></path>
-                </svg>
-              </button>
-            </span>
+            <div class="controls icon-actions">
+              <span class="tooltip-wrap" data-tooltip="View Full Thread">
+                <button id="viewThreadButton" class="icon-button" type="button" aria-label="View Full Thread" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+                    <circle cx="12" cy="12" r="3.2"></circle>
+                  </svg>
+                </button>
+              </span>
+              <span class="tooltip-wrap" data-tooltip="Send to Email">
+                <button id="sendSummaryEmailButton" class="icon-button" type="button" aria-label="Send to Email" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 6h16v12H4z"></path>
+                    <path d="m4 7 8 6 8-6"></path>
+                  </svg>
+                </button>
+              </span>
+            </div>
           </div>
           <div id="detailStatus" class="status">Select a summary to view it.</div>
           <div id="summaryDetail" class="detail-empty">No summary selected yet.</div>
@@ -1533,6 +1598,7 @@
       const deleteSelectedButton = document.getElementById("deleteSelectedButton");
       const emailReportButton = document.getElementById("emailReportButton");
       const refineSummaryButton = document.getElementById("refineSummaryButton");
+      const viewThreadButton = document.getElementById("viewThreadButton");
       const sendSummaryEmailButton = document.getElementById("sendSummaryEmailButton");
       const summariesHeading = document.getElementById("summariesHeading");
       const listStatus = document.getElementById("listStatus");
@@ -1564,6 +1630,7 @@
       let currentSummaryId = null;
       let currentDisplayedSummaryTitle = "";
       let currentDisplayedSummaryMarkdown = "";
+      let currentDisplayedThreadAvailable = false;
       let selectedSummaryIds = [];
       let currentSummaries = [];
       let allSummaries = [];
@@ -1826,8 +1893,10 @@
                 <div class="contacts-modal-actions">
                   <button class="contacts-person-button" type="button" aria-label="Edit contact name" data-contact="${escapeHtml(contact)}">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 13c3.1 0 5.6-2.5 5.6-5.5S15.1 2 12 2 6.4 4.5 6.4 7.5 8.9 13 12 13Z"></path>
-                      <path d="M4 21c0-3.4 3.6-6.1 8-6.1s8 2.7 8 6.1"></path>
+                      <path d="M7 4.5h9.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H7"></path>
+                      <path d="M7 4.5a2 2 0 0 0-2 2v11a2 2 0 0 1 2-2h11.5"></path>
+                      <path d="M9 10a2.2 2.2 0 1 0 4.4 0A2.2 2.2 0 0 0 9 10Z"></path>
+                      <path d="M8.2 15.6c.9-1.3 2.2-2 3.6-2s2.7.7 3.6 2"></path>
                     </svg>
                   </button>
                   <button class="contacts-minus-button" type="button" aria-label="Remove contact" data-contact="${escapeHtml(contact)}">−</button>
@@ -2092,6 +2161,56 @@
         `;
       }
 
+      function renderThreadView(data) {
+        const records = Array.isArray(data?.threads) ? data.threads : [];
+        if (!records.length) {
+          return `
+            <div class="detail-section">
+              <h3>${escapeHtml(data?.title || "Full Thread")}</h3>
+              <p class="meta">No saved thread messages found for this summary.</p>
+            </div>
+          `;
+        }
+
+        const recordHtml = records.map((record, recordIndex) => {
+          const messages = Array.isArray(record.thread) ? record.thread : [];
+          const messageHtml = messages.map((message, messageIndex) => `
+            <div class="thread-message-card">
+              <div class="thread-message-title">${messageIndex + 1}. ${escapeHtml(formatDate(message.date) || "Unknown date")}</div>
+              <div class="thread-message-meta">
+                <div><strong>FROM:</strong> ${escapeHtml(message.from || "Unknown")}</div>
+                <div><strong>TO:</strong> ${escapeHtml(message.to || "Unknown")}</div>
+                ${message.cc ? `<div><strong>CC:</strong> ${escapeHtml(message.cc)}</div>` : ""}
+                ${message.subject ? `<div><strong>SUBJECT:</strong> ${escapeHtml(message.subject)}</div>` : ""}
+              </div>
+              <div class="thread-message-body">${escapeHtml(message.body || "[No content]")}</div>
+            </div>
+          `).join("");
+
+          return `
+            <div class="thread-record">
+              <div class="thread-record-header">
+                <h3>${escapeHtml(record.subject || `Email Record ${recordIndex + 1}`)}</h3>
+                <p class="meta">Saved thread with ${messages.length} message(s)</p>
+              </div>
+              <div class="thread-message-list">
+                ${messageHtml}
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        return `
+          <div class="detail-section">
+            <h3>${escapeHtml(data.title || "Full Thread")}</h3>
+            <p class="meta">Full saved email chain for this summary.</p>
+          </div>
+          <div class="thread-records">
+            ${recordHtml}
+          </div>
+        `;
+      }
+
       function formatSummaryCardTitle(summary) {
         const rawTitle = String(summary.title || summary.summary_id || "").trim();
         if (!rawTitle) return "Untitled Summary";
@@ -2219,10 +2338,12 @@
         currentSummaryId = null;
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
+        currentDisplayedThreadAvailable = false;
         detailStatus.textContent = "Select a summary to view it.";
         summaryDetail.className = "";
         summaryDetail.innerHTML = "No summary selected yet.";
         sendSummaryEmailButton.hidden = true;
+        viewThreadButton.hidden = true;
       }
 
       async function loadSummaries() {
@@ -2230,6 +2351,7 @@
         currentSummaryId = null;
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
+        currentDisplayedThreadAvailable = false;
         selectedSummaryIds = [];
         currentSummaries = [];
         allSummaries = [];
@@ -2238,6 +2360,7 @@
         summaryList.innerHTML = "";
         summaryDetail.innerHTML = "No summary selected yet.";
         sendSummaryEmailButton.hidden = true;
+        viewThreadButton.hidden = true;
         detailStatus.textContent = "Select a summary to view it.";
 
         const response = await fetch(`/summaries?user_id=${encodeURIComponent(currentUserId)}`);
@@ -2707,6 +2830,7 @@
         if (!response.ok) {
           detailStatus.textContent = "Failed to load summary detail.";
           sendSummaryEmailButton.hidden = true;
+          viewThreadButton.hidden = true;
           summaryDetail.textContent = summary.detail || "Unknown error.";
           summaryDetail.removeAttribute("aria-busy");
           return;
@@ -2718,7 +2842,9 @@
           summary.summary_markdown ||
           summary.content_markdown ||
           buildMarkdownFromSummary(summary);
+        currentDisplayedThreadAvailable = Array.isArray(summary.source_email_file_ids) && summary.source_email_file_ids.length > 0;
         sendSummaryEmailButton.hidden = false;
+        viewThreadButton.hidden = !currentDisplayedThreadAvailable;
         summaryDetail.className = "";
         summaryDetail.innerHTML = `
           <div class="detail-section">
@@ -2748,6 +2874,7 @@
 
         const requestToken = ++summaryViewRequestToken;
         sendSummaryEmailButton.hidden = true;
+        viewThreadButton.hidden = true;
         detailStatus.textContent = `Building report from ${summaryIds.length} selected summaries...`;
         summaryDetail.setAttribute("aria-busy", "true");
         setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
@@ -2776,6 +2903,7 @@
           currentSummaryId = null;
           currentDisplayedSummaryTitle = data.title || "Combined Report";
           currentDisplayedSummaryMarkdown = data.combined_markdown || "";
+          currentDisplayedThreadAvailable = false;
           detailStatus.textContent = "";
           summaryDetail.className = "";
           summaryDetail.innerHTML = `
@@ -2830,6 +2958,7 @@
 
         refineSummaryButton.disabled = true;
         sendSummaryEmailButton.hidden = true;
+        viewThreadButton.hidden = true;
         detailStatus.textContent = "Refining summary...";
         summaryDetail.setAttribute("aria-busy", "true");
         setRunStatus("Refining the current summary...", true);
@@ -2857,6 +2986,7 @@
 
           currentDisplayedSummaryTitle = data.title || currentDisplayedSummaryTitle || "Refined Summary";
           currentDisplayedSummaryMarkdown = data.refined_markdown || "";
+          currentDisplayedThreadAvailable = false;
           if (currentProfile?.settings) {
             currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
           }
@@ -2878,6 +3008,42 @@
           summaryDetail.removeAttribute("aria-busy");
         } finally {
           refineSummaryButton.disabled = false;
+        }
+      }
+
+      async function viewCurrentSummaryThread() {
+        if (!requireSignedIn()) return;
+        if (!currentSummaryId) {
+          setRunStatus("Select a summary first.");
+          return;
+        }
+
+        viewThreadButton.disabled = true;
+        detailStatus.textContent = "Loading full thread...";
+        summaryDetail.setAttribute("aria-busy", "true");
+
+        try {
+          const response = await fetch(
+            `/summaries/${encodeURIComponent(currentSummaryId)}/thread?user_id=${encodeURIComponent(currentUserId)}`
+          );
+          const data = await response.json();
+          if (!response.ok) {
+            detailStatus.textContent = "Failed to load full thread.";
+            summaryDetail.textContent = data.detail || "Unknown error.";
+            summaryDetail.removeAttribute("aria-busy");
+            return;
+          }
+
+          detailStatus.textContent = "";
+          summaryDetail.className = "";
+          summaryDetail.innerHTML = renderThreadView(data);
+          summaryDetail.removeAttribute("aria-busy");
+        } catch (error) {
+          detailStatus.textContent = "Failed to load full thread.";
+          summaryDetail.textContent = error.message;
+          summaryDetail.removeAttribute("aria-busy");
+        } finally {
+          viewThreadButton.disabled = false;
         }
       }
 
@@ -3038,6 +3204,7 @@
       deleteSelectedButton.addEventListener("click", deleteSelectedSummaries);
       emailReportButton.addEventListener("click", sendCombinedReportEmail);
       refineSummaryButton.addEventListener("click", refineCurrentSummary);
+      viewThreadButton.addEventListener("click", viewCurrentSummaryThread);
       sendSummaryEmailButton.addEventListener("click", sendCurrentSummaryEmail);
       chatSendButton.addEventListener("click", sendChat);
       chatInput.addEventListener("keydown", (event) => {

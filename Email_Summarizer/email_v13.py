@@ -318,10 +318,10 @@ class EmailSummarizer:
 
     MAX_ATTACHMENT_PREVIEW_CHARS = 180
     MAX_SUMMARY_OUTPUT_TOKENS = 5000
+    MAX_SUBJECT_FALLBACK_CANDIDATES = 25
 
     def __init__(self, output_base: Path, user_id: str):
         self.output_base     = Path(output_base)
-        self.raw_dir         = self.output_base / "raw_emails"
         self.attachments_dir = self.output_base / "attachments"
         self.summaries_dir   = self.output_base / "summaries"
         self.json_dir        = self.output_base / "json"
@@ -333,7 +333,6 @@ class EmailSummarizer:
         self.data_metadata_path = self.data_user_dir / "metadata.json"
 
         for d in [
-            self.raw_dir,
             self.attachments_dir,
             self.summaries_dir,
             self.json_dir,
@@ -357,16 +356,15 @@ class EmailSummarizer:
             logger.warning("No WHITELIST_SENDERS defined!")
 
         self._primary_folder = os.getenv("IMAP_FOLDER", "INBOX")
+        self.imap_timeout_seconds = int(os.getenv("EMAIL_SUMMARIZER_IMAP_TIMEOUT_SECONDS", "30") or "30")
         self._all_folders: List[str] = []  # populated after connect
         self.profile_email = os.getenv("PROFILE_EMAIL", "").strip().lower()
         self.google_oauth = self._load_google_oauth()
         self.use_gmail_api = self._should_use_gmail_api()
-        self.save_raw_debug = os.getenv("EMAIL_SUMMARIZER_SAVE_RAW_DEBUG", "false").lower() == "true"
         self.include_attachment_previews_in_llm = os.getenv(
             "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM",
             "false",
         ).lower() == "true"
-        self.raw_email_retention_days = int(os.getenv("EMAIL_SUMMARIZER_RAW_EMAIL_RETENTION_DAYS", "7") or "7")
         self.attachment_retention_days = int(os.getenv("EMAIL_SUMMARIZER_ATTACHMENT_RETENTION_DAYS", "30") or "30")
         self.source_email_retention_days = int(os.getenv("EMAIL_SUMMARIZER_SOURCE_EMAIL_RETENTION_DAYS", "0") or "0")
         self._apply_retention_policy()
@@ -438,9 +436,7 @@ class EmailSummarizer:
                 logger.warning(f"Retention cleanup skipped for {path}: {exc}")
 
     def _apply_retention_policy(self):
-        self._prune_path_tree(self.raw_dir, self.raw_email_retention_days)
         self._prune_path_tree(self.attachments_dir, self.attachment_retention_days)
-        self._prune_path_tree(self.json_dir, self.raw_email_retention_days)
         if self.source_email_retention_days > 0:
             self._prune_path_tree(self.data_emails_dir, self.source_email_retention_days)
 
@@ -684,12 +680,16 @@ class EmailSummarizer:
             raise ValueError("Missing IMAP credentials.")
 
         logger.info(f"Connecting to {server}:{port}")
-        mail = imaplib.IMAP4_SSL(server, port)
+        mail = imaplib.IMAP4_SSL(server, port, timeout=self.imap_timeout_seconds)
+        try:
+            mail.sock.settimeout(self.imap_timeout_seconds)
+        except Exception:
+            pass
         mail.login(user, password)
         mail.select(self._primary_folder)
 
         self._all_folders = self._list_all_folders(mail)
-        logger.info(f"Discovered {len(self._all_folders)} folder(s): {self._all_folders}")
+        logger.info(f"Discovered {len(self._all_folders)} folder(s).")
         return mail
 
     # Folders to skip during thread reconstruction — never contain real thread messages
@@ -707,6 +707,26 @@ class EmailSummarizer:
         "Sent Messages", "[Gmail]/Sent Mail",
         "已发送", "&XfJT0ZAB-",  # 263.com sent folder (decoded + raw encoded)
     ]
+
+    def _is_263_mailbox(self) -> bool:
+        server = os.getenv("IMAP_SERVER", "").strip().lower()
+        email_value = self.profile_email.strip().lower()
+        return "263" in server or email_value.endswith("@263.com") or email_value.endswith("@263.net")
+
+    def _thread_search_folders(self) -> List[str]:
+        if not self._all_folders:
+            return []
+
+        if self.use_gmail_api:
+            return self._all_folders
+
+        if self._is_263_mailbox():
+            preferred = {"INBOX", "Sent Messages", "已发送", "&XfJT0ZAB-"}
+            narrowed = [folder for folder in self._all_folders if folder in preferred]
+            if narrowed:
+                return narrowed
+
+        return self._all_folders
 
     def _list_all_folders(self, mail: imaplib.IMAP4_SSL) -> List[str]:
         import re
@@ -739,8 +759,7 @@ class EmailSummarizer:
                     and decoded_map[n] not in skip_decoded
                     and n not in skip_decoded]
         ordered  = priority + rest
-        logger.info(f"Folders discovered (decoded): {decoded_names}")
-        logger.info(f"Thread search order (decoded): {[decoded_map[n] for n in ordered]}")
+        logger.info(f"Thread search prepared across {len(ordered)} folder(s).")
         return ordered
 
     @staticmethod
@@ -839,8 +858,7 @@ class EmailSummarizer:
         for key, group in threads.items():
             most_recent = max(group, key=get_date)
             if len(group) > 1:
-                skipped = [m.get("Subject", "")[:40] for m in group if m is not most_recent]
-                logger.info(f"Thread dedup: keeping most recent of {len(group)} triggers, skipping: {skipped}")
+                logger.info(f"Thread dedup: keeping most recent of {len(group)} triggers.")
             deduped.append(most_recent)
 
         logger.info(f"Thread dedup: {len(msgs)} trigger(s) → {len(deduped)} unique thread(s)")
@@ -881,7 +899,7 @@ class EmailSummarizer:
         Restores primary folder when done.
         """
         results: List[Tuple[str, int]] = []
-        for folder in self._all_folders:
+        for folder in self._thread_search_folders():
             if not self._select(mail, folder, readonly=True):
                 continue
             try:
@@ -939,13 +957,13 @@ class EmailSummarizer:
                     _, data = mail.uid('SEARCH', None, f'FROM "{sender}"')
                     sender_uids = set(self._parse_uids(data))
                     matched = sender_uids & recent_uids  # intersection
-                    logger.info(f"  FROM '{sender}' → {len(sender_uids)} total, {len(matched)} recent")
+                    logger.info(f"Matched {len(matched)} recent email(s) for one tracked sender.")
                     all_uids.update(matched)
                 except Exception as e:
                     logger.warning(f"  FROM search failed for '{sender}': {e}")
 
         uid_list = sorted(all_uids)
-        logger.info(f"Combined search: {len(uid_list)} candidate(s) to process: {uid_list[:10]}")
+        logger.info(f"Combined search: {len(uid_list)} candidate email(s) to process.")
 
         msgs = []
         skipped_processed = 0
@@ -957,7 +975,6 @@ class EmailSummarizer:
             msg = self._fetch_raw(mail, uid)
             if msg:
                 sender = email.utils.parseaddr(msg.get("From", ""))[1].lower()
-                logger.info(f"  UID {uid}: from={sender} subject={msg.get('Subject','')[:50]}")
                 msgs.append(msg)
 
         logger.info(f"Found {len(msgs)} new trigger email(s)")
@@ -973,7 +990,7 @@ class EmailSummarizer:
             sender_query = " OR ".join(f"from:{sender}" for sender in self.whitelist)
             query_parts.append(f"({sender_query})")
         query = " ".join(query_parts)
-        logger.info(f"Gmail API search query: {query}")
+        logger.info("Running Gmail API search for tracked senders.")
 
         candidate_ids: List[str] = []
         next_page_token: Optional[str] = None
@@ -1044,10 +1061,10 @@ class EmailSummarizer:
                 fetched_uids.add(getattr(trigger, 'uid', 0))
 
         if not is_threaded:
-            logger.info(f"Standalone email: {trigger.get('Subject', '')[:60]}")
+            logger.info("Standalone email detected.")
             return [self._to_thread_message(trigger, mail)]
 
-        logger.info(f"Fetching full thread for: {trigger.get('Subject', '')[:60]}")
+        logger.info("Fetching full thread for trigger email.")
 
         # ── BFS over the Message-ID reference graph ──
         queue         = list(referenced)
@@ -1089,7 +1106,7 @@ class EmailSummarizer:
             # [Gmail]/All Mail mirrors everything — one search is enough.
             # Fall back to full folder list only if All Mail isn't available.
             all_mail = [f for f in self._all_folders if f in ("[Gmail]/All Mail", "All Mail")]
-            subject_folders = all_mail if all_mail else self._all_folders
+            subject_folders = all_mail if all_mail else self._thread_search_folders()
 
             subject_hits: List[Tuple[str, int]] = []
             for folder in subject_folders:
@@ -1099,8 +1116,12 @@ class EmailSummarizer:
                     _, data = mail.uid('SEARCH', None, f'SUBJECT "{clean_subject}"')
                     for uid in self._parse_uids(data):
                         subject_hits.append((folder, uid))
+                        if len(subject_hits) >= self.MAX_SUBJECT_FALLBACK_CANDIDATES:
+                            break
                 except Exception:
                     continue
+                if len(subject_hits) >= self.MAX_SUBJECT_FALLBACK_CANDIDATES:
+                    break
             self._restore_primary(mail)
 
             for folder, uid in subject_hits:
@@ -1116,7 +1137,7 @@ class EmailSummarizer:
                 if msg_id and msg_id not in collected:
                     fetched_uids.add(uid)
                     collected[msg_id] = msg
-                    logger.info(f"Subject fallback added message from '{folder}': {msg.get('Subject','')[:50]}")
+                    logger.info("Subject fallback added one related thread message.")
 
         logger.info(f"Thread total: {len(collected)} message(s) found across all folders")
 
@@ -1269,7 +1290,7 @@ class EmailSummarizer:
                 if not payload:
                     continue
                 if len(payload) >= 10 * 1024 * 1024:
-                    logger.warning(f"Skipped large attachment (>10MB): {filename}")
+                    logger.warning("Skipped large attachment (>10MB).")
                     attachments.append(AttachmentInfo(
                         filename=filename, saved_path="",
                         preview="Attachment too large for preview.",
@@ -1283,9 +1304,9 @@ class EmailSummarizer:
                     filename=filename, saved_path=str(save_path), preview=preview,
                     from_sender=sender, email_date=date_iso,
                 ))
-                logger.info(f"Saved attachment: {save_path.name}")
+                logger.info("Saved attachment.")
             except Exception as e:
-                logger.error(f"Error processing attachment {filename}: {e}")
+                logger.error(f"Error processing attachment: {e}")
                 attachments.append(AttachmentInfo(
                     filename=filename, saved_path="", preview=f"Error: {e}",
                     from_sender=sender, email_date=date_iso,
@@ -1371,18 +1392,6 @@ class EmailSummarizer:
             thread = self._fetch_full_thread(mail, msg)
 
             raw_path = None
-            if self.save_raw_debug:
-                raw_path = self.raw_dir / f"uid_{uid}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
-                with open(raw_path, "w", encoding="utf-8") as f:
-                    f.write(f"TRIGGER: {subject} | From: {sender} | {date_iso}\n")
-                    f.write(f"THREAD LENGTH: {len(thread)} messages\n\n")
-                    for i, tm in enumerate(thread, 1):
-                        marker = "★ NEW" if tm.message_id == message_id else f"[{i}]"
-                        f.write(f"{marker} {tm.date} | From: {tm.sender}\n")
-                        f.write(tm.body + "\n")
-                        for att in tm.attachments:
-                            f.write(f"  [ATTACHMENT] {att.filename}\n")
-                        f.write("\n" + "-"*60 + "\n\n")
 
             return EmailRecord(
                 uid=uid,
@@ -1555,15 +1564,6 @@ class EmailSummarizer:
 
         full_input = preamble + preference_block + data_block + "\n\n" + section_guide
         logger.info(f"LLM prompt length: {len(full_input)} chars (~{len(full_input)//4} tokens)")
-        # Debug: log unique attachments going into the prompt
-        for record in records:
-            latest: Dict[str, AttachmentInfo] = {}
-            for tm in record.thread:
-                for att in tm.attachments:
-                    latest[att.filename] = att
-            logger.info(f"  {len(latest)} unique attachment(s) for UID {record.uid}:")
-            for fname, att in latest.items():
-                logger.info(f"    {fname} | preview_len={len(att.preview)} | sender={att.from_sender}")
 
         try:
             response = self.openai_client.responses.create(
@@ -1710,7 +1710,7 @@ class EmailSummarizer:
                     server.login(smtp_user, smtp_password)
                     server.sendmail(smtp_user, [recipient], msg.as_bytes())
 
-            logger.info(f"✅ Summary email sent to {recipient}")
+            logger.info("Summary email sent.")
         except Exception as e:
             logger.error(f"Failed to send summary email: {e}")
 

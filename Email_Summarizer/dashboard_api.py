@@ -657,146 +657,6 @@ def get_profile(request: Request, user_id: Optional[str] = Query(None)) -> Dict[
     return {"profile": profile_response(profile)}
 
 
-@app.get("/debug/users")
-def debug_users(request: Request) -> Dict[str, Any]:
-    resolve_user_id(request)
-    with get_db_connection() as connection:
-        user_rows = connection.execute(
-            "SELECT user_id, email, created_at, updated_at FROM users ORDER BY created_at DESC"
-        ).fetchall()
-        session_rows = connection.execute(
-            "SELECT user_id, COUNT(*) AS session_count FROM sessions GROUP BY user_id ORDER BY session_count DESC"
-        ).fetchall()
-
-    return {
-        "db_path": str(DB_PATH),
-        "storage_dir": str(APP_STORAGE_DIR),
-        "users_count": len(user_rows),
-        "users": [
-            {
-                "user_id": str(row["user_id"]),
-                "email": str(row["email"]),
-                "created_at": str(row["created_at"]),
-                "updated_at": str(row["updated_at"]),
-            }
-            for row in user_rows
-        ],
-        "sessions": [
-            {
-                "user_id": str(row["user_id"]),
-                "session_count": int(row["session_count"]),
-            }
-            for row in session_rows
-        ],
-    }
-
-
-@app.get("/debug/mailbox-search")
-def debug_mailbox_search(request: Request, days_back: int = Query(7, ge=1, le=60)) -> Dict[str, Any]:
-    user_id = resolve_user_id(request)
-    profile = load_profile_or_404(user_id)
-    settings = apply_provider_defaults(
-        merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {}),
-        profile.get("email", ""),
-    )
-
-    whitelist = [item.strip().lower() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
-    imap_server = str(settings.get("IMAP_SERVER", "")).strip()
-    imap_user = str(settings.get("IMAP_USER", "")).strip()
-    imap_password = str(settings.get("IMAP_PASSWORD", "")).strip()
-    imap_folder = str(settings.get("IMAP_FOLDER", "INBOX")).strip() or "INBOX"
-    imap_port = int(str(settings.get("IMAP_PORT", "993")).strip() or "993")
-
-    if not all([imap_server, imap_user, imap_password]):
-        return {
-            "connected": False,
-            "reason": "missing_credentials",
-            "imap_server": imap_server,
-            "imap_user": imap_user,
-            "imap_folder": imap_folder,
-            "whitelist": whitelist,
-        }
-
-    since_date = (datetime.now() - timedelta(days=days_back)).strftime("%d-%b-%Y")
-    try:
-        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
-        mail.login(imap_user, imap_password)
-        select_status, _ = mail.select(imap_folder, readonly=True)
-
-        recent_uids: List[int] = []
-        if select_status == "OK":
-            _, data = mail.uid("SEARCH", None, f"SINCE {since_date}")
-            recent_uids = [int(item) for item in b" ".join(part for part in data if isinstance(part, bytes)).split() if item.isdigit()]
-
-        sender_breakdown: List[Dict[str, Any]] = []
-        combined = set()
-        for sender in whitelist:
-            try:
-                _, data = mail.uid("SEARCH", None, f'FROM "{sender}"')
-                sender_uids = [int(item) for item in b" ".join(part for part in data if isinstance(part, bytes)).split() if item.isdigit()]
-            except Exception as exc:
-                sender_breakdown.append({
-                    "sender": sender,
-                    "from_total": 0,
-                    "recent_match": 0,
-                    "error": str(exc),
-                })
-                continue
-            matched = sorted(set(sender_uids) & set(recent_uids))
-            combined.update(matched)
-            sender_breakdown.append({
-                "sender": sender,
-                "from_total": len(sender_uids),
-                "recent_match": len(matched),
-                "matched_uids_preview": matched[:10],
-            })
-
-        try:
-            mail.logout()
-        except Exception:
-            pass
-
-        return {
-            "connected": True,
-            "imap_server": imap_server,
-            "imap_user": imap_user,
-            "imap_folder": imap_folder,
-            "since_date": since_date,
-            "days_back": days_back,
-            "whitelist": whitelist,
-            "recent_count": len(recent_uids),
-            "recent_uids_preview": sorted(recent_uids)[:20],
-            "sender_breakdown": sender_breakdown,
-            "combined_candidate_count": len(combined),
-            "combined_uids_preview": sorted(combined)[:20],
-        }
-    except Exception as exc:
-        return {
-            "connected": False,
-            "reason": "imap_error",
-            "error": str(exc),
-            "imap_server": imap_server,
-            "imap_user": imap_user,
-            "imap_folder": imap_folder,
-            "whitelist": whitelist,
-        }
-
-
-@app.post("/debug/reset-processed-state")
-def debug_reset_processed_state(request: Request) -> Dict[str, Any]:
-    user_id = resolve_user_id(request)
-    state_path = get_user_processed_state_path(user_id)
-    existed = state_path.exists()
-    if existed:
-        state_path.unlink()
-    return {
-        "success": True,
-        "user_id": user_id,
-        "processed_state_removed": existed,
-        "processed_state_path": str(state_path),
-    }
-
-
 @app.put("/profile")
 def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
@@ -2487,6 +2347,52 @@ def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Quer
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
 
     return load_summary_file(summary_path)
+
+
+@app.get("/summaries/{summary_id}/thread")
+def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
+    user_id = resolve_user_id(request, user_id)
+    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    if not summary_path.exists():
+        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+
+    summary = load_summary_json(summary_path)
+    email_ids = [str(email_id).strip() for email_id in summary.get("source_email_file_ids", []) or [] if str(email_id).strip()]
+    threads: List[Dict[str, Any]] = []
+
+    for email_id in email_ids:
+        email_path = get_user_json_emails_dir(user_id) / f"{email_id}.json"
+        if not email_path.exists():
+            continue
+        email_payload = load_email_json(email_path)
+        threads.append(
+            {
+                "email_id": email_payload.get("email_id", email_id),
+                "subject": email_payload.get("subject", ""),
+                "sender": email_payload.get("sender", ""),
+                "date": email_payload.get("date", ""),
+                "thread": [
+                    {
+                        "message_id": message.get("message_id", ""),
+                        "date": message.get("date", ""),
+                        "from": message.get("sender", ""),
+                        "to": message.get("to", ""),
+                        "cc": message.get("cc", ""),
+                        "subject": message.get("subject", ""),
+                        "body": message.get("body", ""),
+                    }
+                    for message in email_payload.get("thread", []) or []
+                ],
+            }
+        )
+
+    return {
+        "summary_id": summary_id,
+        "title": summary.get("title", summary_id),
+        "contact_label": summary.get("contact_label", ""),
+        "email_record_count": len(threads),
+        "threads": threads,
+    }
 
 
 @app.post("/summaries/{summary_id}/send-email")
