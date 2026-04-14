@@ -188,7 +188,7 @@
 
       #profilePanel.is-collapsed {
         min-height: var(--top-card-height);
-        padding: 10px 14px;
+        padding: 14px 18px;
         display: flex;
         align-items: center;
       }
@@ -391,44 +391,6 @@
         display: inline-flex;
       }
 
-      .runner {
-        position: relative;
-        width: 22px;
-        height: 22px;
-        flex: 0 0 22px;
-      }
-
-      .runner svg {
-        width: 22px;
-        height: 22px;
-        stroke: currentColor;
-        fill: none;
-        stroke-width: 1.8;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        animation: runner-bob 0.8s ease-in-out infinite alternate;
-      }
-
-      .runner.active svg .leg-a {
-        animation: leg-a 0.5s ease-in-out infinite alternate;
-        transform-origin: 11px 14px;
-      }
-
-      .runner.active svg .leg-b {
-        animation: leg-b 0.5s ease-in-out infinite alternate;
-        transform-origin: 11px 14px;
-      }
-
-      .runner.active svg .arm-a {
-        animation: arm-a 0.5s ease-in-out infinite alternate;
-        transform-origin: 11px 10px;
-      }
-
-      .runner.active svg .arm-b {
-        animation: arm-b 0.5s ease-in-out infinite alternate;
-        transform-origin: 11px 10px;
-      }
-
       input,
       textarea,
       button {
@@ -566,6 +528,11 @@
         padding-right: 8px;
       }
 
+      .summary-list-panel,
+      .summary-detail-panel {
+        min-height: 560px;
+      }
+
       .summary-actions {
         display: flex;
         align-items: center;
@@ -678,10 +645,12 @@
 
       #summaryDetail {
         max-height: 72vh;
+        min-height: 420px;
         overflow-y: auto;
         padding-right: 10px;
         display: grid;
         gap: 20px;
+        align-content: start;
       }
 
       .detail-section {
@@ -779,31 +748,6 @@
         100% {
           transform: translateX(320%);
         }
-      }
-
-      @keyframes runner-bob {
-        0% { transform: translateY(0); }
-        100% { transform: translateY(-1px); }
-      }
-
-      @keyframes leg-a {
-        0% { transform: rotate(18deg); }
-        100% { transform: rotate(-18deg); }
-      }
-
-      @keyframes leg-b {
-        0% { transform: rotate(-16deg); }
-        100% { transform: rotate(16deg); }
-      }
-
-      @keyframes arm-a {
-        0% { transform: rotate(-20deg); }
-        100% { transform: rotate(20deg); }
-      }
-
-      @keyframes arm-b {
-        0% { transform: rotate(16deg); }
-        100% { transform: rotate(-16deg); }
       }
 
       .hint {
@@ -978,7 +922,8 @@
       }
 
       .contacts-plus-button,
-      .contacts-minus-button {
+      .contacts-minus-button,
+      .contacts-person-button {
         width: 42px;
         height: 42px;
         border-radius: 50%;
@@ -993,10 +938,22 @@
         cursor: pointer;
       }
 
-      .contacts-minus-button {
+      .contacts-minus-button,
+      .contacts-person-button {
         width: 34px;
         height: 34px;
         font-size: 20px;
+        border-radius: 10px;
+      }
+
+      .contacts-person-button svg {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
 
       .contacts-modal-list {
@@ -1018,8 +975,25 @@
         background: rgba(255, 255, 255, 0.82);
       }
 
+      .contacts-modal-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
       .contacts-modal-item span {
         overflow-wrap: anywhere;
+      }
+
+      .contacts-modal-name {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .contacts-modal-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .contacts-modal-empty {
@@ -1387,20 +1361,6 @@
         <div class="hero-top">
           <div class="hero-copy">
             <p id="heroLabel" class="eyebrow">Email Dashboard</p>
-            <div id="titleStatus" class="title-status" aria-live="polite">
-              <span id="runnerIcon" class="runner" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="13" cy="5" r="2"></circle>
-                  <path d="M12 8l3 3"></path>
-                  <path d="M15 11l3 1"></path>
-                  <path class="arm-a" d="M12 9l-3 2"></path>
-                  <path d="M15 11l-1 4"></path>
-                  <path class="leg-a" d="M14 15l-4 4"></path>
-                  <path class="leg-b" d="M14 15l5 3"></path>
-                </svg>
-              </span>
-              <span id="runStatusText"></span>
-            </div>
           </div>
           <div class="hero-actions">
             <input id="userIdInput" value="" placeholder="Signed in account" readonly hidden />
@@ -1429,11 +1389,6 @@
               <div id="statSelectedCount" class="stat-value">0</div>
               <div class="stat-note">Currently Selected</div>
             </div>
-            <div class="stat-card">
-              <div class="stat-label">Done</div>
-              <div id="statDoneCount" class="stat-value">0</div>
-              <div class="stat-note"></div>
-            </div>
           </div>
 
           <div class="pulse-card">
@@ -1460,7 +1415,7 @@
           </div>
           <div id="contactsBody" class="panel-body collapsed">
             <div class="controls">
-              <button id="loadWhitelistButton">Current Selected Contacts</button>
+              <button id="loadWhitelistButton">Current Contacts</button>
               <button id="saveWhitelistButton" aria-label="Add Contact">+</button>
             </div>
             <input
@@ -1497,7 +1452,7 @@
       </div>
 
       <div class="layout">
-        <section class="panel">
+        <section class="panel summary-list-panel">
           <h2 id="summariesHeading">Summaries</h2>
           <div class="summary-actions">
             <div class="controls icon-actions">
@@ -1511,6 +1466,7 @@
                   </svg>
                 </button>
               </span>
+              <button id="combinedReportButton" class="secondary-button" type="button">Combined Report</button>
               <span class="tooltip-wrap" data-tooltip="Delete Selected">
                 <button id="deleteSelectedButton" class="icon-button" type="button" aria-label="Delete Selected">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1553,7 +1509,7 @@
           <div id="summaryList" class="summary-list"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel summary-detail-panel">
           <div class="panel-header">
             <h2>Summary</h2>
             <span class="tooltip-wrap" data-tooltip="Send to Email">
@@ -1627,6 +1583,7 @@
       const chatInput = document.getElementById("chatInput");
       const chatSendButton = document.getElementById("chatSendButton");
       const selectAllNewButton = document.getElementById("selectAllNewButton");
+      const combinedReportButton = document.getElementById("combinedReportButton");
       const deleteSelectedButton = document.getElementById("deleteSelectedButton");
       const emailReportButton = document.getElementById("emailReportButton");
       const refineSummaryButton = document.getElementById("refineSummaryButton");
@@ -1636,13 +1593,9 @@
       const summaryList = document.getElementById("summaryList");
       const detailStatus = document.getElementById("detailStatus");
       const summaryDetail = document.getElementById("summaryDetail");
-      const titleStatus = document.getElementById("titleStatus");
-      const runnerIcon = document.getElementById("runnerIcon");
-      const runStatusText = document.getElementById("runStatusText");
       const statNewCount = document.getElementById("statNewCount");
       const statContactCount = document.getElementById("statContactCount");
       const statSelectedCount = document.getElementById("statSelectedCount");
-      const statDoneCount = document.getElementById("statDoneCount");
       const pulseTitle = document.getElementById("pulseTitle");
       const pulseBadge = document.getElementById("pulseBadge");
       const pulseNote = document.getElementById("pulseNote");
@@ -1671,6 +1624,7 @@
       let activeModalResolver = null;
       let contactsLoadedForUser = null;
       let currentContacts = [];
+      let currentContactProfiles = {};
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let summaryViewRequestToken = 0;
       let showingDoneSummaries = false;
@@ -1786,9 +1740,6 @@
 
       function setRunStatus(message, loading = false) {
         const visibleMessage = String(message || "").trim();
-        runStatusText.textContent = visibleMessage;
-        titleStatus.classList.toggle("active", Boolean(visibleMessage));
-        runnerIcon.classList.toggle("active", loading);
         pulseTitle.textContent = loading ? "Checking recent email" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
         pulseNote.textContent = visibleMessage || "Select summaries, ask questions, or run a new check.";
         pulseBadge.hidden = !loading;
@@ -1806,15 +1757,12 @@
           statNewCount.textContent = "0";
           statContactCount.textContent = "0";
           statSelectedCount.textContent = "0";
-          statDoneCount.textContent = "0";
           return;
         }
         const unreadCount = allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length;
-        const doneCount = getDoneSummaryIds(currentUserId).size;
         statNewCount.textContent = String(unreadCount);
         statContactCount.textContent = String(currentContacts.length);
         statSelectedCount.textContent = String(selectedSummaryIds.length);
-        statDoneCount.textContent = String(doneCount);
       }
 
       function closeAppModal(result = null) {
@@ -1903,16 +1851,32 @@
         }
 
         contactsModalList.innerHTML = currentContacts
-          .map(
-            (contact) => `
+          .map((contact) => {
+            const profile = currentContactProfiles[contact] || {};
+            const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
+            return `
               <div class="contacts-modal-item">
-                <span>${escapeHtml(contact)}</span>
-                <button class="contacts-minus-button" type="button" aria-label="Remove contact" data-contact="${escapeHtml(contact)}">−</button>
+                <div class="contacts-modal-copy">
+                  <span>${escapeHtml(contact)}</span>
+                  <span class="contacts-modal-name">${escapeHtml(fullName || "No name saved")}</span>
+                </div>
+                <div class="contacts-modal-actions">
+                  <button class="contacts-person-button" type="button" aria-label="Edit contact name" data-contact="${escapeHtml(contact)}">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 13c3.1 0 5.6-2.5 5.6-5.5S15.1 2 12 2 6.4 4.5 6.4 7.5 8.9 13 12 13Z"></path>
+                      <path d="M4 21c0-3.4 3.6-6.1 8-6.1s8 2.7 8 6.1"></path>
+                    </svg>
+                  </button>
+                  <button class="contacts-minus-button" type="button" aria-label="Remove contact" data-contact="${escapeHtml(contact)}">−</button>
+                </div>
               </div>
-            `
-          )
+            `;
+          })
           .join("");
 
+        contactsModalList.querySelectorAll(".contacts-person-button").forEach((button) => {
+          button.addEventListener("click", () => editContactProfile(button.dataset.contact || ""));
+        });
         contactsModalList.querySelectorAll(".contacts-minus-button").forEach((button) => {
           button.addEventListener("click", () => removeContactFromModal(button.dataset.contact || ""));
         });
@@ -1970,6 +1934,7 @@
         showingDoneSummaries = false;
         contactsLoadedForUser = null;
         currentContacts = [];
+        currentContactProfiles = {};
         accountBar.hidden = true;
         profilePanel.hidden = true;
         heroLabel.textContent = "Email Dashboard";
@@ -2137,7 +2102,19 @@
       function formatSummaryCardTitle(summary) {
         const rawTitle = String(summary.title || summary.summary_id || "").trim();
         if (!rawTitle) return "Untitled Summary";
-        return rawTitle.replace(/^Email Summary\s+[—-]\s*/i, "").trim();
+        const sender = String(summary.sender || "").trim().toLowerCase();
+        const savedProfile = sender ? currentContactProfiles[sender] || {} : {};
+        const savedFullName = [savedProfile.first_name, savedProfile.last_name].filter(Boolean).join(" ").trim();
+        if (savedFullName) {
+          return savedFullName;
+        }
+
+        const stripped = rawTitle.replace(/^Email Summary\s+[—-]\s*/i, "").trim();
+        const emailMatch = stripped.match(/\(([^)]+)\)\s*$/);
+        if (emailMatch) {
+          return emailMatch[1].trim();
+        }
+        return stripped;
       }
 
       function buildMarkdownFromSummary(summary) {
@@ -2190,6 +2167,7 @@
           if (checkbox) {
             checkbox.checked = hasSelectedSummary(card.dataset.summaryId);
           }
+          card.classList.toggle("active", card.dataset.summaryId === currentSummaryId);
         });
       }
 
@@ -2213,15 +2191,15 @@
 
           const checkbox = card.querySelector(".summary-check");
 
-          card.addEventListener("click", async () => {
-            document.querySelectorAll(".summary-card").forEach((item) => item.classList.remove("active"));
-            card.classList.add("active");
+          checkbox.addEventListener("click", (event) => {
+            event.stopPropagation();
+          });
+
+          checkbox.addEventListener("change", async () => {
             if (hasSelectedSummary(summary.summary_id)) {
               removeSelectedSummary(summary.summary_id);
-              checkbox.checked = false;
             } else {
               addSelectedSummary(summary.summary_id);
-              checkbox.checked = true;
             }
             if (!showingDoneSummaries && !readSummaryIds.has(summary.summary_id)) {
               readSummaryIds.add(summary.summary_id);
@@ -2232,7 +2210,12 @@
             }
             updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
             updateHeroStats();
-            await updateSelectedSummaryView();
+          });
+
+          card.addEventListener("click", async () => {
+            currentSummaryId = summary.summary_id;
+            syncSummaryCheckboxes();
+            await loadSummaryDetail(summary.summary_id, { preserveSelection: true });
           });
 
           summaryList.appendChild(card);
@@ -2247,24 +2230,6 @@
         summaryDetail.className = "";
         summaryDetail.innerHTML = "No summary selected yet.";
         sendSummaryEmailButton.hidden = true;
-      }
-
-      async function updateSelectedSummaryView() {
-        if (!requireSignedIn()) return;
-        const selectedCount = selectedSummaryIds.length;
-        updateHeroStats();
-
-        if (!selectedCount) {
-          renderEmptySummaryState();
-          return;
-        }
-
-        if (selectedCount === 1) {
-          await loadSummaryDetail(selectedSummaryIds[0], { preserveSelection: true });
-          return;
-        }
-
-        await generateCombinedSummary({ summaryIds: [...selectedSummaryIds], automatic: true });
       }
 
       async function loadSummaries() {
@@ -2325,6 +2290,15 @@
         }
 
         currentContacts = data.contacts || [];
+        currentContactProfiles = Object.fromEntries(
+          (data.contact_profiles || []).map((item) => [
+            String(item.email || "").trim().toLowerCase(),
+            {
+              first_name: String(item.first_name || "").trim(),
+              last_name: String(item.last_name || "").trim(),
+            },
+          ])
+        );
         contactsLoadedForUser = currentUserId;
         setRunStatus("");
         updateHeroStats();
@@ -2371,6 +2345,15 @@
           }
 
           currentContacts = data.contacts || [];
+          currentContactProfiles = Object.fromEntries(
+            (data.contact_profiles || []).map((item) => [
+              String(item.email || "").trim().toLowerCase(),
+              {
+                first_name: String(item.first_name || "").trim(),
+                last_name: String(item.last_name || "").trim(),
+              },
+            ])
+          );
           contactsLoadedForUser = currentUserId;
           whitelistTextarea.value = "";
           setRunStatus("Contact added.");
@@ -2396,6 +2379,15 @@
           throw new Error(data.detail || "Failed to save contacts.");
         }
         currentContacts = data.contacts || [];
+        currentContactProfiles = Object.fromEntries(
+          (data.contact_profiles || []).map((item) => [
+            String(item.email || "").trim().toLowerCase(),
+            {
+              first_name: String(item.first_name || "").trim(),
+              last_name: String(item.last_name || "").trim(),
+            },
+          ])
+        );
         contactsLoadedForUser = currentUserId;
         setRunStatus(successMessage);
         updateHeroStats();
@@ -2436,6 +2428,59 @@
           renderContactsModal();
         } catch (error) {
           setRunStatus(error.message);
+        }
+      }
+
+      async function editContactProfile(contact) {
+        if (!requireSignedIn() || !contact) return;
+        const profile = currentContactProfiles[contact] || {};
+        const existingFullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
+        const result = await openAppModal({
+          title: "Set Contact Name",
+          message: "Enter the contact's first and last name.",
+          confirmLabel: "Save",
+          cancelLabel: "Cancel",
+          withInput: true,
+          inputValue: existingFullName,
+          inputPlaceholder: "Jane Smith",
+        });
+        if (!result?.confirmed) return;
+
+        const fullName = String(result.value || "").trim();
+        const parts = fullName.split(/\s+/).filter(Boolean);
+        const firstName = parts[0] || "";
+        const lastName = parts.slice(1).join(" ");
+
+        try {
+          const response = await fetch("/contacts/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentUserId,
+              email: contact,
+              first_name: firstName,
+              last_name: lastName,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to save contact name.");
+            return;
+          }
+          currentContactProfiles = Object.fromEntries(
+            (data.contact_profiles || []).map((item) => [
+              String(item.email || "").trim().toLowerCase(),
+              {
+                first_name: String(item.first_name || "").trim(),
+                last_name: String(item.last_name || "").trim(),
+              },
+            ])
+          );
+          renderContactsModal();
+          setRunStatus(fullName ? "Contact name saved." : "Contact name cleared.");
+          await loadSummaries();
+        } catch (error) {
+          setRunStatus(`Failed to save contact name: ${error.message}`);
         }
       }
 
@@ -2637,7 +2682,7 @@
         const requestToken = ++summaryViewRequestToken;
         currentSummaryId = summaryId;
         detailStatus.textContent = "Loading summary...";
-        summaryDetail.innerHTML = "";
+        summaryDetail.setAttribute("aria-busy", "true");
 
         const response = await fetch(
           `/summaries/${encodeURIComponent(summaryId)}?user_id=${encodeURIComponent(currentUserId)}`
@@ -2651,6 +2696,7 @@
           detailStatus.textContent = "Failed to load summary detail.";
           sendSummaryEmailButton.hidden = true;
           summaryDetail.textContent = summary.detail || "Unknown error.";
+          summaryDetail.removeAttribute("aria-busy");
           return;
         }
 
@@ -2675,11 +2721,9 @@
           ${renderSection("Attachment Summary", summary.attachment_summary)}
           ${renderSection("Bottom Line", summary.bottom_line)}
         `;
+        summaryDetail.removeAttribute("aria-busy");
 
-        if (!preserveSelection) {
-          selectedSummaryIds = [summaryId];
-          syncSummaryCheckboxes();
-        }
+        syncSummaryCheckboxes();
       }
 
       async function generateCombinedSummary(options = {}) {
@@ -2691,13 +2735,10 @@
         }
 
         const requestToken = ++summaryViewRequestToken;
-        const automatic = Boolean(options.automatic);
         sendSummaryEmailButton.hidden = true;
         detailStatus.textContent = `Building report from ${summaryIds.length} selected summaries...`;
-        summaryDetail.innerHTML = "Generating combined report...";
-        if (!automatic) {
-          setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
-        }
+        summaryDetail.setAttribute("aria-busy", "true");
+        setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
 
         try {
           const response = await fetch("/summaries/combined", {
@@ -2716,6 +2757,7 @@
             detailStatus.textContent = "Failed to build combined summary.";
             summaryDetail.textContent = data.detail || "Unknown error.";
             setRunStatus(data.detail || "Failed to build combined summary.");
+            summaryDetail.removeAttribute("aria-busy");
             return;
           }
 
@@ -2730,9 +2772,8 @@
             </div>
             ${renderMarkdownSummary(data.combined_markdown || "")}
           `;
-          if (!automatic) {
-            setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
-          }
+          summaryDetail.removeAttribute("aria-busy");
+          setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
         } catch (error) {
           if (requestToken !== summaryViewRequestToken) {
             return;
@@ -2740,6 +2781,7 @@
           detailStatus.textContent = "Failed to build combined summary.";
           summaryDetail.textContent = error.message;
           setRunStatus(`Failed to build combined summary: ${error.message}`);
+          summaryDetail.removeAttribute("aria-busy");
         } finally {
         }
       }
@@ -2777,7 +2819,7 @@
         refineSummaryButton.disabled = true;
         sendSummaryEmailButton.hidden = true;
         detailStatus.textContent = "Refining summary...";
-        summaryDetail.innerHTML = "Refining summary...";
+        summaryDetail.setAttribute("aria-busy", "true");
         setRunStatus("Refining the current summary...", true);
 
         try {
@@ -2797,6 +2839,7 @@
             detailStatus.textContent = "Failed to refine summary.";
             summaryDetail.textContent = data.detail || "Unknown error.";
             setRunStatus(data.detail || "Failed to refine summary.");
+            summaryDetail.removeAttribute("aria-busy");
             return;
           }
 
@@ -2815,11 +2858,13 @@
             </div>
             ${renderMarkdownSummary(currentDisplayedSummaryMarkdown)}
           `;
+          summaryDetail.removeAttribute("aria-busy");
           setRunStatus("Refined summary ready.");
         } catch (error) {
           detailStatus.textContent = "Failed to refine summary.";
           summaryDetail.textContent = error.message;
           setRunStatus(`Failed to refine summary: ${error.message}`);
+          summaryDetail.removeAttribute("aria-busy");
         } finally {
           refineSummaryButton.disabled = false;
         }
@@ -2868,7 +2913,6 @@
         );
         updateListStatusText(currentSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
         updateHeroStats();
-        updateSelectedSummaryView();
       }
 
       function toggleDoneView() {
@@ -2979,6 +3023,7 @@
       });
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
+      combinedReportButton.addEventListener("click", () => generateCombinedSummary());
       doneToggleButton.addEventListener("click", toggleDoneForSelectedSummaries);
       toggleDoneViewButton.addEventListener("click", toggleDoneView);
       deleteSelectedButton.addEventListener("click", deleteSelectedSummaries);

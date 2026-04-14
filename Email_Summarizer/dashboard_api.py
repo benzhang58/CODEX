@@ -155,6 +155,13 @@ class WhitelistUpdateRequest(BaseModel):
     contacts: List[str]
 
 
+class ContactProfileUpdateRequest(BaseModel):
+    user_id: Optional[str] = None
+    email: str
+    first_name: str = ""
+    last_name: str = ""
+
+
 class ChatRequest(BaseModel):
     user_id: Optional[str] = None
     question: str
@@ -726,6 +733,7 @@ def default_profile_settings() -> Dict[str, str]:
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
         "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4o"),
         "WHITELIST_SENDERS": "",
+        "CONTACT_PROFILES": "{}",
         "SUMMARY_STYLE_PREFERENCES": "[]",
         "IMAP_SERVER": os.getenv("IMAP_SERVER", ""),
         "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
@@ -761,6 +769,87 @@ def parse_summary_style_preferences(settings_or_raw: Any) -> List[str]:
     except json.JSONDecodeError:
         pass
     return [item.strip() for item in raw.split("\n") if item.strip()]
+
+
+def parse_contact_profiles(settings_or_raw: Any) -> Dict[str, Dict[str, str]]:
+    if isinstance(settings_or_raw, dict):
+        raw = str(settings_or_raw.get("CONTACT_PROFILES", "") or "").strip()
+    else:
+        raw = str(settings_or_raw or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+
+    normalized: Dict[str, Dict[str, str]] = {}
+    for email, value in parsed.items():
+        email_text = str(email or "").strip().lower()
+        if not email_text:
+            continue
+        payload = value if isinstance(value, dict) else {}
+        normalized[email_text] = {
+            "first_name": str(payload.get("first_name", "") or "").strip(),
+            "last_name": str(payload.get("last_name", "") or "").strip(),
+        }
+    return normalized
+
+
+def encode_contact_profiles(profiles: Dict[str, Dict[str, str]]) -> str:
+    cleaned: Dict[str, Dict[str, str]] = {}
+    for email, payload in (profiles or {}).items():
+        email_text = str(email or "").strip().lower()
+        if not email_text:
+            continue
+        first_name = str((payload or {}).get("first_name", "") or "").strip()
+        last_name = str((payload or {}).get("last_name", "") or "").strip()
+        if not first_name and not last_name:
+            continue
+        cleaned[email_text] = {
+            "first_name": first_name,
+            "last_name": last_name,
+        }
+    return json.dumps(cleaned, sort_keys=True)
+
+
+def contact_profile_display_name(profile: Dict[str, str]) -> str:
+    return " ".join(
+        part for part in [str(profile.get("first_name", "")).strip(), str(profile.get("last_name", "")).strip()]
+        if part
+    ).strip()
+
+
+def contact_label_for_email(email: str, profiles: Dict[str, Dict[str, str]]) -> str:
+    normalized_email = str(email or "").strip().lower()
+    profile = profiles.get(normalized_email, {})
+    display_name = contact_profile_display_name(profile)
+    if display_name:
+        return f"{display_name} ({normalized_email})"
+    return normalized_email
+
+
+def build_contact_profile_items(settings: Dict[str, str]) -> List[Dict[str, str]]:
+    contacts = [item.strip().lower() for item in str(settings.get("WHITELIST_SENDERS", "") or "").split(",") if item.strip()]
+    profiles = parse_contact_profiles(settings)
+    items: List[Dict[str, str]] = []
+    for email in contacts:
+        profile = profiles.get(email, {})
+        first_name = str(profile.get("first_name", "") or "").strip()
+        last_name = str(profile.get("last_name", "") or "").strip()
+        full_name = contact_profile_display_name(profile)
+        items.append(
+            {
+                "email": email,
+                "first_name": first_name,
+                "last_name": last_name,
+                "full_name": full_name,
+                "label": f"{full_name} ({email})" if full_name else email,
+            }
+        )
+    return items
 
 
 def encode_summary_style_preferences(preferences: List[str]) -> str:
@@ -999,6 +1088,7 @@ def save_profile(profile: Dict[str, Any]) -> None:
 def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
     settings = profile.get("settings") or {}
     contacts = [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
+    contact_profiles = build_contact_profile_items(settings)
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
     auth_provider = "google" if google_connected else "microsoft" if microsoft_connected else "password"
@@ -1008,6 +1098,7 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": profile.get("created_at"),
         "updated_at": profile.get("updated_at"),
         "contacts": contacts,
+        "contact_profiles": contact_profiles,
         "google_connected": google_connected,
         "microsoft_connected": microsoft_connected,
         "auth_provider": auth_provider,
@@ -1135,11 +1226,22 @@ def get_contacts_for_user(user_id: str) -> List[str]:
 
 
 def set_contacts_for_user(user_id: str, contacts: List[str]) -> None:
-    cleaned_contacts = [contact.strip() for contact in contacts if contact.strip()]
+    cleaned_contacts: List[str] = []
+    seen = set()
+    for contact in contacts:
+        email = str(contact or "").strip().lower()
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        cleaned_contacts.append(email)
     profile = load_profile(user_id)
     if profile:
         profile["settings"] = {**default_profile_settings(), **(profile.get("settings") or {})}
         profile["settings"]["WHITELIST_SENDERS"] = ",".join(cleaned_contacts)
+        existing_profiles = parse_contact_profiles(profile["settings"])
+        profile["settings"]["CONTACT_PROFILES"] = encode_contact_profiles(
+            {email: existing_profiles[email] for email in cleaned_contacts if email in existing_profiles}
+        )
         save_profile(profile)
         return
 
@@ -1187,10 +1289,16 @@ def list_available_users() -> Dict[str, Any]:
 @app.get("/whitelist")
 def get_whitelist(request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
-    contacts = get_contacts_for_user(resolved_user_id)
     profile = load_profile(resolved_user_id)
+    settings = profile.get("settings") if profile else get_settings_for_user(resolved_user_id)
+    contacts = [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
     source = "profile" if profile else "env"
-    return {"user_id": resolved_user_id, "contacts": contacts, "source": source}
+    return {
+        "user_id": resolved_user_id,
+        "contacts": contacts,
+        "contact_profiles": build_contact_profile_items(settings),
+        "source": source,
+    }
 
 
 @app.post("/whitelist")
@@ -1198,7 +1306,45 @@ def update_whitelist(payload: WhitelistUpdateRequest, request: Request) -> Dict[
     resolved_user_id = resolve_user_id(request, payload.user_id)
     cleaned_contacts = [contact.strip() for contact in payload.contacts if contact.strip()]
     set_contacts_for_user(resolved_user_id, cleaned_contacts)
-    return {"user_id": resolved_user_id, "contacts": cleaned_contacts, "success": True}
+    settings = get_settings_for_user(resolved_user_id)
+    return {
+        "user_id": resolved_user_id,
+        "contacts": [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()],
+        "contact_profiles": build_contact_profile_items(settings),
+        "success": True,
+    }
+
+
+@app.post("/contacts/profile")
+def update_contact_profile(payload: ContactProfileUpdateRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    email = payload.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Contact email is required.")
+
+    profile = load_profile_or_404(resolved_user_id)
+    profile["settings"] = {**default_profile_settings(), **(profile.get("settings") or {})}
+    contacts = [item.strip().lower() for item in profile["settings"].get("WHITELIST_SENDERS", "").split(",") if item.strip()]
+    if email not in contacts:
+        raise HTTPException(status_code=404, detail="That contact is not in the current contact list.")
+
+    contact_profiles = parse_contact_profiles(profile["settings"])
+    first_name = payload.first_name.strip()
+    last_name = payload.last_name.strip()
+    if first_name or last_name:
+        contact_profiles[email] = {
+            "first_name": first_name,
+            "last_name": last_name,
+        }
+    else:
+        contact_profiles.pop(email, None)
+    profile["settings"]["CONTACT_PROFILES"] = encode_contact_profiles(contact_profiles)
+    save_profile(profile)
+    return {
+        "success": True,
+        "user_id": resolved_user_id,
+        "contact_profiles": build_contact_profile_items(profile["settings"]),
+    }
 
 
 def get_user_summaries_dir(user_id: str) -> Path:
@@ -1290,12 +1436,39 @@ def load_summary_json(summary_path: Path) -> Dict[str, Any]:
     return payload
 
 
+def apply_contact_profile_to_summary(summary: Dict[str, Any], profiles: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
+    sender = str(summary.get("sender", "") or "").strip().lower()
+    if not sender:
+        return summary
+    profile = profiles.get(sender)
+    if not profile:
+        return summary
+
+    full_name = contact_profile_display_name(profile)
+    if not full_name:
+        return summary
+
+    updated = dict(summary)
+    updated["contact_label"] = f"{full_name} ({sender})"
+    raw_title = str(updated.get("title", "") or "").strip()
+    if raw_title:
+        updated["title"] = re.sub(
+            r"^(Email Summary\s+[—-]\s+)?(.+?)\s+\(([^)]+)\)$",
+            lambda match: f"{match.group(1) or ''}{full_name} ({match.group(3)})",
+            raw_title,
+            count=1,
+        )
+    return updated
+
+
 def load_summary_json_preview(summary_path: Path) -> Dict[str, Any]:
     payload = load_summary_json(summary_path)
     return {
         "summary_id": payload.get("summary_id", summary_path.stem),
         "user_id": payload.get("user_id", summary_path.parent.parent.name),
         "filename": payload.get("filename", summary_path.name),
+        "sender": payload.get("sender", ""),
+        "contact_label": payload.get("contact_label", ""),
         "title": payload.get("title", summary_path.stem),
         "preview": payload.get("preview", ""),
         "updated_at": payload.get("updated_at"),
@@ -1664,19 +1837,22 @@ def build_combined_report_markdown(summaries: List[Dict[str, Any]]) -> str:
         if summary.get("updated_at"):
             parts.append(f"Updated: {summary.get('updated_at')}")
 
-        for label, key in [
-            ("Executive Summary", "executive_summary"),
-            ("Main Topics", "main_topics"),
-            ("New Developments", "new_developments"),
-            ("Action Items / Asks", "action_items"),
-            ("Deadlines / Dates / Meetings", "deadlines"),
-            ("Attachment Summary", "attachment_summary"),
-            ("Bottom Line", "bottom_line"),
+        primary_text = ""
+        for key in [
+            "executive_summary",
+            "bottom_line",
+            "new_developments",
+            "action_items",
+            "main_topics",
+            "deadlines",
         ]:
             content = str(summary.get(key, "") or "").strip()
             if content:
-                parts.append(label)
-                parts.append(content)
+                primary_text = content
+                break
+
+        if primary_text:
+            parts.append(primary_text)
 
         blocks.append("\n\n".join(parts))
 
@@ -2058,12 +2234,13 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
 @app.get("/summaries")
 def list_summaries(request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    contact_profiles = parse_contact_profiles(get_settings_for_user(user_id))
     json_summaries_dir = get_user_json_summaries_dir(user_id)
     summaries_dir = get_user_summaries_dir(user_id)
     if json_summaries_dir.exists():
         summary_files = sorted(json_summaries_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
         summaries = [
-            load_summary_json_preview(path)
+            apply_contact_profile_to_summary(load_summary_json_preview(path), contact_profiles)
             for path in summary_files
             if not path.stem.startswith("overall_master_")
         ]
@@ -2084,9 +2261,10 @@ def list_summaries(request: Request, user_id: Optional[str] = Query(None, descri
 @app.get("/summaries/{summary_id}")
 def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    contact_profiles = parse_contact_profiles(get_settings_for_user(user_id))
     json_summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
     if json_summary_path.exists():
-        return load_summary_json(json_summary_path)
+        return apply_contact_profile_to_summary(load_summary_json(json_summary_path), contact_profiles)
 
     summary_path = get_user_summaries_dir(user_id) / f"{summary_id}.md"
     if not summary_path.exists():

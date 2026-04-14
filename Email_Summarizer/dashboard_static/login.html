@@ -87,6 +87,19 @@
         margin-top: 20px;
       }
 
+      .create-account-row {
+        margin-top: 14px;
+        text-align: center;
+      }
+
+      .create-account-link {
+        display: inline-block;
+        font-size: 13px;
+        color: var(--muted);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
       button,
       .secondary-button {
         display: inline-flex;
@@ -142,9 +155,12 @@
 
       <div class="actions">
         <button id="loginButton" type="button">Log In</button>
-        <a class="secondary-button" href="/signup">Create Account</a>
         <a class="secondary-button" href="/auth/google/start">Continue with Google</a>
         <a class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
+      </div>
+
+      <div class="create-account-row">
+        <a class="create-account-link" href="/signup">Create account</a>
       </div>
 
       <div id="status" class="status"></div>

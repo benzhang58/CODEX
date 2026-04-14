@@ -72,6 +72,29 @@ def parse_summary_style_preferences(raw_value: str) -> List[str]:
     return [item.strip() for item in raw.split("\n") if item.strip()]
 
 
+def parse_contact_profiles(raw_value: str) -> Dict[str, Dict[str, str]]:
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+
+    normalized: Dict[str, Dict[str, str]] = {}
+    for email, value in parsed.items():
+        email_text = str(email or "").strip().lower()
+        if not email_text or not isinstance(value, dict):
+            continue
+        normalized[email_text] = {
+            "first_name": str(value.get("first_name", "") or "").strip(),
+            "last_name": str(value.get("last_name", "") or "").strip(),
+        }
+    return normalized
+
+
 def get_app_config_value(key: str, cwd: Path = Path(".")) -> str:
     value = os.getenv(key)
     if value:
@@ -337,6 +360,7 @@ class EmailSummarizer:
             for e in os.getenv("WHITELIST_SENDERS", "").split(",")
             if e.strip()
         ]
+        self.contact_profiles = parse_contact_profiles(os.getenv("CONTACT_PROFILES", ""))
         if not self.whitelist:
             logger.warning("No WHITELIST_SENDERS defined!")
 
@@ -354,6 +378,13 @@ class EmailSummarizer:
         self.attachment_retention_days = int(os.getenv("EMAIL_SUMMARIZER_ATTACHMENT_RETENTION_DAYS", "30") or "30")
         self.source_email_retention_days = int(os.getenv("EMAIL_SUMMARIZER_SOURCE_EMAIL_RETENTION_DAYS", "0") or "0")
         self._apply_retention_policy()
+
+    @staticmethod
+    def _contact_profile_display_name(profile: Dict[str, str]) -> str:
+        return " ".join(
+            part for part in [str(profile.get("first_name", "")).strip(), str(profile.get("last_name", "")).strip()]
+            if part
+        ).strip()
 
     @staticmethod
     def _slugify(value: str) -> str:
@@ -1760,6 +1791,10 @@ class EmailSummarizer:
             for rec in records:
                 if rec.sender not in display_names and rec.display_name:
                     display_names[rec.sender] = rec.display_name
+            for sender, profile in self.contact_profiles.items():
+                saved_name = self._contact_profile_display_name(profile)
+                if saved_name:
+                    display_names[sender] = saved_name
 
             # Generate one summary per contact
             contact_summaries: Dict[str, str] = {}
