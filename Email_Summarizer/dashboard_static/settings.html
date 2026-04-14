@@ -271,6 +271,38 @@
         margin-bottom: 4px;
       }
 
+      .connection-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.86);
+        font-size: 14px;
+        font-weight: 700;
+        width: fit-content;
+      }
+
+      .connection-status.connected {
+        color: #0a7a2f;
+        background: rgba(225, 248, 231, 0.95);
+        border-color: rgba(10, 122, 47, 0.22);
+      }
+
+      .connection-status.disconnected {
+        color: #b42318;
+        background: rgba(254, 231, 231, 0.95);
+        border-color: rgba(180, 35, 24, 0.22);
+      }
+
+      .connection-status .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
       .preference-list {
         display: grid;
         gap: 10px;
@@ -420,6 +452,10 @@
         <h2>Mailbox Connection</h2>
         <div class="card">
           <p class="inline-note">Use this only if your email is not Gmail or Outlook. This updates the mailbox credentials the summarizer uses. It does not change your dashboard login password.</p>
+          <div id="mailboxConnectionStatus" class="connection-status disconnected">
+            <span class="dot" aria-hidden="true"></span>
+            <span id="mailboxConnectionStatusText">Not Connected</span>
+          </div>
           <div id="mailboxConnectedSummary" class="mailbox-summary" hidden>
             <div>
               <strong>Mailbox connected</strong>
@@ -427,7 +463,7 @@
             </div>
             <button id="changeMailboxButton" type="button" class="secondary">Change Email Connection</button>
           </div>
-          <div class="field-grid">
+          <div id="mailboxForm" class="field-grid">
             <div class="field">
               <label for="mailboxEmailInput">Mailbox Email</label>
               <input id="mailboxEmailInput" type="email" placeholder="you@example.com" />
@@ -437,7 +473,7 @@
               <input id="mailboxPasswordInput" type="password" placeholder="Enter your real email password" />
             </div>
           </div>
-          <div class="row">
+          <div id="mailboxActions" class="row">
             <span></span>
             <button id="saveMailboxButton" type="button">Save Mailbox</button>
           </div>
@@ -535,8 +571,12 @@
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxEmailInput = document.getElementById("mailboxEmailInput");
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
+      const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
+      const mailboxConnectionStatusText = document.getElementById("mailboxConnectionStatusText");
       const mailboxConnectedSummary = document.getElementById("mailboxConnectedSummary");
       const mailboxConnectedEmail = document.getElementById("mailboxConnectedEmail");
+      const mailboxForm = document.getElementById("mailboxForm");
+      const mailboxActions = document.getElementById("mailboxActions");
       const changeMailboxButton = document.getElementById("changeMailboxButton");
       const saveMailboxButton = document.getElementById("saveMailboxButton");
       const mailboxStatus = document.getElementById("mailboxStatus");
@@ -670,8 +710,8 @@
 
         mailboxConnectedSummary.hidden = !showConnectedState;
         mailboxConnectedEmail.textContent = connectedEmail || "Connected";
-        mailboxEmailInput.closest(".field-grid").hidden = showConnectedState;
-        saveMailboxButton.closest(".row").hidden = showConnectedState;
+        mailboxForm.hidden = showConnectedState;
+        mailboxActions.hidden = showConnectedState;
         mailboxEmailInput.disabled = showConnectedState;
         mailboxPasswordInput.disabled = showConnectedState;
         mailboxEmailInput.value = connectedEmail;
@@ -679,6 +719,27 @@
           mailboxPasswordInput.value = "••••••••";
         } else if (mailboxEditMode) {
           mailboxPasswordInput.value = "";
+        }
+      }
+
+      function setMailboxConnectionStatus(connected) {
+        mailboxConnectionStatus.classList.toggle("connected", Boolean(connected));
+        mailboxConnectionStatus.classList.toggle("disconnected", !connected);
+        mailboxConnectionStatusText.textContent = connected ? "Connected" : "Not Connected";
+      }
+
+      async function refreshMailboxConnectionStatus() {
+        const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
+        if (!isPasswordBased || !currentProfile?.user_id) return;
+
+        setMailboxConnectionStatus(Boolean(currentProfile?.settings?.mailbox_connected));
+        try {
+          const response = await fetch(`/mailbox/status?user_id=${encodeURIComponent(currentProfile.user_id)}`);
+          const data = await response.json();
+          if (!response.ok) return;
+          setMailboxConnectionStatus(Boolean(data.connected));
+        } catch (error) {
+          setMailboxConnectionStatus(false);
         }
       }
 
@@ -703,6 +764,7 @@
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
         mailboxEditMode = false;
         syncMailboxConnectionUI();
+        await refreshMailboxConnectionStatus();
       }
 
       async function saveMailboxSettings() {
@@ -732,8 +794,11 @@
             return;
           }
           currentProfile = data.profile;
+          mailboxEmailInput.value = data.profile.settings?.imap_user || data.profile.email || "";
+          mailboxPasswordInput.value = "";
           mailboxEditMode = false;
           syncMailboxConnectionUI();
+          await refreshMailboxConnectionStatus();
           mailboxStatus.textContent = "Mailbox settings saved.";
         } catch (error) {
           mailboxStatus.textContent = `Failed to save mailbox settings: ${error.message}`;

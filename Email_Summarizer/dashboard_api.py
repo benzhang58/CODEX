@@ -4,6 +4,7 @@ import re
 import shutil
 import hashlib
 import hmac
+import imaplib
 import secrets
 import smtplib
 import sqlite3
@@ -664,6 +665,56 @@ def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Opt
     profile["settings"] = profile_update_to_settings(payload, {**default_profile_settings(), **(profile.get("settings") or {})})
     save_profile(profile)
     return {"success": True, "profile": profile_response(profile)}
+
+
+@app.get("/mailbox/status")
+def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
+    if google_connected or microsoft_connected:
+        raise HTTPException(status_code=400, detail="Mailbox status is only used for non-Gmail and non-Outlook accounts.")
+
+    settings = apply_provider_defaults(
+        merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {}),
+        profile.get("email", ""),
+    )
+    email = str(settings.get("IMAP_USER", "")).strip()
+    password = str(settings.get("IMAP_PASSWORD", "")).strip()
+    server = str(settings.get("IMAP_SERVER", "")).strip()
+    port = int(str(settings.get("IMAP_PORT", "993")).strip() or "993")
+
+    if not all([email, password, server]):
+        return {
+            "connected": False,
+            "status": "Not Connected",
+            "reason": "missing_credentials",
+        }
+
+    try:
+        mail = imaplib.IMAP4_SSL(server, port)
+        try:
+            mail.login(email, password)
+            mail.logout()
+        except Exception:
+            try:
+                mail.shutdown()
+            except Exception:
+                pass
+            raise
+    except Exception:
+        return {
+            "connected": False,
+            "status": "Not Connected",
+            "reason": "login_failed",
+        }
+
+    return {
+        "connected": True,
+        "status": "Connected",
+        "reason": "ok",
+    }
 
 
 def _slugify_user_id(value: str) -> str:

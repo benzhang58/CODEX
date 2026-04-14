@@ -211,6 +211,19 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
             "SMTP_PORT": settings.get("SMTP_PORT") or provider_defaults["SMTP_PORT"],
             "IMAP_FOLDER": settings.get("IMAP_FOLDER") or provider_defaults["IMAP_FOLDER"],
         }
+
+    if email_value:
+        settings["IMAP_USER"] = str(settings.get("IMAP_USER") or email_value)
+        settings["SMTP_USER"] = str(settings.get("SMTP_USER") or email_value)
+        settings["SUMMARY_RECIPIENT"] = str(settings.get("SUMMARY_RECIPIENT") or email_value)
+
+    imap_password = str(settings.get("IMAP_PASSWORD") or "").strip()
+    smtp_password = str(settings.get("SMTP_PASSWORD") or "").strip()
+    if not imap_password and smtp_password:
+        settings["IMAP_PASSWORD"] = smtp_password
+    if not smtp_password and imap_password:
+        settings["SMTP_PASSWORD"] = imap_password
+
     for key, value in settings.items():
         if value is None or str(value).strip() == "":
             continue
