@@ -848,6 +848,11 @@
         border-radius: 10px;
       }
 
+      .contacts-person-button {
+        background: rgba(255, 255, 255, 0.95);
+        color: var(--text);
+      }
+
       .contacts-person-button svg {
         width: 16px;
         height: 16px;
@@ -1817,12 +1822,24 @@
 
       function markProfileNamePromptState(userId, state) {
         if (!userId) return;
-        localStorage.setItem(getProfileNamePromptStateKey(userId), state);
+        const key = getProfileNamePromptStateKey(userId);
+        if (state === "saved") {
+          localStorage.setItem(key, state);
+          sessionStorage.removeItem(key);
+          return;
+        }
+        if (state === "skipped") {
+          sessionStorage.setItem(key, state);
+          return;
+        }
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
       }
 
       function readProfileNamePromptState(userId) {
         if (!userId) return "";
-        return localStorage.getItem(getProfileNamePromptStateKey(userId)) || "";
+        const key = getProfileNamePromptStateKey(userId);
+        return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
       }
 
       function applyProfileToForm(profile) {

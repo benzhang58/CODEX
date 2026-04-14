@@ -11,7 +11,7 @@ import sqlite3
 import subprocess
 import unicodedata
 from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -689,6 +689,97 @@ def debug_users(request: Request) -> Dict[str, Any]:
             for row in session_rows
         ],
     }
+
+
+@app.get("/debug/mailbox-search")
+def debug_mailbox_search(request: Request, days_back: int = Query(7, ge=1, le=60)) -> Dict[str, Any]:
+    user_id = resolve_user_id(request)
+    profile = load_profile_or_404(user_id)
+    settings = apply_provider_defaults(
+        merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {}),
+        profile.get("email", ""),
+    )
+
+    whitelist = [item.strip().lower() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
+    imap_server = str(settings.get("IMAP_SERVER", "")).strip()
+    imap_user = str(settings.get("IMAP_USER", "")).strip()
+    imap_password = str(settings.get("IMAP_PASSWORD", "")).strip()
+    imap_folder = str(settings.get("IMAP_FOLDER", "INBOX")).strip() or "INBOX"
+    imap_port = int(str(settings.get("IMAP_PORT", "993")).strip() or "993")
+
+    if not all([imap_server, imap_user, imap_password]):
+        return {
+            "connected": False,
+            "reason": "missing_credentials",
+            "imap_server": imap_server,
+            "imap_user": imap_user,
+            "imap_folder": imap_folder,
+            "whitelist": whitelist,
+        }
+
+    since_date = (datetime.now() - timedelta(days=days_back)).strftime("%d-%b-%Y")
+    try:
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(imap_user, imap_password)
+        select_status, _ = mail.select(imap_folder, readonly=True)
+
+        recent_uids: List[int] = []
+        if select_status == "OK":
+            _, data = mail.uid("SEARCH", None, f"SINCE {since_date}")
+            recent_uids = [int(item) for item in b" ".join(part for part in data if isinstance(part, bytes)).split() if item.isdigit()]
+
+        sender_breakdown: List[Dict[str, Any]] = []
+        combined = set()
+        for sender in whitelist:
+            try:
+                _, data = mail.uid("SEARCH", None, f'FROM "{sender}"')
+                sender_uids = [int(item) for item in b" ".join(part for part in data if isinstance(part, bytes)).split() if item.isdigit()]
+            except Exception as exc:
+                sender_breakdown.append({
+                    "sender": sender,
+                    "from_total": 0,
+                    "recent_match": 0,
+                    "error": str(exc),
+                })
+                continue
+            matched = sorted(set(sender_uids) & set(recent_uids))
+            combined.update(matched)
+            sender_breakdown.append({
+                "sender": sender,
+                "from_total": len(sender_uids),
+                "recent_match": len(matched),
+                "matched_uids_preview": matched[:10],
+            })
+
+        try:
+            mail.logout()
+        except Exception:
+            pass
+
+        return {
+            "connected": True,
+            "imap_server": imap_server,
+            "imap_user": imap_user,
+            "imap_folder": imap_folder,
+            "since_date": since_date,
+            "days_back": days_back,
+            "whitelist": whitelist,
+            "recent_count": len(recent_uids),
+            "recent_uids_preview": sorted(recent_uids)[:20],
+            "sender_breakdown": sender_breakdown,
+            "combined_candidate_count": len(combined),
+            "combined_uids_preview": sorted(combined)[:20],
+        }
+    except Exception as exc:
+        return {
+            "connected": False,
+            "reason": "imap_error",
+            "error": str(exc),
+            "imap_server": imap_server,
+            "imap_user": imap_user,
+            "imap_folder": imap_folder,
+            "whitelist": whitelist,
+        }
 
 
 @app.put("/profile")
