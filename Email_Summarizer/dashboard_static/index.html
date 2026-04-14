@@ -1388,7 +1388,6 @@
           <div class="hero-copy">
             <p class="eyebrow">Email Dashboard</p>
             <h1 class="title">Email Dashboard</h1>
-            <p class="hero-description">A calmer, faster view of the email threads that matter. Track people, run summaries, and review the important parts without the usual clutter.</p>
             <div id="titleStatus" class="title-status" aria-live="polite">
               <span id="runnerIcon" class="runner" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -1419,22 +1418,22 @@
             <div class="stat-card">
               <div class="stat-label">New summaries</div>
               <div id="statNewCount" class="stat-value">0</div>
-              <div class="stat-note">Unread and ready to review</div>
+              <div class="stat-note">Unread Summaries</div>
             </div>
             <div class="stat-card">
               <div class="stat-label">Tracked contacts</div>
               <div id="statContactCount" class="stat-value">0</div>
-              <div class="stat-note">People currently on your list</div>
+              <div class="stat-note">Total Contacts</div>
             </div>
             <div class="stat-card">
               <div class="stat-label">Selected now</div>
               <div id="statSelectedCount" class="stat-value">0</div>
-              <div class="stat-note">Driving the summary view</div>
+              <div class="stat-note">Currently Selected</div>
             </div>
             <div class="stat-card">
               <div class="stat-label">Done</div>
               <div id="statDoneCount" class="stat-value">0</div>
-              <div class="stat-note">Items moved out of the main queue</div>
+              <div class="stat-note"></div>
             </div>
           </div>
 
@@ -1463,16 +1462,15 @@
           <div id="contactsBody" class="panel-body collapsed">
             <div class="controls">
               <button id="loadWhitelistButton">Current Selected Contacts</button>
-              <button id="saveWhitelistButton">Set Contact List</button>
+              <button id="saveWhitelistButton" aria-label="Add Contact">+</button>
             </div>
-            <textarea
+            <input
               id="whitelistTextarea"
-              placeholder="Enter one email per line, for example:
-rian2023p@gmail.com
-someone@example.com"
-            ></textarea>
+              type="email"
+              placeholder="Enter contact email"
+            />
             <div class="hint">
-              One email address per line.
+              Add contacts one at a time.
             </div>
           </div>
         </section>
@@ -1746,25 +1744,25 @@ someone@example.com"
         currentTheme = theme;
         localStorage.setItem("emailDashboardTheme", theme);
         if (theme === "stone") {
-          document.documentElement.style.setProperty("--bg", "#eeeae3");
-          document.documentElement.style.setProperty("--accent-soft", "#e8e1d5");
-          document.documentElement.style.setProperty("--surface-soft", "#ebe4d9");
-          document.documentElement.style.setProperty("--surface-soft-2", "#e0d7ca");
+          document.documentElement.style.setProperty("--bg", "#e6ddcf");
+          document.documentElement.style.setProperty("--accent-soft", "#d8c7ad");
+          document.documentElement.style.setProperty("--surface-soft", "#e1d3bf");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ccb99e");
         } else if (theme === "mist") {
-          document.documentElement.style.setProperty("--bg", "#eef2f3");
-          document.documentElement.style.setProperty("--accent-soft", "#e4ecef");
-          document.documentElement.style.setProperty("--surface-soft", "#e8eeef");
-          document.documentElement.style.setProperty("--surface-soft-2", "#dce5e8");
+          document.documentElement.style.setProperty("--bg", "#d9e8ee");
+          document.documentElement.style.setProperty("--accent-soft", "#c6dde6");
+          document.documentElement.style.setProperty("--surface-soft", "#d4e4ea");
+          document.documentElement.style.setProperty("--surface-soft-2", "#b7d0da");
         } else if (theme === "green") {
-          document.documentElement.style.setProperty("--bg", "#eef3ee");
-          document.documentElement.style.setProperty("--accent-soft", "#dfeadf");
-          document.documentElement.style.setProperty("--surface-soft", "#e6efe6");
-          document.documentElement.style.setProperty("--surface-soft-2", "#d8e5d8");
+          document.documentElement.style.setProperty("--bg", "#d9ead9");
+          document.documentElement.style.setProperty("--accent-soft", "#c4dfc4");
+          document.documentElement.style.setProperty("--surface-soft", "#d2e4d2");
+          document.documentElement.style.setProperty("--surface-soft-2", "#afd0af");
         } else if (theme === "purple") {
-          document.documentElement.style.setProperty("--bg", "#f2eef6");
-          document.documentElement.style.setProperty("--accent-soft", "#e7ddf0");
-          document.documentElement.style.setProperty("--surface-soft", "#eee7f5");
-          document.documentElement.style.setProperty("--surface-soft-2", "#e1d7eb");
+          document.documentElement.style.setProperty("--bg", "#e5dcf2");
+          document.documentElement.style.setProperty("--accent-soft", "#d6c5eb");
+          document.documentElement.style.setProperty("--surface-soft", "#e0d3f0");
+          document.documentElement.style.setProperty("--surface-soft-2", "#c6b2e2");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
@@ -2335,12 +2333,20 @@ someone@example.com"
 
       async function saveWhitelist() {
         if (!requireSignedIn()) return;
-        const contacts = whitelistTextarea.value
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean);
+        const contact = whitelistTextarea.value.trim().toLowerCase();
+        if (!contact) {
+          setRunStatus("Enter a contact email first.");
+          return;
+        }
+        const contacts = currentContacts.includes(contact)
+          ? currentContacts
+          : [...currentContacts, contact];
+        if (currentContacts.includes(contact)) {
+          setRunStatus("That contact is already saved.");
+          return;
+        }
 
-        setRunStatus("Saving contacts...", true);
+        setRunStatus("Adding contact...", true);
         saveWhitelistButton.disabled = true;
 
         try {
@@ -2361,10 +2367,11 @@ someone@example.com"
 
           currentContacts = data.contacts || [];
           contactsLoadedForUser = currentUserId;
-          setRunStatus("Contacts updated.");
+          whitelistTextarea.value = "";
+          setRunStatus("Contact added.");
           updateHeroStats();
         } catch (error) {
-          setRunStatus(`Failed to save contacts: ${error.message}`);
+          setRunStatus(`Failed to add contact: ${error.message}`);
         } finally {
           saveWhitelistButton.disabled = false;
         }
@@ -2943,6 +2950,12 @@ someone@example.com"
       addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
+      whitelistTextarea.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveWhitelist();
+        }
+      });
       contactsModalAddButton.addEventListener("click", addContactFromModal);
       contactsModalCloseButton.addEventListener("click", closeContactsModal);
       settingsMenuButton.addEventListener("click", () => {

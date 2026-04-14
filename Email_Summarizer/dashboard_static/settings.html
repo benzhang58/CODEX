@@ -194,8 +194,49 @@
         border-color: var(--accent);
       }
 
-      .howto {
-        white-space: pre-line;
+      .howto-grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .howto-card {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 14px;
+        align-items: start;
+        padding: 16px 18px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(239, 238, 233, 0.82));
+      }
+
+      .howto-step {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 700;
+        flex: 0 0 34px;
+      }
+
+      .howto-copy strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 16px;
+        letter-spacing: -0.02em;
+      }
+
+      .howto-copy p {
+        margin: 0;
+        font-size: 14px;
+        color: var(--muted);
+        line-height: 1.55;
       }
 
       @media (max-width: 900px) {
@@ -252,7 +293,7 @@
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
-          <p class="inline-note">Use this only for non-OAuth providers like 263.com. This updates the mailbox credentials the summarizer uses. It does not change your dashboard login password.</p>
+          <p class="inline-note">Use this only if your email is not Gmail or Outlook. This updates the mailbox credentials the summarizer uses. It does not change your dashboard login password.</p>
           <div class="field-grid">
             <div class="field">
               <label for="mailboxEmailInput">Mailbox Email</label>
@@ -274,25 +315,63 @@
       <section id="how-to" class="section">
         <h2>How to</h2>
         <div class="card">
-          <p class="howto">1. Log in to your account.
+          <div class="howto-grid">
+            <div class="howto-card">
+              <div class="howto-step">1</div>
+              <div class="howto-copy">
+                <strong>Sign in the right way</strong>
+                <p>Use Google for Gmail and Microsoft for Outlook. If your email is not Gmail or Outlook, create a regular account first.</p>
+              </div>
+            </div>
 
-2. If you use Google or Microsoft, sign in with the matching OAuth button.
+            <div class="howto-card">
+              <div class="howto-step">2</div>
+              <div class="howto-copy">
+                <strong>Set mailbox access if needed</strong>
+                <p>If your email is not Gmail or Outlook, open Mailbox Connection in Settings and enter your real email login details there.</p>
+              </div>
+            </div>
 
-3. If you use 263.com or another non-OAuth provider, create your dashboard account first, then open Settings and add your real mailbox email and mailbox password in Mailbox Connection.
+            <div class="howto-card">
+              <div class="howto-step">3</div>
+              <div class="howto-copy">
+                <strong>Add contacts</strong>
+                <p>Add the people you want to track in Contacts. You can add them one by one or review the saved list in the popup.</p>
+              </div>
+            </div>
 
-4. Add the people you want to track in Contacts.
+            <div class="howto-card">
+              <div class="howto-step">4</div>
+              <div class="howto-copy">
+                <strong>Run the summarizer</strong>
+                <p>Click Run Summarizer to check recent emails from those contacts. New summaries will appear on the left side of the dashboard.</p>
+              </div>
+            </div>
 
-5. Click Run Summarizer to check recent emails from those people.
+            <div class="howto-card">
+              <div class="howto-step">5</div>
+              <div class="howto-copy">
+                <strong>Read and combine</strong>
+                <p>Click a summary to open it. Check more than one summary if you want the right side to combine them automatically.</p>
+              </div>
+            </div>
 
-6. New summaries will appear in Summaries on the left side of the dashboard.
+            <div class="howto-card">
+              <div class="howto-step">6</div>
+              <div class="howto-copy">
+                <strong>Ask follow-up questions</strong>
+                <p>Use AI Assistant to ask simple questions about deadlines, asks, or attachment-related details from your saved summaries.</p>
+              </div>
+            </div>
 
-7. Click any summary to read the main points, action items, deadlines, and attachments.
-
-8. Use AI Assistant if you want to ask questions in plain English.
-
-9. Check more than one summary if you want the right side to combine them automatically.
-
-10. Use Refine Summary if you want the summaries written in a style that fits you better.</p>
+            <div class="howto-card">
+              <div class="howto-step">7</div>
+              <div class="howto-copy">
+                <strong>Refine the writing style</strong>
+                <p>Use Refine Summary when you want the summaries to be shorter, clearer, more deadline-focused, or better organized for you.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -321,25 +400,25 @@
         currentTheme = theme;
         localStorage.setItem("emailDashboardTheme", theme);
         if (theme === "stone") {
-          document.documentElement.style.setProperty("--bg", "#eeeae3");
-          document.documentElement.style.setProperty("--accent-soft", "#e8e1d5");
-          document.documentElement.style.setProperty("--surface-soft", "#ebe4d9");
-          document.documentElement.style.setProperty("--surface-soft-2", "#e0d7ca");
+          document.documentElement.style.setProperty("--bg", "#e6ddcf");
+          document.documentElement.style.setProperty("--accent-soft", "#d8c7ad");
+          document.documentElement.style.setProperty("--surface-soft", "#e1d3bf");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ccb99e");
         } else if (theme === "mist") {
-          document.documentElement.style.setProperty("--bg", "#eef2f3");
-          document.documentElement.style.setProperty("--accent-soft", "#e4ecef");
-          document.documentElement.style.setProperty("--surface-soft", "#e8eeef");
-          document.documentElement.style.setProperty("--surface-soft-2", "#dce5e8");
+          document.documentElement.style.setProperty("--bg", "#d9e8ee");
+          document.documentElement.style.setProperty("--accent-soft", "#c6dde6");
+          document.documentElement.style.setProperty("--surface-soft", "#d4e4ea");
+          document.documentElement.style.setProperty("--surface-soft-2", "#b7d0da");
         } else if (theme === "green") {
-          document.documentElement.style.setProperty("--bg", "#eef3ee");
-          document.documentElement.style.setProperty("--accent-soft", "#dfeadf");
-          document.documentElement.style.setProperty("--surface-soft", "#e6efe6");
-          document.documentElement.style.setProperty("--surface-soft-2", "#d8e5d8");
+          document.documentElement.style.setProperty("--bg", "#d9ead9");
+          document.documentElement.style.setProperty("--accent-soft", "#c4dfc4");
+          document.documentElement.style.setProperty("--surface-soft", "#d2e4d2");
+          document.documentElement.style.setProperty("--surface-soft-2", "#afd0af");
         } else if (theme === "purple") {
-          document.documentElement.style.setProperty("--bg", "#f2eef6");
-          document.documentElement.style.setProperty("--accent-soft", "#e7ddf0");
-          document.documentElement.style.setProperty("--surface-soft", "#eee7f5");
-          document.documentElement.style.setProperty("--surface-soft-2", "#e1d7eb");
+          document.documentElement.style.setProperty("--bg", "#e5dcf2");
+          document.documentElement.style.setProperty("--accent-soft", "#d6c5eb");
+          document.documentElement.style.setProperty("--surface-soft", "#e0d3f0");
+          document.documentElement.style.setProperty("--surface-soft-2", "#c6b2e2");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
