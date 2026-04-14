@@ -1591,46 +1591,66 @@
       function applyTheme(theme) {
         currentTheme = theme;
         localStorage.setItem("emailDashboardTheme", theme);
-        if (theme === "stone") {
-          document.documentElement.style.setProperty("--bg", "#e6ddcf");
-          document.documentElement.style.setProperty("--accent-soft", "#d8c7ad");
-          document.documentElement.style.setProperty("--surface-soft", "#e1d3bf");
-          document.documentElement.style.setProperty("--surface-soft-2", "#ccb99e");
+        if (theme === "white") {
+          document.documentElement.style.setProperty("--bg", "#ffffff");
+          document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
+          document.documentElement.style.setProperty("--surface-soft", "#f8f8f8");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ededed");
+        } else if (theme === "blue") {
+          document.documentElement.style.setProperty("--bg", "#cfe0ff");
+          document.documentElement.style.setProperty("--accent-soft", "#aac5ff");
+          document.documentElement.style.setProperty("--surface-soft", "#bdd3ff");
+          document.documentElement.style.setProperty("--surface-soft-2", "#7da3ff");
+        } else if (theme === "pink") {
+          document.documentElement.style.setProperty("--bg", "#ffc9de");
+          document.documentElement.style.setProperty("--accent-soft", "#ff9fc6");
+          document.documentElement.style.setProperty("--surface-soft", "#ffb8d3");
+          document.documentElement.style.setProperty("--surface-soft-2", "#f26ca6");
+        } else if (theme === "red") {
+          document.documentElement.style.setProperty("--bg", "#ffd1d1");
+          document.documentElement.style.setProperty("--accent-soft", "#ffaaaa");
+          document.documentElement.style.setProperty("--surface-soft", "#ffc1c1");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ef6a6a");
+        } else if (theme === "stone") {
+          document.documentElement.style.setProperty("--bg", "#ead8bf");
+          document.documentElement.style.setProperty("--accent-soft", "#dcb88a");
+          document.documentElement.style.setProperty("--surface-soft", "#e4ceab");
+          document.documentElement.style.setProperty("--surface-soft-2", "#c89859");
         } else if (theme === "mist") {
-          document.documentElement.style.setProperty("--bg", "#d9e8ee");
-          document.documentElement.style.setProperty("--accent-soft", "#c6dde6");
-          document.documentElement.style.setProperty("--surface-soft", "#d4e4ea");
-          document.documentElement.style.setProperty("--surface-soft-2", "#b7d0da");
+          document.documentElement.style.setProperty("--bg", "#cce7ef");
+          document.documentElement.style.setProperty("--accent-soft", "#a7d6e4");
+          document.documentElement.style.setProperty("--surface-soft", "#b9e0eb");
+          document.documentElement.style.setProperty("--surface-soft-2", "#74b9cf");
         } else if (theme === "green") {
-          document.documentElement.style.setProperty("--bg", "#d9ead9");
-          document.documentElement.style.setProperty("--accent-soft", "#c4dfc4");
-          document.documentElement.style.setProperty("--surface-soft", "#d2e4d2");
-          document.documentElement.style.setProperty("--surface-soft-2", "#afd0af");
+          document.documentElement.style.setProperty("--bg", "#c8f0cf");
+          document.documentElement.style.setProperty("--accent-soft", "#9be2aa");
+          document.documentElement.style.setProperty("--surface-soft", "#b5e9bf");
+          document.documentElement.style.setProperty("--surface-soft-2", "#6cc681");
         } else if (theme === "purple") {
-          document.documentElement.style.setProperty("--bg", "#e5dcf2");
-          document.documentElement.style.setProperty("--accent-soft", "#d6c5eb");
-          document.documentElement.style.setProperty("--surface-soft", "#e0d3f0");
-          document.documentElement.style.setProperty("--surface-soft-2", "#c6b2e2");
+          document.documentElement.style.setProperty("--bg", "#dbc9ff");
+          document.documentElement.style.setProperty("--accent-soft", "#c1a5ff");
+          document.documentElement.style.setProperty("--surface-soft", "#ceb8ff");
+          document.documentElement.style.setProperty("--surface-soft-2", "#9e77ef");
         } else if (theme === "ocean") {
-          document.documentElement.style.setProperty("--bg", "#d6e6ee");
-          document.documentElement.style.setProperty("--accent-soft", "#bfd7e4");
-          document.documentElement.style.setProperty("--surface-soft", "#cfe1e8");
-          document.documentElement.style.setProperty("--surface-soft-2", "#a9c8d4");
+          document.documentElement.style.setProperty("--bg", "#bfe4f6");
+          document.documentElement.style.setProperty("--accent-soft", "#8fd0ef");
+          document.documentElement.style.setProperty("--surface-soft", "#acddf2");
+          document.documentElement.style.setProperty("--surface-soft-2", "#50abd8");
         } else if (theme === "rose") {
-          document.documentElement.style.setProperty("--bg", "#eedcdf");
-          document.documentElement.style.setProperty("--accent-soft", "#e8c7cf");
-          document.documentElement.style.setProperty("--surface-soft", "#ecd5da");
-          document.documentElement.style.setProperty("--surface-soft-2", "#ddb8c2");
+          document.documentElement.style.setProperty("--bg", "#f7c9d6");
+          document.documentElement.style.setProperty("--accent-soft", "#ec9cb3");
+          document.documentElement.style.setProperty("--surface-soft", "#f2b8ca");
+          document.documentElement.style.setProperty("--surface-soft-2", "#db6a91");
         } else if (theme === "amber") {
-          document.documentElement.style.setProperty("--bg", "#f0e4cf");
-          document.documentElement.style.setProperty("--accent-soft", "#ead7b7");
-          document.documentElement.style.setProperty("--surface-soft", "#ecdfca");
-          document.documentElement.style.setProperty("--surface-soft-2", "#ddc79f");
+          document.documentElement.style.setProperty("--bg", "#f6ddb0");
+          document.documentElement.style.setProperty("--accent-soft", "#efc86e");
+          document.documentElement.style.setProperty("--surface-soft", "#f2d296");
+          document.documentElement.style.setProperty("--surface-soft-2", "#db9b2a");
         } else if (theme === "slate") {
-          document.documentElement.style.setProperty("--bg", "#dde1e6");
-          document.documentElement.style.setProperty("--accent-soft", "#cfd6df");
-          document.documentElement.style.setProperty("--surface-soft", "#d8dde4");
-          document.documentElement.style.setProperty("--surface-soft-2", "#bcc6d1");
+          document.documentElement.style.setProperty("--bg", "#d6dde8");
+          document.documentElement.style.setProperty("--accent-soft", "#b7c4d6");
+          document.documentElement.style.setProperty("--surface-soft", "#c8d2df");
+          document.documentElement.style.setProperty("--surface-soft-2", "#889ab4");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
@@ -1787,6 +1807,24 @@
         return false;
       }
 
+      function looksLikeEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+      }
+
+      function getProfileNamePromptStateKey(userId) {
+        return `emailDashboardNamePromptState:${String(userId || "").trim()}`;
+      }
+
+      function markProfileNamePromptState(userId, state) {
+        if (!userId) return;
+        localStorage.setItem(getProfileNamePromptStateKey(userId), state);
+      }
+
+      function readProfileNamePromptState(userId) {
+        if (!userId) return "";
+        return localStorage.getItem(getProfileNamePromptStateKey(userId)) || "";
+      }
+
       function applyProfileToForm(profile) {
         currentProfile = profile;
         currentUserId = profile.user_id;
@@ -1794,6 +1832,9 @@
         const firstName = String(profile.settings?.first_name || "").trim();
         const lastName = String(profile.settings?.last_name || "").trim();
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        if (fullName) {
+          markProfileNamePromptState(profile.user_id, "saved");
+        }
         accountName.textContent = fullName || profile.email || profile.user_id;
         heroLabel.textContent = "Email Dashboard";
         heroWelcome.textContent = firstName ? `Welcome ${firstName}` : (fullName ? `Welcome ${fullName}` : "Welcome");
@@ -1839,7 +1880,11 @@
         if (!currentProfile?.user_id) return;
         const firstName = String(currentProfile.settings?.first_name || "").trim();
         const lastName = String(currentProfile.settings?.last_name || "").trim();
-        if (firstName || lastName) return;
+        if (firstName || lastName) {
+          markProfileNamePromptState(currentProfile.user_id, "saved");
+          return;
+        }
+        if (readProfileNamePromptState(currentProfile.user_id)) return;
 
         const result = await openAppModal({
           title: "Welcome",
@@ -1850,10 +1895,16 @@
           confirmLabel: "Save",
           cancelLabel: "Skip",
         });
-        if (!result?.confirmed) return;
+        if (!result?.confirmed) {
+          markProfileNamePromptState(currentProfile.user_id, "skipped");
+          return;
+        }
 
         const fullName = String(result.value || "").trim();
-        if (!fullName) return;
+        if (!fullName) {
+          markProfileNamePromptState(currentProfile.user_id, "skipped");
+          return;
+        }
         const parts = fullName.split(/\s+/).filter(Boolean);
         const nextFirstName = parts[0] || "";
         const nextLastName = parts.slice(1).join(" ");
@@ -1875,6 +1926,7 @@
           }
           if (data.profile) {
             applyProfileToForm(data.profile);
+            markProfileNamePromptState(currentProfile.user_id, "saved");
           }
         } catch (error) {
           setRunStatus(`Failed to save your name: ${error.message}`);
@@ -2187,6 +2239,10 @@
           setRunStatus("Enter a contact email first.");
           return;
         }
+        if (!looksLikeEmail(contact)) {
+          setRunStatus("Incorrect email.");
+          return;
+        }
         const contacts = currentContacts.includes(contact)
           ? currentContacts
           : [...currentContacts, contact];
@@ -2278,6 +2334,10 @@
 
         const newContact = String(result.value || "").trim().toLowerCase();
         if (!newContact) return;
+        if (!looksLikeEmail(newContact)) {
+          setRunStatus("Incorrect email.");
+          return;
+        }
         if (currentContacts.includes(newContact)) {
           setRunStatus("That contact is already saved.");
           return;

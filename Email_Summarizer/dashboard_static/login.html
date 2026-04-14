@@ -172,11 +172,19 @@
       const loginButton = document.getElementById("loginButton");
       const status = document.getElementById("status");
 
+      function looksLikeEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+      }
+
       async function login() {
         const email = emailInput.value.trim();
         const password = passwordInput.value;
         if (!email || !password) {
           status.textContent = "Enter your email and password first.";
+          return;
+        }
+        if (!looksLikeEmail(email)) {
+          status.textContent = "Incorrect email.";
           return;
         }
 

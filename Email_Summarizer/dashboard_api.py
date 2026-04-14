@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import hashlib
 import hmac
 import secrets
@@ -281,6 +282,8 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
     email = request.email.strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required.")
+    if not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Incorrect email.")
     user_id = _slugify_user_id(request.user_id) if request.user_id and request.user_id.strip() else user_id_from_email(email)
     if len(request.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
@@ -300,6 +303,7 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
     settings["SMTP_USER"] = settings.get("SMTP_USER") or email
     settings["SMTP_PASSWORD"] = settings.get("SMTP_PASSWORD") or request.password
     settings["SUMMARY_RECIPIENT"] = settings.get("SUMMARY_RECIPIENT") or email
+    settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
 
     password_hash, password_salt = _hash_password(request.password)
     now = datetime.now().isoformat()
@@ -321,6 +325,8 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
 def login(request: LoginRequest, response: Response) -> Dict[str, Any]:
     profile = None
     if request.email and request.email.strip():
+        if not is_valid_email(request.email):
+            raise HTTPException(status_code=400, detail="Incorrect email.")
         profile = find_profile_by_email(request.email)
     elif request.user_id and request.user_id.strip():
         profile = load_profile(_slugify_user_id(request.user_id))
@@ -336,6 +342,26 @@ def login(request: LoginRequest, response: Response) -> Dict[str, Any]:
 def logout(request: Request, response: Response) -> Dict[str, Any]:
     clear_session(response, request)
     return {"success": True}
+
+
+@app.delete("/auth/account")
+def delete_account(request: Request, response: Response) -> Dict[str, Any]:
+    user_id = resolve_user_id(request)
+    profile = load_profile_or_404(user_id)
+
+    with get_db_connection() as connection:
+        connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        connection.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+
+    user_data_dir = DATA_DIR / user_id
+    user_output_dir = OUTPUT_ROOT_DIR / user_id
+    if user_data_dir.exists():
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+    if user_output_dir.exists():
+        shutil.rmtree(user_output_dir, ignore_errors=True)
+
+    clear_session(response, request)
+    return {"success": True, "user_id": profile["user_id"], "email": profile.get("email", "")}
 
 
 @app.get("/auth/google/start")
@@ -644,6 +670,11 @@ def _slugify_user_id(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "", value.strip()) or "user"
 
 
+def is_valid_email(value: str) -> bool:
+    email = value.strip()
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))
+
+
 def user_id_from_email(email: str) -> str:
     lowered = email.strip().lower()
     return re.sub(r"[^a-z0-9]+", "_", lowered).strip("_") or "user"
@@ -892,6 +923,11 @@ def remove_summary_style_preference(user_id: str, preference: str) -> List[str]:
 
 
 def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
+    mailbox_connected = (
+        str(settings.get("MAILBOX_CONNECTION_CONFIRMED", "false")).lower() == "true"
+        and bool(str(settings.get("IMAP_USER", "")).strip())
+        and bool(str(settings.get("IMAP_PASSWORD", "")).strip())
+    )
     return {
         "first_name": settings.get("FIRST_NAME", ""),
         "last_name": settings.get("LAST_NAME", ""),
@@ -900,7 +936,7 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "imap_user": settings.get("IMAP_USER", ""),
         "imap_server": settings.get("IMAP_SERVER", ""),
         "imap_port": settings.get("IMAP_PORT", ""),
-        "mailbox_connected": str(settings.get("MAILBOX_CONNECTION_CONFIRMED", "false")).lower() == "true",
+        "mailbox_connected": mailbox_connected,
     }
 
 
@@ -1305,6 +1341,9 @@ def get_whitelist(request: Request, user_id: Optional[str] = Query(None, descrip
 def update_whitelist(payload: WhitelistUpdateRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
     cleaned_contacts = [contact.strip() for contact in payload.contacts if contact.strip()]
+    invalid_contacts = [contact for contact in cleaned_contacts if not is_valid_email(contact)]
+    if invalid_contacts:
+        raise HTTPException(status_code=400, detail="Incorrect email.")
     set_contacts_for_user(resolved_user_id, cleaned_contacts)
     settings = get_settings_for_user(resolved_user_id)
     return {

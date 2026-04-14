@@ -326,7 +326,10 @@
           <h1>Settings</h1>
           <p>Account information, theme preferences, and simple help.</p>
         </div>
-        <a class="button secondary" href="/dashboard">Back to Dashboard</a>
+        <div class="row">
+          <a class="button secondary" href="/dashboard">Back to Dashboard</a>
+          <button id="logoutButton" type="button">Log Out</button>
+        </div>
       </section>
 
       <section class="grid">
@@ -363,6 +366,10 @@
           <div class="card">
             <div class="theme-options">
               <button class="theme-chip" type="button" data-theme="default">Default</button>
+              <button class="theme-chip" type="button" data-theme="white">White</button>
+              <button class="theme-chip" type="button" data-theme="blue">Blue</button>
+              <button class="theme-chip" type="button" data-theme="pink">Pink</button>
+              <button class="theme-chip" type="button" data-theme="red">Red</button>
               <button class="theme-chip" type="button" data-theme="stone">Stone</button>
               <button class="theme-chip" type="button" data-theme="mist">Mist</button>
               <button class="theme-chip" type="button" data-theme="green">Green</button>
@@ -385,6 +392,10 @@
             <div class="row">
               <strong>Sign-In</strong>
               <span id="settingsLoginMethod">Loading...</span>
+            </div>
+            <div class="row">
+              <span></span>
+              <button id="deleteAccountButton" type="button" class="secondary">Delete Account</button>
             </div>
           </div>
         </div>
@@ -529,6 +540,8 @@
       const changeMailboxButton = document.getElementById("changeMailboxButton");
       const saveMailboxButton = document.getElementById("saveMailboxButton");
       const mailboxStatus = document.getElementById("mailboxStatus");
+      const logoutButton = document.getElementById("logoutButton");
+      const deleteAccountButton = document.getElementById("deleteAccountButton");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let currentProfile = null;
       let mailboxEditMode = false;
@@ -537,46 +550,66 @@
       function applyTheme(theme) {
         currentTheme = theme;
         localStorage.setItem("emailDashboardTheme", theme);
-        if (theme === "stone") {
-          document.documentElement.style.setProperty("--bg", "#e6ddcf");
-          document.documentElement.style.setProperty("--accent-soft", "#d8c7ad");
-          document.documentElement.style.setProperty("--surface-soft", "#e1d3bf");
-          document.documentElement.style.setProperty("--surface-soft-2", "#ccb99e");
+        if (theme === "white") {
+          document.documentElement.style.setProperty("--bg", "#ffffff");
+          document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
+          document.documentElement.style.setProperty("--surface-soft", "#f8f8f8");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ededed");
+        } else if (theme === "blue") {
+          document.documentElement.style.setProperty("--bg", "#cfe0ff");
+          document.documentElement.style.setProperty("--accent-soft", "#aac5ff");
+          document.documentElement.style.setProperty("--surface-soft", "#bdd3ff");
+          document.documentElement.style.setProperty("--surface-soft-2", "#7da3ff");
+        } else if (theme === "pink") {
+          document.documentElement.style.setProperty("--bg", "#ffc9de");
+          document.documentElement.style.setProperty("--accent-soft", "#ff9fc6");
+          document.documentElement.style.setProperty("--surface-soft", "#ffb8d3");
+          document.documentElement.style.setProperty("--surface-soft-2", "#f26ca6");
+        } else if (theme === "red") {
+          document.documentElement.style.setProperty("--bg", "#ffd1d1");
+          document.documentElement.style.setProperty("--accent-soft", "#ffaaaa");
+          document.documentElement.style.setProperty("--surface-soft", "#ffc1c1");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ef6a6a");
+        } else if (theme === "stone") {
+          document.documentElement.style.setProperty("--bg", "#ead8bf");
+          document.documentElement.style.setProperty("--accent-soft", "#dcb88a");
+          document.documentElement.style.setProperty("--surface-soft", "#e4ceab");
+          document.documentElement.style.setProperty("--surface-soft-2", "#c89859");
         } else if (theme === "mist") {
-          document.documentElement.style.setProperty("--bg", "#d9e8ee");
-          document.documentElement.style.setProperty("--accent-soft", "#c6dde6");
-          document.documentElement.style.setProperty("--surface-soft", "#d4e4ea");
-          document.documentElement.style.setProperty("--surface-soft-2", "#b7d0da");
+          document.documentElement.style.setProperty("--bg", "#cce7ef");
+          document.documentElement.style.setProperty("--accent-soft", "#a7d6e4");
+          document.documentElement.style.setProperty("--surface-soft", "#b9e0eb");
+          document.documentElement.style.setProperty("--surface-soft-2", "#74b9cf");
         } else if (theme === "green") {
-          document.documentElement.style.setProperty("--bg", "#d9ead9");
-          document.documentElement.style.setProperty("--accent-soft", "#c4dfc4");
-          document.documentElement.style.setProperty("--surface-soft", "#d2e4d2");
-          document.documentElement.style.setProperty("--surface-soft-2", "#afd0af");
+          document.documentElement.style.setProperty("--bg", "#c8f0cf");
+          document.documentElement.style.setProperty("--accent-soft", "#9be2aa");
+          document.documentElement.style.setProperty("--surface-soft", "#b5e9bf");
+          document.documentElement.style.setProperty("--surface-soft-2", "#6cc681");
         } else if (theme === "purple") {
-          document.documentElement.style.setProperty("--bg", "#e5dcf2");
-          document.documentElement.style.setProperty("--accent-soft", "#d6c5eb");
-          document.documentElement.style.setProperty("--surface-soft", "#e0d3f0");
-          document.documentElement.style.setProperty("--surface-soft-2", "#c6b2e2");
+          document.documentElement.style.setProperty("--bg", "#dbc9ff");
+          document.documentElement.style.setProperty("--accent-soft", "#c1a5ff");
+          document.documentElement.style.setProperty("--surface-soft", "#ceb8ff");
+          document.documentElement.style.setProperty("--surface-soft-2", "#9e77ef");
         } else if (theme === "ocean") {
-          document.documentElement.style.setProperty("--bg", "#d6e6ee");
-          document.documentElement.style.setProperty("--accent-soft", "#bfd7e4");
-          document.documentElement.style.setProperty("--surface-soft", "#cfe1e8");
-          document.documentElement.style.setProperty("--surface-soft-2", "#a9c8d4");
+          document.documentElement.style.setProperty("--bg", "#bfe4f6");
+          document.documentElement.style.setProperty("--accent-soft", "#8fd0ef");
+          document.documentElement.style.setProperty("--surface-soft", "#acddf2");
+          document.documentElement.style.setProperty("--surface-soft-2", "#50abd8");
         } else if (theme === "rose") {
-          document.documentElement.style.setProperty("--bg", "#eedcdf");
-          document.documentElement.style.setProperty("--accent-soft", "#e8c7cf");
-          document.documentElement.style.setProperty("--surface-soft", "#ecd5da");
-          document.documentElement.style.setProperty("--surface-soft-2", "#ddb8c2");
+          document.documentElement.style.setProperty("--bg", "#f7c9d6");
+          document.documentElement.style.setProperty("--accent-soft", "#ec9cb3");
+          document.documentElement.style.setProperty("--surface-soft", "#f2b8ca");
+          document.documentElement.style.setProperty("--surface-soft-2", "#db6a91");
         } else if (theme === "amber") {
-          document.documentElement.style.setProperty("--bg", "#f0e4cf");
-          document.documentElement.style.setProperty("--accent-soft", "#ead7b7");
-          document.documentElement.style.setProperty("--surface-soft", "#ecdfca");
-          document.documentElement.style.setProperty("--surface-soft-2", "#ddc79f");
+          document.documentElement.style.setProperty("--bg", "#f6ddb0");
+          document.documentElement.style.setProperty("--accent-soft", "#efc86e");
+          document.documentElement.style.setProperty("--surface-soft", "#f2d296");
+          document.documentElement.style.setProperty("--surface-soft-2", "#db9b2a");
         } else if (theme === "slate") {
-          document.documentElement.style.setProperty("--bg", "#dde1e6");
-          document.documentElement.style.setProperty("--accent-soft", "#cfd6df");
-          document.documentElement.style.setProperty("--surface-soft", "#d8dde4");
-          document.documentElement.style.setProperty("--surface-soft-2", "#bcc6d1");
+          document.documentElement.style.setProperty("--bg", "#d6dde8");
+          document.documentElement.style.setProperty("--accent-soft", "#b7c4d6");
+          document.documentElement.style.setProperty("--surface-soft", "#c8d2df");
+          document.documentElement.style.setProperty("--surface-soft-2", "#889ab4");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
@@ -622,6 +655,8 @@
         profileNameDisplay.textContent = fullName || "Not set";
         profileNameForm.hidden = showSummary;
         profileNameActions.hidden = showSummary;
+        profileFirstNameInput.disabled = showSummary;
+        profileLastNameInput.disabled = showSummary;
       }
 
       function syncMailboxConnectionUI() {
@@ -635,9 +670,10 @@
 
         mailboxConnectedSummary.hidden = !showConnectedState;
         mailboxConnectedEmail.textContent = connectedEmail || "Connected";
+        mailboxEmailInput.closest(".field-grid").hidden = showConnectedState;
+        saveMailboxButton.closest(".row").hidden = showConnectedState;
         mailboxEmailInput.disabled = showConnectedState;
         mailboxPasswordInput.disabled = showConnectedState;
-        saveMailboxButton.hidden = showConnectedState;
         mailboxEmailInput.value = connectedEmail;
         if (showConnectedState) {
           mailboxPasswordInput.value = "••••••••";
@@ -806,6 +842,38 @@
         syncMailboxConnectionUI();
         mailboxStatus.textContent = "";
         mailboxEmailInput.focus();
+      });
+      logoutButton.addEventListener("click", async () => {
+        if (!window.confirm("Are you sure you want to log out?")) return;
+        logoutButton.disabled = true;
+        try {
+          await fetch("/auth/logout", { method: "POST" });
+        } finally {
+          window.location.href = "/login";
+        }
+      });
+      deleteAccountButton.addEventListener("click", async () => {
+        if (!currentProfile) return;
+        if (!window.confirm("Are you sure you want to delete your account?")) return;
+        const secondWarning = window.confirm(
+          "This permanently deletes your account, saved summaries, contacts, and settings. This cannot be undone."
+        );
+        if (!secondWarning) return;
+
+        deleteAccountButton.disabled = true;
+        try {
+          const response = await fetch("/auth/account", { method: "DELETE" });
+          const data = await response.json();
+          if (!response.ok) {
+            profileNameStatus.textContent = data.detail || "Failed to delete account.";
+            deleteAccountButton.disabled = false;
+            return;
+          }
+          window.location.href = "/login";
+        } catch (error) {
+          profileNameStatus.textContent = `Failed to delete account: ${error.message}`;
+          deleteAccountButton.disabled = false;
+        }
       });
       saveProfileNameButton.addEventListener("click", saveProfileName);
       editProfileNameButton.addEventListener("click", () => {
