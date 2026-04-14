@@ -159,7 +159,13 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
 
     settings = payload.get("settings") or {}
     email_value = str(payload.get("email", "")).strip().lower()
-    provider_defaults = None
+    provider_defaults = {
+        "IMAP_SERVER": "imap.263.net",
+        "IMAP_PORT": "993",
+        "SMTP_HOST": "smtp.263.net",
+        "SMTP_PORT": "465",
+        "IMAP_FOLDER": "INBOX",
+    }
     if email_value.endswith("@gmail.com"):
         provider_defaults = {
             "IMAP_SERVER": "imap.gmail.com",
@@ -174,30 +180,6 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
             "IMAP_PORT": "993",
             "SMTP_HOST": "smtp-mail.outlook.com",
             "SMTP_PORT": "587",
-            "IMAP_FOLDER": "INBOX",
-        }
-    elif email_value.endswith(("@yahoo.com", "@ymail.com")):
-        provider_defaults = {
-            "IMAP_SERVER": "imap.mail.yahoo.com",
-            "IMAP_PORT": "993",
-            "SMTP_HOST": "smtp.mail.yahoo.com",
-            "SMTP_PORT": "587",
-            "IMAP_FOLDER": "INBOX",
-        }
-    elif email_value.endswith("@icloud.com"):
-        provider_defaults = {
-            "IMAP_SERVER": "imap.mail.me.com",
-            "IMAP_PORT": "993",
-            "SMTP_HOST": "smtp.mail.me.com",
-            "SMTP_PORT": "587",
-            "IMAP_FOLDER": "INBOX",
-        }
-    elif email_value.endswith("@263.net") or email_value.endswith("@263.com"):
-        provider_defaults = {
-            "IMAP_SERVER": "imap.263.net",
-            "IMAP_PORT": "993",
-            "SMTP_HOST": "smtp.263.net",
-            "SMTP_PORT": "465",
             "IMAP_FOLDER": "INBOX",
         }
 
@@ -334,9 +316,6 @@ class EmailRecord:
 
 class EmailSummarizer:
 
-    MAX_STORED_BODY_CHARS = 8000
-    MAX_LATEST_MESSAGE_BODY_CHARS = 1200
-    MAX_OLDER_MESSAGE_BODY_CHARS = 450
     MAX_ATTACHMENT_PREVIEW_CHARS = 180
     MAX_SUMMARY_OUTPUT_TOKENS = 5000
 
@@ -1249,8 +1228,6 @@ class EmailSummarizer:
                 cleaned.append(line)
         body    = "\n".join(cleaned).strip()
 
-        if len(body) > self.MAX_STORED_BODY_CHARS:
-            body = body[:self.MAX_STORED_BODY_CHARS] + "\n... [truncated]"
         return body
 
     # ──────────────────────────────────────────────
@@ -1364,11 +1341,7 @@ class EmailSummarizer:
         return "\n".join(compacted).strip()
 
     def _body_for_llm(self, body: str, is_trigger: bool) -> str:
-        compact = self._compact_text(body)
-        limit = self.MAX_LATEST_MESSAGE_BODY_CHARS if is_trigger else self.MAX_OLDER_MESSAGE_BODY_CHARS
-        if len(compact) > limit:
-            return compact[:limit] + "\n... [truncated]"
-        return compact
+        return self._compact_text(body)
 
     def _attachment_preview_for_llm(self, preview: str) -> str:
         compact = self._compact_text(preview)

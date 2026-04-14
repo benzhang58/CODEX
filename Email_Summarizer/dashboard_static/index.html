@@ -458,19 +458,33 @@
 
       .summary-actions {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
         gap: 16px;
         flex-wrap: wrap;
+      }
+
+      .summary-actions-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .summary-actions-secondary {
+        display: inline-flex;
+        align-items: center;
+        margin-left: auto;
       }
 
       .mode-button {
         border: 1px solid var(--border);
         background: rgba(255, 255, 255, 0.84);
         color: var(--text);
-        border-radius: 16px;
+        border-radius: 14px;
         height: 42px;
-        padding: 0 16px;
+        min-height: 42px;
+        padding: 0 18px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -521,7 +535,6 @@
         width: 18px;
         height: 18px;
         accent-color: var(--accent);
-        pointer-events: none;
       }
 
       .summary-unread {
@@ -1380,7 +1393,8 @@
         <section class="panel summary-list-panel">
           <h2 id="summariesHeading">Summaries</h2>
           <div class="summary-actions">
-            <div class="controls icon-actions">
+            <div class="summary-actions-primary">
+              <div class="controls icon-actions">
               <span class="tooltip-wrap" data-tooltip="Select All">
                 <button id="selectAllNewButton" class="icon-button" type="button" aria-label="Select All">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1436,8 +1450,11 @@
                   </svg>
                 </button>
               </span>
+              </div>
             </div>
-            <button id="toggleDoneViewButton" class="mode-button" type="button">See Done</button>
+            <div class="summary-actions-secondary">
+              <button id="toggleDoneViewButton" class="mode-button" type="button">See Done</button>
+            </div>
           </div>
           <div id="listStatus" class="status">Loading summaries...</div>
           <div id="summaryList" class="summary-list"></div>
@@ -1709,7 +1726,7 @@
 
       function setRunStatus(message, loading = false) {
         const visibleMessage = String(message || "").trim();
-        pulseTitle.textContent = loading ? "Checking recent email" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
+        pulseTitle.textContent = loading ? "Checking emails" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
         pulseNote.textContent = visibleMessage || "Select summaries, ask questions, or run a new check.";
         pulseBadge.hidden = !loading;
         pulseFill.style.width = loading ? "58%" : "0%";
@@ -1994,6 +2011,7 @@
         if (data.authenticated && data.profile) {
           applyProfileToForm(data.profile);
           await promptForProfileNameIfNeeded();
+          await fetchContacts();
           await loadSummaries();
           setRunStatus("");
           return true;

@@ -496,13 +496,15 @@
               <label for="mailboxPasswordInput">Mailbox Password</label>
               <input id="mailboxPasswordInput" type="password" placeholder="Enter your real email password" />
             </div>
-            <div class="field">
-              <label for="mailboxServerInput">IMAP Server</label>
-              <input id="mailboxServerInput" type="text" placeholder="imap.263.net" />
-            </div>
-            <div class="field">
-              <label for="mailboxPortInput">IMAP Port</label>
-              <input id="mailboxPortInput" type="text" placeholder="993" />
+            <div id="mailboxAdvancedFields" class="field-grid" style="grid-column: 1 / -1;">
+              <div class="field">
+                <label for="mailboxServerInput">IMAP Server</label>
+                <input id="mailboxServerInput" type="text" placeholder="imap.example.com" />
+              </div>
+              <div class="field">
+                <label for="mailboxPortInput">IMAP Port</label>
+                <input id="mailboxPortInput" type="text" placeholder="993" />
+              </div>
             </div>
           </div>
           <div id="mailboxActions" class="row">
@@ -628,6 +630,7 @@
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
       const mailboxServerInput = document.getElementById("mailboxServerInput");
       const mailboxPortInput = document.getElementById("mailboxPortInput");
+      const mailboxAdvancedFields = document.getElementById("mailboxAdvancedFields");
       const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
       const mailboxConnectionStatusText = document.getElementById("mailboxConnectionStatusText");
       const mailboxConnectedSummary = document.getElementById("mailboxConnectedSummary");
@@ -642,6 +645,35 @@
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let currentProfile = null;
       let mailboxEditMode = false;
+
+      function inferMailboxProviderDefaults(email) {
+        const normalized = String(email || "").trim().toLowerCase();
+        if (!normalized.includes("@")) return null;
+        if (normalized.endsWith("@gmail.com") || normalized.endsWith("@googlemail.com")) {
+          return { imapServer: "imap.gmail.com", imapPort: "993" };
+        }
+        if (
+          normalized.endsWith("@outlook.com")
+          || normalized.endsWith("@hotmail.com")
+          || normalized.endsWith("@live.com")
+          || normalized.endsWith("@msn.com")
+        ) {
+          return { imapServer: "outlook.office365.com", imapPort: "993" };
+        }
+        return { imapServer: "imap.263.net", imapPort: "993" };
+      }
+
+      function syncMailboxProviderFields() {
+        const inferred = inferMailboxProviderDefaults(mailboxEmailInput.value);
+        const shouldHideAdvanced = Boolean(inferred);
+        mailboxAdvancedFields.hidden = shouldHideAdvanced;
+        if (inferred) {
+          mailboxServerInput.value = inferred.imapServer;
+          mailboxPortInput.value = inferred.imapPort;
+        } else if (!mailboxPortInput.value.trim()) {
+          mailboxPortInput.value = "993";
+        }
+      }
 
       function applyTheme(theme) {
         currentTheme = theme;
@@ -794,6 +826,7 @@
         } else if (mailboxEditMode) {
           mailboxPasswordInput.value = "";
         }
+        syncMailboxProviderFields();
       }
 
       function setMailboxConnectionStatus(connected) {
@@ -809,6 +842,7 @@
           mailboxServerInput.disabled = true;
           mailboxPortInput.disabled = true;
         }
+        syncMailboxProviderFields();
       }
 
       async function refreshMailboxConnectionStatus() {
@@ -853,8 +887,9 @@
         if (!currentProfile) return;
         const email = mailboxEmailInput.value.trim();
         const password = mailboxPasswordInput.value;
-        const imapServer = mailboxServerInput.value.trim();
-        const imapPort = mailboxPortInput.value.trim() || "993";
+        const inferred = inferMailboxProviderDefaults(email);
+        const imapServer = (inferred?.imapServer || mailboxServerInput.value).trim();
+        const imapPort = (inferred?.imapPort || mailboxPortInput.value).trim() || "993";
         if (!email || !password) {
           mailboxStatus.textContent = "Enter the mailbox email and password first.";
           return;
@@ -992,6 +1027,7 @@
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
       saveMailboxButton.addEventListener("click", saveMailboxSettings);
+      mailboxEmailInput.addEventListener("input", syncMailboxProviderFields);
       changeMailboxButton.addEventListener("click", () => {
         mailboxEditMode = true;
         syncMailboxConnectionUI();

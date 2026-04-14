@@ -1166,7 +1166,13 @@ def merge_non_empty_settings(base: Dict[str, str], overrides: Dict[str, Any]) ->
 def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, str]:
     normalized = (email or "").strip().lower()
     merged = dict(settings)
-    provider_defaults = None
+    provider_defaults = {
+        "IMAP_SERVER": "imap.263.net",
+        "IMAP_PORT": "993",
+        "SMTP_HOST": "smtp.263.net",
+        "SMTP_PORT": "465",
+        "IMAP_FOLDER": "INBOX",
+    }
 
     if normalized.endswith("@gmail.com"):
         provider_defaults = {
@@ -1182,30 +1188,6 @@ def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, s
             "IMAP_PORT": "993",
             "SMTP_HOST": "smtp-mail.outlook.com",
             "SMTP_PORT": "587",
-            "IMAP_FOLDER": "INBOX",
-        }
-    elif normalized.endswith(("@yahoo.com", "@ymail.com")):
-        provider_defaults = {
-            "IMAP_SERVER": "imap.mail.yahoo.com",
-            "IMAP_PORT": "993",
-            "SMTP_HOST": "smtp.mail.yahoo.com",
-            "SMTP_PORT": "587",
-            "IMAP_FOLDER": "INBOX",
-        }
-    elif normalized.endswith("@icloud.com"):
-        provider_defaults = {
-            "IMAP_SERVER": "imap.mail.me.com",
-            "IMAP_PORT": "993",
-            "SMTP_HOST": "smtp.mail.me.com",
-            "SMTP_PORT": "587",
-            "IMAP_FOLDER": "INBOX",
-        }
-    elif normalized.endswith("@263.net") or normalized.endswith("@263.com"):
-        provider_defaults = {
-            "IMAP_SERVER": "imap.263.net",
-            "IMAP_PORT": "993",
-            "SMTP_HOST": "smtp.263.net",
-            "SMTP_PORT": "465",
             "IMAP_FOLDER": "INBOX",
         }
 
