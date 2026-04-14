@@ -657,6 +657,40 @@ def get_profile(request: Request, user_id: Optional[str] = Query(None)) -> Dict[
     return {"profile": profile_response(profile)}
 
 
+@app.get("/debug/users")
+def debug_users(request: Request) -> Dict[str, Any]:
+    resolve_user_id(request)
+    with get_db_connection() as connection:
+        user_rows = connection.execute(
+            "SELECT user_id, email, created_at, updated_at FROM users ORDER BY created_at DESC"
+        ).fetchall()
+        session_rows = connection.execute(
+            "SELECT user_id, COUNT(*) AS session_count FROM sessions GROUP BY user_id ORDER BY session_count DESC"
+        ).fetchall()
+
+    return {
+        "db_path": str(DB_PATH),
+        "storage_dir": str(APP_STORAGE_DIR),
+        "users_count": len(user_rows),
+        "users": [
+            {
+                "user_id": str(row["user_id"]),
+                "email": str(row["email"]),
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in user_rows
+        ],
+        "sessions": [
+            {
+                "user_id": str(row["user_id"]),
+                "session_count": int(row["session_count"]),
+            }
+            for row in session_rows
+        ],
+    }
+
+
 @app.put("/profile")
 def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
@@ -995,6 +1029,10 @@ def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str,
     settings = dict(existing)
     settings["FIRST_NAME"] = update.first_name.strip()
     settings["LAST_NAME"] = update.last_name.strip()
+    if update.imap_server.strip():
+        settings["IMAP_SERVER"] = update.imap_server.strip()
+    if update.imap_port.strip():
+        settings["IMAP_PORT"] = update.imap_port.strip()
     if update.imap_user.strip():
         settings["IMAP_USER"] = update.imap_user.strip()
     if update.email.strip():

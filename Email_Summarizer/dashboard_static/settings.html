@@ -271,6 +271,44 @@
         margin-bottom: 4px;
       }
 
+      .modal-shell[hidden] {
+        display: none;
+      }
+
+      .modal-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(12, 12, 12, 0.28);
+        backdrop-filter: blur(10px);
+      }
+
+      .modal-card {
+        width: min(100%, 460px);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 30px 80px rgba(15, 15, 15, 0.18);
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .modal-card h3 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: -0.03em;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
       .connection-status {
         display: inline-flex;
         align-items: center;
@@ -368,26 +406,12 @@
         <div class="section">
           <h2>Profile Name</h2>
           <div class="card">
-            <div id="profileNameSummary" class="profile-summary" hidden>
+            <div id="profileNameSummary" class="profile-summary">
               <div>
                 <strong>Your Name</strong>
                 <span id="profileNameDisplay">Not set</span>
               </div>
-              <button id="editProfileNameButton" type="button" class="secondary">Edit</button>
-            </div>
-            <div id="profileNameForm" class="field-grid">
-              <div class="field">
-                <label for="profileFirstNameInput">First Name</label>
-                <input id="profileFirstNameInput" type="text" placeholder="First name" />
-              </div>
-              <div class="field">
-                <label for="profileLastNameInput">Last Name</label>
-                <input id="profileLastNameInput" type="text" placeholder="Last name" />
-              </div>
-            </div>
-            <div id="profileNameActions" class="row">
-              <span></span>
-              <button id="saveProfileNameButton" type="button">Save Name</button>
+              <button id="editProfileNameButton" type="button" class="secondary">Add Name</button>
             </div>
             <div id="profileNameStatus" class="status"></div>
           </div>
@@ -472,6 +496,14 @@
               <label for="mailboxPasswordInput">Mailbox Password</label>
               <input id="mailboxPasswordInput" type="password" placeholder="Enter your real email password" />
             </div>
+            <div class="field">
+              <label for="mailboxServerInput">IMAP Server</label>
+              <input id="mailboxServerInput" type="text" placeholder="imap.263.net" />
+            </div>
+            <div class="field">
+              <label for="mailboxPortInput">IMAP Port</label>
+              <input id="mailboxPortInput" type="text" placeholder="993" />
+            </div>
           </div>
           <div id="mailboxActions" class="row">
             <span></span>
@@ -550,6 +582,29 @@
           <p>Coming soon.</p>
         </div>
       </section>
+
+      <div id="profileNameModal" class="modal-shell" hidden>
+        <div class="modal-card">
+          <div>
+            <h3>Profile Name</h3>
+            <p>Enter the name you want the dashboard to show.</p>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="profileModalFirstNameInput">First Name</label>
+              <input id="profileModalFirstNameInput" type="text" placeholder="First name" />
+            </div>
+            <div class="field">
+              <label for="profileModalLastNameInput">Last Name</label>
+              <input id="profileModalLastNameInput" type="text" placeholder="Last name" />
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button id="cancelProfileNameModalButton" type="button" class="secondary">Cancel</button>
+            <button id="saveProfileNameModalButton" type="button">Save Name</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
@@ -558,19 +613,21 @@
       const settingsLoginMethod = document.getElementById("settingsLoginMethod");
       const profileNameSummary = document.getElementById("profileNameSummary");
       const profileNameDisplay = document.getElementById("profileNameDisplay");
-      const profileNameForm = document.getElementById("profileNameForm");
-      const profileNameActions = document.getElementById("profileNameActions");
-      const profileFirstNameInput = document.getElementById("profileFirstNameInput");
-      const profileLastNameInput = document.getElementById("profileLastNameInput");
-      const saveProfileNameButton = document.getElementById("saveProfileNameButton");
       const editProfileNameButton = document.getElementById("editProfileNameButton");
       const profileNameStatus = document.getElementById("profileNameStatus");
+      const profileNameModal = document.getElementById("profileNameModal");
+      const profileModalFirstNameInput = document.getElementById("profileModalFirstNameInput");
+      const profileModalLastNameInput = document.getElementById("profileModalLastNameInput");
+      const cancelProfileNameModalButton = document.getElementById("cancelProfileNameModalButton");
+      const saveProfileNameModalButton = document.getElementById("saveProfileNameModalButton");
       const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
       const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
       const summaryPreferenceList = document.getElementById("summaryPreferenceList");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxEmailInput = document.getElementById("mailboxEmailInput");
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
+      const mailboxServerInput = document.getElementById("mailboxServerInput");
+      const mailboxPortInput = document.getElementById("mailboxPortInput");
       const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
       const mailboxConnectionStatusText = document.getElementById("mailboxConnectionStatusText");
       const mailboxConnectedSummary = document.getElementById("mailboxConnectedSummary");
@@ -585,7 +642,6 @@
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let currentProfile = null;
       let mailboxEditMode = false;
-      let profileNameEditMode = false;
 
       function applyTheme(theme) {
         currentTheme = theme;
@@ -689,14 +745,21 @@
         const firstName = String(currentProfile?.settings?.first_name || "").trim();
         const lastName = String(currentProfile?.settings?.last_name || "").trim();
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-        const showSummary = Boolean(fullName) && !profileNameEditMode;
-
-        profileNameSummary.hidden = !showSummary;
         profileNameDisplay.textContent = fullName || "Not set";
-        profileNameForm.hidden = showSummary;
-        profileNameActions.hidden = showSummary;
-        profileFirstNameInput.disabled = showSummary;
-        profileLastNameInput.disabled = showSummary;
+        editProfileNameButton.textContent = fullName ? "Edit" : "Add Name";
+      }
+
+      function openProfileNameModal() {
+        const firstName = String(currentProfile?.settings?.first_name || "").trim();
+        const lastName = String(currentProfile?.settings?.last_name || "").trim();
+        profileModalFirstNameInput.value = firstName;
+        profileModalLastNameInput.value = lastName;
+        profileNameModal.hidden = false;
+        profileModalFirstNameInput.focus();
+      }
+
+      function closeProfileNameModal() {
+        profileNameModal.hidden = true;
       }
 
       function syncMailboxConnectionUI() {
@@ -704,7 +767,8 @@
         mailboxSection.hidden = !isPasswordBased;
         if (!isPasswordBased) return;
 
-        const mailboxConnected = Boolean(currentProfile?.settings?.mailbox_connected);
+        const mailboxConnected = mailboxConnectionStatus.classList.contains("connected")
+          || Boolean(currentProfile?.settings?.mailbox_connected);
         const connectedEmail = currentProfile?.settings?.imap_user || currentProfile?.email || "";
         const showConnectedState = mailboxConnected && !mailboxEditMode;
 
@@ -714,7 +778,11 @@
         mailboxActions.hidden = showConnectedState;
         mailboxEmailInput.disabled = showConnectedState;
         mailboxPasswordInput.disabled = showConnectedState;
+        mailboxServerInput.disabled = showConnectedState;
+        mailboxPortInput.disabled = showConnectedState;
         mailboxEmailInput.value = connectedEmail;
+        mailboxServerInput.value = currentProfile?.settings?.imap_server || "";
+        mailboxPortInput.value = currentProfile?.settings?.imap_port || "993";
         if (showConnectedState) {
           mailboxPasswordInput.value = "••••••••";
         } else if (mailboxEditMode) {
@@ -726,6 +794,15 @@
         mailboxConnectionStatus.classList.toggle("connected", Boolean(connected));
         mailboxConnectionStatus.classList.toggle("disconnected", !connected);
         mailboxConnectionStatusText.textContent = connected ? "Connected" : "Not Connected";
+        if (connected && !mailboxEditMode) {
+          mailboxForm.hidden = true;
+          mailboxActions.hidden = true;
+          mailboxConnectedSummary.hidden = false;
+          mailboxEmailInput.disabled = true;
+          mailboxPasswordInput.disabled = true;
+          mailboxServerInput.disabled = true;
+          mailboxPortInput.disabled = true;
+        }
       }
 
       async function refreshMailboxConnectionStatus() {
@@ -738,8 +815,10 @@
           const data = await response.json();
           if (!response.ok) return;
           setMailboxConnectionStatus(Boolean(data.connected));
+          syncMailboxConnectionUI();
         } catch (error) {
           setMailboxConnectionStatus(false);
+          syncMailboxConnectionUI();
         }
       }
 
@@ -757,9 +836,6 @@
           : data.profile.microsoft_connected
             ? "Microsoft OAuth"
             : "Standard";
-        profileFirstNameInput.value = data.profile.settings?.first_name || "";
-        profileLastNameInput.value = data.profile.settings?.last_name || "";
-        profileNameEditMode = false;
         syncProfileNameUI();
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
         mailboxEditMode = false;
@@ -771,8 +847,14 @@
         if (!currentProfile) return;
         const email = mailboxEmailInput.value.trim();
         const password = mailboxPasswordInput.value;
+        const imapServer = mailboxServerInput.value.trim();
+        const imapPort = mailboxPortInput.value.trim() || "993";
         if (!email || !password) {
           mailboxStatus.textContent = "Enter the mailbox email and password first.";
+          return;
+        }
+        if (!imapServer) {
+          mailboxStatus.textContent = "Enter the IMAP server first.";
           return;
         }
 
@@ -786,6 +868,8 @@
               email: currentProfile.email || email,
               imap_user: email,
               imap_password: password,
+              imap_server: imapServer,
+              imap_port: imapPort,
             }),
           });
           const data = await response.json();
@@ -796,6 +880,8 @@
           currentProfile = data.profile;
           mailboxEmailInput.value = data.profile.settings?.imap_user || data.profile.email || "";
           mailboxPasswordInput.value = "";
+          mailboxServerInput.value = data.profile.settings?.imap_server || "";
+          mailboxPortInput.value = data.profile.settings?.imap_port || "993";
           mailboxEditMode = false;
           syncMailboxConnectionUI();
           await refreshMailboxConnectionStatus();
@@ -809,7 +895,7 @@
 
       async function saveProfileName() {
         if (!currentProfile) return;
-        saveProfileNameButton.disabled = true;
+        saveProfileNameModalButton.disabled = true;
         profileNameStatus.textContent = "Saving name...";
         try {
           const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
@@ -817,8 +903,8 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               email: currentProfile.email || "",
-              first_name: profileFirstNameInput.value.trim(),
-              last_name: profileLastNameInput.value.trim(),
+              first_name: profileModalFirstNameInput.value.trim(),
+              last_name: profileModalLastNameInput.value.trim(),
               imap_user: currentProfile.settings?.imap_user || "",
               imap_password: "",
             }),
@@ -829,15 +915,13 @@
             return;
           }
           currentProfile = data.profile;
-          profileFirstNameInput.value = data.profile.settings?.first_name || "";
-          profileLastNameInput.value = data.profile.settings?.last_name || "";
-          profileNameEditMode = false;
           syncProfileNameUI();
+          closeProfileNameModal();
           profileNameStatus.textContent = "Name saved.";
         } catch (error) {
           profileNameStatus.textContent = `Failed to save name: ${error.message}`;
         } finally {
-          saveProfileNameButton.disabled = false;
+          saveProfileNameModalButton.disabled = false;
         }
       }
 
@@ -940,12 +1024,22 @@
           deleteAccountButton.disabled = false;
         }
       });
-      saveProfileNameButton.addEventListener("click", saveProfileName);
       editProfileNameButton.addEventListener("click", () => {
-        profileNameEditMode = true;
-        syncProfileNameUI();
         profileNameStatus.textContent = "";
-        profileFirstNameInput.focus();
+        openProfileNameModal();
+      });
+      cancelProfileNameModalButton.addEventListener("click", closeProfileNameModal);
+      saveProfileNameModalButton.addEventListener("click", saveProfileName);
+      profileNameModal.addEventListener("click", (event) => {
+        if (event.target === profileNameModal) {
+          closeProfileNameModal();
+        }
+      });
+      profileModalLastNameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveProfileName();
+        }
       });
       addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       summaryPreferenceInput.addEventListener("keydown", (event) => {
