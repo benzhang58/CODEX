@@ -239,6 +239,74 @@
         line-height: 1.55;
       }
 
+      .mailbox-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .mailbox-summary strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .profile-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .profile-summary strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .preference-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .preference-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .preference-item span {
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .preference-remove {
+        width: 34px;
+        height: 34px;
+        min-width: 34px;
+        padding: 0;
+        border-radius: 10px;
+      }
+
+      .preference-empty {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 14px;
+      }
+
       @media (max-width: 900px) {
         .grid {
           grid-template-columns: 1fr;
@@ -265,7 +333,14 @@
         <div class="section">
           <h2>Profile Name</h2>
           <div class="card">
-            <div class="field-grid">
+            <div id="profileNameSummary" class="profile-summary" hidden>
+              <div>
+                <strong>Your Name</strong>
+                <span id="profileNameDisplay">Not set</span>
+              </div>
+              <button id="editProfileNameButton" type="button" class="secondary">Edit</button>
+            </div>
+            <div id="profileNameForm" class="field-grid">
               <div class="field">
                 <label for="profileFirstNameInput">First Name</label>
                 <input id="profileFirstNameInput" type="text" placeholder="First name" />
@@ -275,7 +350,7 @@
                 <input id="profileLastNameInput" type="text" placeholder="Last name" />
               </div>
             </div>
-            <div class="row">
+            <div id="profileNameActions" class="row">
               <span></span>
               <button id="saveProfileNameButton" type="button">Save Name</button>
             </div>
@@ -292,6 +367,10 @@
               <button class="theme-chip" type="button" data-theme="mist">Mist</button>
               <button class="theme-chip" type="button" data-theme="green">Green</button>
               <button class="theme-chip" type="button" data-theme="purple">Purple</button>
+              <button class="theme-chip" type="button" data-theme="ocean">Ocean</button>
+              <button class="theme-chip" type="button" data-theme="rose">Rose</button>
+              <button class="theme-chip" type="button" data-theme="amber">Amber</button>
+              <button class="theme-chip" type="button" data-theme="slate">Slate</button>
             </div>
           </div>
         </div>
@@ -311,10 +390,32 @@
         </div>
       </section>
 
+      <section class="section">
+        <h2>Summary Preferences</h2>
+        <div class="card">
+          <p class="inline-note">These are reusable instructions the app uses when generating future summaries.</p>
+          <div class="row" style="align-items: flex-end; gap: 12px;">
+            <div class="field" style="flex: 1 1 auto;">
+              <label for="summaryPreferenceInput">New Preference</label>
+              <input id="summaryPreferenceInput" type="text" placeholder="Focus more on deadlines and action items" />
+            </div>
+            <button id="addSummaryPreferenceButton" type="button">Add</button>
+          </div>
+          <div id="summaryPreferenceList" class="preference-list"></div>
+        </div>
+      </section>
+
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
           <p class="inline-note">Use this only if your email is not Gmail or Outlook. This updates the mailbox credentials the summarizer uses. It does not change your dashboard login password.</p>
+          <div id="mailboxConnectedSummary" class="mailbox-summary" hidden>
+            <div>
+              <strong>Mailbox connected</strong>
+              <span id="mailboxConnectedEmail">Connected</span>
+            </div>
+            <button id="changeMailboxButton" type="button" class="secondary">Change Email Connection</button>
+          </div>
           <div class="field-grid">
             <div class="field">
               <label for="mailboxEmailInput">Mailbox Email</label>
@@ -326,7 +427,7 @@
             </div>
           </div>
           <div class="row">
-            <span id="mailboxServerText">Server: --</span>
+            <span></span>
             <button id="saveMailboxButton" type="button">Save Mailbox</button>
           </div>
           <div id="mailboxStatus" class="status"></div>
@@ -408,18 +509,30 @@
       const themeChips = Array.from(document.querySelectorAll(".theme-chip"));
       const settingsLoginEmail = document.getElementById("settingsLoginEmail");
       const settingsLoginMethod = document.getElementById("settingsLoginMethod");
+      const profileNameSummary = document.getElementById("profileNameSummary");
+      const profileNameDisplay = document.getElementById("profileNameDisplay");
+      const profileNameForm = document.getElementById("profileNameForm");
+      const profileNameActions = document.getElementById("profileNameActions");
       const profileFirstNameInput = document.getElementById("profileFirstNameInput");
       const profileLastNameInput = document.getElementById("profileLastNameInput");
       const saveProfileNameButton = document.getElementById("saveProfileNameButton");
+      const editProfileNameButton = document.getElementById("editProfileNameButton");
       const profileNameStatus = document.getElementById("profileNameStatus");
+      const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
+      const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
+      const summaryPreferenceList = document.getElementById("summaryPreferenceList");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxEmailInput = document.getElementById("mailboxEmailInput");
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
-      const mailboxServerText = document.getElementById("mailboxServerText");
+      const mailboxConnectedSummary = document.getElementById("mailboxConnectedSummary");
+      const mailboxConnectedEmail = document.getElementById("mailboxConnectedEmail");
+      const changeMailboxButton = document.getElementById("changeMailboxButton");
       const saveMailboxButton = document.getElementById("saveMailboxButton");
       const mailboxStatus = document.getElementById("mailboxStatus");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let currentProfile = null;
+      let mailboxEditMode = false;
+      let profileNameEditMode = false;
 
       function applyTheme(theme) {
         currentTheme = theme;
@@ -444,6 +557,26 @@
           document.documentElement.style.setProperty("--accent-soft", "#d6c5eb");
           document.documentElement.style.setProperty("--surface-soft", "#e0d3f0");
           document.documentElement.style.setProperty("--surface-soft-2", "#c6b2e2");
+        } else if (theme === "ocean") {
+          document.documentElement.style.setProperty("--bg", "#d6e6ee");
+          document.documentElement.style.setProperty("--accent-soft", "#bfd7e4");
+          document.documentElement.style.setProperty("--surface-soft", "#cfe1e8");
+          document.documentElement.style.setProperty("--surface-soft-2", "#a9c8d4");
+        } else if (theme === "rose") {
+          document.documentElement.style.setProperty("--bg", "#eedcdf");
+          document.documentElement.style.setProperty("--accent-soft", "#e8c7cf");
+          document.documentElement.style.setProperty("--surface-soft", "#ecd5da");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ddb8c2");
+        } else if (theme === "amber") {
+          document.documentElement.style.setProperty("--bg", "#f0e4cf");
+          document.documentElement.style.setProperty("--accent-soft", "#ead7b7");
+          document.documentElement.style.setProperty("--surface-soft", "#ecdfca");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ddc79f");
+        } else if (theme === "slate") {
+          document.documentElement.style.setProperty("--bg", "#dde1e6");
+          document.documentElement.style.setProperty("--accent-soft", "#cfd6df");
+          document.documentElement.style.setProperty("--surface-soft", "#d8dde4");
+          document.documentElement.style.setProperty("--surface-soft-2", "#bcc6d1");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
@@ -454,6 +587,63 @@
         themeChips.forEach((chip) => {
           chip.classList.toggle("active", chip.dataset.theme === theme);
         });
+      }
+
+      function renderSummaryPreferences(preferences) {
+        const items = Array.isArray(preferences) ? preferences : [];
+        if (!items.length) {
+          summaryPreferenceList.innerHTML = `<div class="preference-empty">No saved summary preferences yet.</div>`;
+          return;
+        }
+
+        summaryPreferenceList.innerHTML = items
+          .map(
+            (preference) => `
+              <div class="preference-item">
+                <span>${preference}</span>
+                <button class="preference-remove" type="button" data-preference="${preference}">×</button>
+              </div>
+            `
+          )
+          .join("");
+
+        summaryPreferenceList.querySelectorAll(".preference-remove").forEach((button) => {
+          button.addEventListener("click", () => removeSummaryPreference(button.dataset.preference || ""));
+        });
+      }
+
+      function syncProfileNameUI() {
+        const firstName = String(currentProfile?.settings?.first_name || "").trim();
+        const lastName = String(currentProfile?.settings?.last_name || "").trim();
+        const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        const showSummary = Boolean(fullName) && !profileNameEditMode;
+
+        profileNameSummary.hidden = !showSummary;
+        profileNameDisplay.textContent = fullName || "Not set";
+        profileNameForm.hidden = showSummary;
+        profileNameActions.hidden = showSummary;
+      }
+
+      function syncMailboxConnectionUI() {
+        const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
+        mailboxSection.hidden = !isPasswordBased;
+        if (!isPasswordBased) return;
+
+        const mailboxConnected = Boolean(currentProfile?.settings?.mailbox_connected);
+        const connectedEmail = currentProfile?.settings?.imap_user || currentProfile?.email || "";
+        const showConnectedState = mailboxConnected && !mailboxEditMode;
+
+        mailboxConnectedSummary.hidden = !showConnectedState;
+        mailboxConnectedEmail.textContent = connectedEmail || "Connected";
+        mailboxEmailInput.disabled = showConnectedState;
+        mailboxPasswordInput.disabled = showConnectedState;
+        saveMailboxButton.hidden = showConnectedState;
+        mailboxEmailInput.value = connectedEmail;
+        if (showConnectedState) {
+          mailboxPasswordInput.value = "••••••••";
+        } else if (mailboxEditMode) {
+          mailboxPasswordInput.value = "";
+        }
       }
 
       async function loadSession() {
@@ -472,15 +662,11 @@
             : "Standard";
         profileFirstNameInput.value = data.profile.settings?.first_name || "";
         profileLastNameInput.value = data.profile.settings?.last_name || "";
-
-        const isPasswordBased = !data.profile.google_connected && !data.profile.microsoft_connected;
-        mailboxSection.hidden = !isPasswordBased;
-        if (isPasswordBased) {
-          mailboxEmailInput.value = data.profile.settings?.imap_user || data.profile.email || "";
-          mailboxServerText.textContent = data.profile.settings?.imap_server
-            ? `Server: ${data.profile.settings.imap_server}:${data.profile.settings.imap_port || ""}`
-            : "Server: detected automatically";
-        }
+        profileNameEditMode = false;
+        syncProfileNameUI();
+        renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
+        mailboxEditMode = false;
+        syncMailboxConnectionUI();
       }
 
       async function saveMailboxSettings() {
@@ -510,11 +696,8 @@
             return;
           }
           currentProfile = data.profile;
-          mailboxPasswordInput.value = "";
-          mailboxEmailInput.value = data.profile.settings?.imap_user || email;
-          mailboxServerText.textContent = data.profile.settings?.imap_server
-            ? `Server: ${data.profile.settings.imap_server}:${data.profile.settings.imap_port || ""}`
-            : "Server: detected automatically";
+          mailboxEditMode = false;
+          syncMailboxConnectionUI();
           mailboxStatus.textContent = "Mailbox settings saved.";
         } catch (error) {
           mailboxStatus.textContent = `Failed to save mailbox settings: ${error.message}`;
@@ -547,6 +730,8 @@
           currentProfile = data.profile;
           profileFirstNameInput.value = data.profile.settings?.first_name || "";
           profileLastNameInput.value = data.profile.settings?.last_name || "";
+          profileNameEditMode = false;
+          syncProfileNameUI();
           profileNameStatus.textContent = "Name saved.";
         } catch (error) {
           profileNameStatus.textContent = `Failed to save name: ${error.message}`;
@@ -555,11 +740,87 @@
         }
       }
 
+      async function addSummaryPreference() {
+        if (!currentProfile) return;
+        const preference = summaryPreferenceInput.value.trim();
+        if (!preference) return;
+
+        addSummaryPreferenceButton.disabled = true;
+        try {
+          const response = await fetch("/summary-style-preferences", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentProfile.user_id,
+              preference,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            profileNameStatus.textContent = data.detail || "Failed to save summary preference.";
+            return;
+          }
+          currentProfile.settings = currentProfile.settings || {};
+          currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
+          summaryPreferenceInput.value = "";
+          renderSummaryPreferences(currentProfile.settings.summary_style_preferences);
+          profileNameStatus.textContent = "Summary preference saved.";
+        } catch (error) {
+          profileNameStatus.textContent = `Failed to save summary preference: ${error.message}`;
+        } finally {
+          addSummaryPreferenceButton.disabled = false;
+        }
+      }
+
+      async function removeSummaryPreference(preference) {
+        if (!currentProfile || !preference) return;
+        try {
+          const response = await fetch("/summary-style-preferences/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentProfile.user_id,
+              preference,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            profileNameStatus.textContent = data.detail || "Failed to remove summary preference.";
+            return;
+          }
+          currentProfile.settings = currentProfile.settings || {};
+          currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
+          renderSummaryPreferences(currentProfile.settings.summary_style_preferences);
+          profileNameStatus.textContent = "Summary preference removed.";
+        } catch (error) {
+          profileNameStatus.textContent = `Failed to remove summary preference: ${error.message}`;
+        }
+      }
+
       themeChips.forEach((chip) => {
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
       saveMailboxButton.addEventListener("click", saveMailboxSettings);
+      changeMailboxButton.addEventListener("click", () => {
+        mailboxEditMode = true;
+        syncMailboxConnectionUI();
+        mailboxStatus.textContent = "";
+        mailboxEmailInput.focus();
+      });
       saveProfileNameButton.addEventListener("click", saveProfileName);
+      editProfileNameButton.addEventListener("click", () => {
+        profileNameEditMode = true;
+        syncProfileNameUI();
+        profileNameStatus.textContent = "";
+        profileFirstNameInput.focus();
+      });
+      addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
+      summaryPreferenceInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          addSummaryPreference();
+        }
+      });
 
       applyTheme(currentTheme);
       loadSession();

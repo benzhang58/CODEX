@@ -186,69 +186,18 @@
         align-items: start;
       }
 
-      #profilePanel.is-collapsed {
+      #profilePanel {
         min-height: var(--top-card-height);
         padding: 14px 18px;
         display: flex;
         align-items: center;
       }
 
-      #profilePanel.is-collapsed .panel-header {
+      #profilePanel .panel-header {
         width: 100%;
         min-height: 0;
         margin-bottom: 0;
         align-items: center;
-      }
-
-      .inline-field {
-        display: grid;
-        gap: 4px;
-      }
-
-      .inline-field label {
-        font-size: 12px;
-        color: var(--muted);
-        line-height: 1.2;
-      }
-
-      .profile-preferences {
-        margin-top: 0;
-      }
-
-      .settings-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 12px;
-        border-radius: 16px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.9);
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      .settings-badge svg {
-        width: 16px;
-        height: 16px;
-        stroke: currentColor;
-        fill: none;
-        stroke-width: 1.8;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-
-      .settings-toolbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-
-      .settings-toolbar-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
       }
 
       .settings-menu-toggle,
@@ -277,59 +226,6 @@
         font-size: 22px;
         font-weight: 700;
         line-height: 1;
-      }
-
-      .profile-preferences .markdown-box {
-        display: grid;
-        gap: 14px;
-      }
-
-      .profile-preferences .controls {
-        margin-bottom: 0;
-      }
-
-      .profile-preferences p {
-        margin: 0;
-      }
-
-      .preference-list {
-        display: grid;
-        gap: 10px;
-        margin-top: 0;
-      }
-
-      .preference-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 12px 14px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.9);
-      }
-
-      .preference-item span {
-        font-size: 14px;
-        line-height: 1.4;
-      }
-
-      .preference-remove {
-        min-width: 32px;
-        height: 32px;
-        padding: 0;
-        border-radius: 10px;
-      }
-
-      .preference-empty {
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .muted-copy {
-        color: var(--muted);
-        line-height: 1.5;
-        margin: 0 0 16px;
       }
 
       .auth-card {
@@ -477,6 +373,12 @@
         justify-content: space-between;
         gap: 12px;
         margin-bottom: 16px;
+      }
+
+      .panel-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
       .panel.is-collapsed .panel-header {
@@ -1066,6 +968,16 @@
 
       .hero-copy {
         max-width: 780px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .hero-welcome {
+        margin: 0;
+        font-size: clamp(30px, 4.6vw, 46px);
+        line-height: 1;
+        letter-spacing: -0.05em;
+        font-weight: 700;
       }
 
       .title {
@@ -1091,7 +1003,7 @@
       }
 
       .input-chip {
-        min-width: 144px;
+        min-width: 188px;
         padding: 12px 14px;
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.92);
@@ -1321,37 +1233,14 @@
         <section id="profilePanel" class="panel" hidden>
           <div class="panel-header">
             <h2>Settings</h2>
-            <button id="toggleProfileButton" class="panel-toggle" type="button" aria-label="Minimize settings">-</button>
-          </div>
-          <div id="profileBody" class="panel-body">
-            <div class="settings-toolbar">
-            <div id="settingsConnectionStatus" class="settings-badge">
+            <div class="panel-header-actions">
+              <button id="settingsHelpButton" class="settings-help-toggle" type="button" aria-label="How to use this website">?</button>
+              <button id="settingsMenuButton" class="settings-menu-toggle" type="button" aria-label="Open settings page">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <circle cx="12" cy="12" r="3"></circle>
                   <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.7 1.7 0 0 1 0 2.4 1.7 1.7 0 0 1-2.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.7 1.7 0 0 1-1.7 1.7h-.3A1.7 1.7 0 0 1 11.8 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.7 1.7 0 0 1-2.4 0 1.7 1.7 0 0 1 0-2.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H7a1.7 1.7 0 0 1-1.7-1.7v-.3A1.7 1.7 0 0 1 7 10.2h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.7 1.7 0 0 1 0-2.4 1.7 1.7 0 0 1 2.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.7 1.7 0 0 1 13.7 3.3h.3A1.7 1.7 0 0 1 15.7 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.7 1.7 0 0 1 2.4 0 1.7 1.7 0 0 1 0 2.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2A1.7 1.7 0 0 1 22.7 12v.3A1.7 1.7 0 0 1 21 14h-.2a1 1 0 0 0-.9.6z"></path>
                 </svg>
-                <span id="settingsConnectionText">Connection settings are managed automatically.</span>
-              </div>
-              <div class="settings-toolbar-actions">
-                <button id="settingsHelpButton" class="settings-help-toggle" type="button" aria-label="How to use this website">?</button>
-                <button id="settingsMenuButton" class="settings-menu-toggle" type="button" aria-label="Open settings page">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.7 1.7 0 0 1 0 2.4 1.7 1.7 0 0 1-2.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.7 1.7 0 0 1-1.7 1.7h-.3A1.7 1.7 0 0 1 11.8 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.7 1.7 0 0 1-2.4 0 1.7 1.7 0 0 1 0-2.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H7a1.7 1.7 0 0 1-1.7-1.7v-.3A1.7 1.7 0 0 1 7 10.2h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.7 1.7 0 0 1 0-2.4 1.7 1.7 0 0 1 2.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5A1.7 1.7 0 0 1 13.7 3.3h.3A1.7 1.7 0 0 1 15.7 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.7 1.7 0 0 1 2.4 0 1.7 1.7 0 0 1 0 2.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2A1.7 1.7 0 0 1 22.7 12v.3A1.7 1.7 0 0 1 21 14h-.2a1 1 0 0 0-.9.6z"></path>
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div class="detail-section summary-rendered profile-preferences">
-              <h3>Summary Preferences</h3>
-              <div class="markdown-box">
-                <p>These are saved instructions the app will use when generating future summaries.</p>
-                <div class="controls">
-                  <input id="summaryPreferenceInput" style="flex: 1; min-width: 260px;" placeholder="Add a reusable preference" />
-                  <button id="addSummaryPreferenceButton" type="button">Add</button>
-                </div>
-                <div id="summaryPreferenceList" class="preference-list"></div>
-              </div>
+              </button>
             </div>
           </div>
         </section>
@@ -1361,6 +1250,7 @@
         <div class="hero-top">
           <div class="hero-copy">
             <p id="heroLabel" class="eyebrow">Email Dashboard</p>
+            <h1 id="heroWelcome" class="hero-welcome">Welcome</h1>
           </div>
           <div class="hero-actions">
             <input id="userIdInput" value="" placeholder="Signed in account" readonly hidden />
@@ -1466,7 +1356,16 @@
                   </svg>
                 </button>
               </span>
-              <button id="combinedReportButton" class="secondary-button" type="button">Combined Report</button>
+              <span class="tooltip-wrap" data-tooltip="Combined Report">
+                <button id="combinedReportButton" class="icon-button" type="button" aria-label="Combined Report">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 6h9"></path>
+                    <path d="M4 12h9"></path>
+                    <path d="M4 18h9"></path>
+                    <path d="m15 16 2 2 4-4"></path>
+                  </svg>
+                </button>
+              </span>
               <span class="tooltip-wrap" data-tooltip="Delete Selected">
                 <button id="deleteSelectedButton" class="icon-button" type="button" aria-label="Delete Selected">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1558,16 +1457,11 @@
       const accountName = document.getElementById("accountName");
       const accountEmail = document.getElementById("accountEmail");
       const heroLabel = document.getElementById("heroLabel");
+      const heroWelcome = document.getElementById("heroWelcome");
       const logoutButton = document.getElementById("logoutButton");
       const profilePanel = document.getElementById("profilePanel");
-      const toggleProfileButton = document.getElementById("toggleProfileButton");
-      const profileBody = document.getElementById("profileBody");
-      const settingsConnectionText = document.getElementById("settingsConnectionText");
       const settingsMenuButton = document.getElementById("settingsMenuButton");
       const settingsHelpButton = document.getElementById("settingsHelpButton");
-      const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
-      const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
-      const summaryPreferenceList = document.getElementById("summaryPreferenceList");
       const userIdInput = document.getElementById("userIdInput");
       const runButton = document.getElementById("runButton");
       const daysBackInput = document.getElementById("daysBackInput");
@@ -1717,6 +1611,26 @@
           document.documentElement.style.setProperty("--accent-soft", "#d6c5eb");
           document.documentElement.style.setProperty("--surface-soft", "#e0d3f0");
           document.documentElement.style.setProperty("--surface-soft-2", "#c6b2e2");
+        } else if (theme === "ocean") {
+          document.documentElement.style.setProperty("--bg", "#d6e6ee");
+          document.documentElement.style.setProperty("--accent-soft", "#bfd7e4");
+          document.documentElement.style.setProperty("--surface-soft", "#cfe1e8");
+          document.documentElement.style.setProperty("--surface-soft-2", "#a9c8d4");
+        } else if (theme === "rose") {
+          document.documentElement.style.setProperty("--bg", "#eedcdf");
+          document.documentElement.style.setProperty("--accent-soft", "#e8c7cf");
+          document.documentElement.style.setProperty("--surface-soft", "#ecd5da");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ddb8c2");
+        } else if (theme === "amber") {
+          document.documentElement.style.setProperty("--bg", "#f0e4cf");
+          document.documentElement.style.setProperty("--accent-soft", "#ead7b7");
+          document.documentElement.style.setProperty("--surface-soft", "#ecdfca");
+          document.documentElement.style.setProperty("--surface-soft-2", "#ddc79f");
+        } else if (theme === "slate") {
+          document.documentElement.style.setProperty("--bg", "#dde1e6");
+          document.documentElement.style.setProperty("--accent-soft", "#cfd6df");
+          document.documentElement.style.setProperty("--surface-soft", "#d8dde4");
+          document.documentElement.style.setProperty("--surface-soft-2", "#bcc6d1");
         } else {
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
@@ -1817,29 +1731,6 @@
         });
       }
 
-      function renderSummaryPreferences(preferences) {
-        const items = Array.isArray(preferences) ? preferences : [];
-        if (!items.length) {
-          summaryPreferenceList.innerHTML = `<div class="preference-empty">No saved summary preferences yet.</div>`;
-          return;
-        }
-
-        summaryPreferenceList.innerHTML = items
-          .map(
-            (preference) => `
-              <div class="preference-item">
-                <span>${escapeHtml(preference)}</span>
-                <button class="preference-remove" type="button" data-preference="${escapeHtml(preference)}">×</button>
-              </div>
-            `
-          )
-          .join("");
-
-        summaryPreferenceList.querySelectorAll(".preference-remove").forEach((button) => {
-          button.addEventListener("click", () => removeSummaryPreference(button.dataset.preference || ""));
-        });
-      }
-
       function getSavedSummaryPreferences() {
         return currentProfile?.settings?.summary_style_preferences || [];
       }
@@ -1904,7 +1795,8 @@
         const lastName = String(profile.settings?.last_name || "").trim();
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
         accountName.textContent = fullName || profile.email || profile.user_id;
-        heroLabel.textContent = fullName || "Email Dashboard";
+        heroLabel.textContent = "Email Dashboard";
+        heroWelcome.textContent = firstName ? `Welcome ${firstName}` : (fullName ? `Welcome ${fullName}` : "Welcome");
         accountEmail.textContent = profile.google_connected
           ? "Signed in · Google connected"
           : profile.microsoft_connected
@@ -1912,15 +1804,6 @@
             : "Signed in";
         accountBar.hidden = false;
         profilePanel.hidden = false;
-        setPanelCollapsed(profileBody, toggleProfileButton, true);
-
-        const settings = profile.settings || {};
-        settingsConnectionText.textContent = profile.google_connected
-          ? "Connected with Google"
-          : profile.microsoft_connected
-            ? "Connected with Microsoft"
-            : "Connection settings follow your current sign-in method.";
-        renderSummaryPreferences(settings.summary_style_preferences || []);
         updateHeroStats();
       }
 
@@ -1938,9 +1821,9 @@
         accountBar.hidden = true;
         profilePanel.hidden = true;
         heroLabel.textContent = "Email Dashboard";
+        heroWelcome.textContent = "Welcome";
         userIdInput.value = "";
         whitelistTextarea.value = "";
-        renderSummaryPreferences([]);
         summaryList.innerHTML = "";
         summaryDetail.innerHTML = "No summary selected yet.";
         sendSummaryEmailButton.hidden = true;
@@ -1952,6 +1835,52 @@
         updateHeroStats();
       }
 
+      async function promptForProfileNameIfNeeded() {
+        if (!currentProfile?.user_id) return;
+        const firstName = String(currentProfile.settings?.first_name || "").trim();
+        const lastName = String(currentProfile.settings?.last_name || "").trim();
+        if (firstName || lastName) return;
+
+        const result = await openAppModal({
+          title: "Welcome",
+          message: "Enter your first and last name. This is what the dashboard will display for you, and you can change it later in Settings.",
+          withInput: true,
+          inputValue: "",
+          inputPlaceholder: "First Last",
+          confirmLabel: "Save",
+          cancelLabel: "Skip",
+        });
+        if (!result?.confirmed) return;
+
+        const fullName = String(result.value || "").trim();
+        if (!fullName) return;
+        const parts = fullName.split(/\s+/).filter(Boolean);
+        const nextFirstName = parts[0] || "";
+        const nextLastName = parts.slice(1).join(" ");
+
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || "",
+              first_name: nextFirstName,
+              last_name: nextLastName,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setRunStatus(data.detail || "Failed to save your name.");
+            return;
+          }
+          if (data.profile) {
+            applyProfileToForm(data.profile);
+          }
+        } catch (error) {
+          setRunStatus(`Failed to save your name: ${error.message}`);
+        }
+      }
+
       async function loadCurrentSession() {
         const params = new URLSearchParams(window.location.search);
         const googleError = params.get("google_error");
@@ -1959,6 +1888,7 @@
         const data = await response.json();
         if (data.authenticated && data.profile) {
           applyProfileToForm(data.profile);
+          await promptForProfileNameIfNeeded();
           await loadSummaries();
           setRunStatus("");
           return true;
@@ -1974,66 +1904,6 @@
         await fetch("/auth/logout", { method: "POST" });
         resetSignedOutState();
         window.location.href = "/login";
-      }
-
-      async function addSummaryPreference() {
-        if (!requireSignedIn()) return;
-        const preference = summaryPreferenceInput.value.trim();
-        if (!preference) return;
-
-        addSummaryPreferenceButton.disabled = true;
-        setRunStatus("Saving summary preference...", true);
-        try {
-          const response = await fetch("/summary-style-preferences", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: currentUserId,
-              preference,
-            }),
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            setRunStatus(data.detail || "Failed to save summary preference.");
-            return;
-          }
-          summaryPreferenceInput.value = "";
-          if (currentProfile?.settings) {
-            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
-          }
-          renderSummaryPreferences(data.summary_style_preferences || []);
-          setRunStatus("Saved summary preference.");
-        } catch (error) {
-          setRunStatus(`Failed to save summary preference: ${error.message}`);
-        } finally {
-          addSummaryPreferenceButton.disabled = false;
-        }
-      }
-
-      async function removeSummaryPreference(preference) {
-        if (!requireSignedIn() || !preference) return;
-        try {
-          const response = await fetch("/summary-style-preferences/remove", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: currentUserId,
-              preference,
-            }),
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            setRunStatus(data.detail || "Failed to remove summary preference.");
-            return;
-          }
-          if (currentProfile?.settings) {
-            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
-          }
-          renderSummaryPreferences(data.summary_style_preferences || []);
-          setRunStatus("Removed summary preference.");
-        } catch (error) {
-          setRunStatus(`Failed to remove summary preference: ${error.message}`);
-        }
       }
 
       function appendChatMessage(role, text, attachments = []) {
@@ -2848,7 +2718,6 @@
           if (currentProfile?.settings) {
             currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
           }
-          renderSummaryPreferences((data.summary_style_preferences || currentProfile?.settings?.summary_style_preferences || []));
           detailStatus.textContent = "Refined summary ready.";
           summaryDetail.className = "";
           summaryDetail.innerHTML = `
@@ -2996,7 +2865,6 @@
 
       runButton.addEventListener("click", runSummarizer);
       logoutButton.addEventListener("click", logout);
-      addSummaryPreferenceButton.addEventListener("click", addSummaryPreference);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
       whitelistTextarea.addEventListener("keydown", (event) => {
@@ -3013,7 +2881,6 @@
       settingsHelpButton.addEventListener("click", () => {
         window.location.href = "/settings#how-to";
       });
-      toggleProfileButton.addEventListener("click", () => togglePanel(profileBody, toggleProfileButton));
       toggleContactsButton.addEventListener("click", async () => {
         const willOpen = contactsBody.classList.contains("collapsed");
         togglePanel(contactsBody, toggleContactsButton);
@@ -3035,12 +2902,6 @@
         if (event.key === "Enter") {
           event.preventDefault();
           sendChat();
-        }
-      });
-      summaryPreferenceInput.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          addSummaryPreference();
         }
       });
       contactsModal.addEventListener("click", (event) => {

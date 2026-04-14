@@ -734,6 +734,7 @@ def default_profile_settings() -> Dict[str, str]:
         "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4o"),
         "WHITELIST_SENDERS": "",
         "CONTACT_PROFILES": "{}",
+        "MAILBOX_CONNECTION_CONFIRMED": "false",
         "SUMMARY_STYLE_PREFERENCES": "[]",
         "IMAP_SERVER": os.getenv("IMAP_SERVER", ""),
         "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
@@ -899,24 +900,23 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "imap_user": settings.get("IMAP_USER", ""),
         "imap_server": settings.get("IMAP_SERVER", ""),
         "imap_port": settings.get("IMAP_PORT", ""),
+        "mailbox_connected": str(settings.get("MAILBOX_CONNECTION_CONFIRMED", "false")).lower() == "true",
     }
 
 
 def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str, str]) -> Dict[str, str]:
     settings = dict(existing)
-    settings.update(
-        {
-            "FIRST_NAME": update.first_name.strip(),
-            "LAST_NAME": update.last_name.strip(),
-            "IMAP_USER": update.imap_user.strip(),
-            "IMAP_PASSWORD": update.imap_password,
-        }
-    )
+    settings["FIRST_NAME"] = update.first_name.strip()
+    settings["LAST_NAME"] = update.last_name.strip()
+    if update.imap_user.strip():
+        settings["IMAP_USER"] = update.imap_user.strip()
     if update.email.strip():
         settings["SUMMARY_RECIPIENT"] = update.email.strip()
         settings["SMTP_USER"] = settings.get("SMTP_USER") or update.email.strip()
     if update.imap_password:
+        settings["IMAP_PASSWORD"] = update.imap_password
         settings["SMTP_PASSWORD"] = settings.get("SMTP_PASSWORD") or update.imap_password
+        settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     return settings
 
 
