@@ -263,6 +263,27 @@
 
       <section class="grid">
         <div class="section">
+          <h2>Profile Name</h2>
+          <div class="card">
+            <div class="field-grid">
+              <div class="field">
+                <label for="profileFirstNameInput">First Name</label>
+                <input id="profileFirstNameInput" type="text" placeholder="First name" />
+              </div>
+              <div class="field">
+                <label for="profileLastNameInput">Last Name</label>
+                <input id="profileLastNameInput" type="text" placeholder="Last name" />
+              </div>
+            </div>
+            <div class="row">
+              <span></span>
+              <button id="saveProfileNameButton" type="button">Save Name</button>
+            </div>
+            <div id="profileNameStatus" class="status"></div>
+          </div>
+        </div>
+
+        <div class="section">
           <h2>Background Color</h2>
           <div class="card">
             <div class="theme-options">
@@ -387,6 +408,10 @@
       const themeChips = Array.from(document.querySelectorAll(".theme-chip"));
       const settingsLoginEmail = document.getElementById("settingsLoginEmail");
       const settingsLoginMethod = document.getElementById("settingsLoginMethod");
+      const profileFirstNameInput = document.getElementById("profileFirstNameInput");
+      const profileLastNameInput = document.getElementById("profileLastNameInput");
+      const saveProfileNameButton = document.getElementById("saveProfileNameButton");
+      const profileNameStatus = document.getElementById("profileNameStatus");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxEmailInput = document.getElementById("mailboxEmailInput");
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
@@ -445,6 +470,8 @@
           : data.profile.microsoft_connected
             ? "Microsoft OAuth"
             : "Standard";
+        profileFirstNameInput.value = data.profile.settings?.first_name || "";
+        profileLastNameInput.value = data.profile.settings?.last_name || "";
 
         const isPasswordBased = !data.profile.google_connected && !data.profile.microsoft_connected;
         mailboxSection.hidden = !isPasswordBased;
@@ -496,10 +523,43 @@
         }
       }
 
+      async function saveProfileName() {
+        if (!currentProfile) return;
+        saveProfileNameButton.disabled = true;
+        profileNameStatus.textContent = "Saving name...";
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || "",
+              first_name: profileFirstNameInput.value.trim(),
+              last_name: profileLastNameInput.value.trim(),
+              imap_user: currentProfile.settings?.imap_user || "",
+              imap_password: "",
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            profileNameStatus.textContent = data.detail || "Failed to save name.";
+            return;
+          }
+          currentProfile = data.profile;
+          profileFirstNameInput.value = data.profile.settings?.first_name || "";
+          profileLastNameInput.value = data.profile.settings?.last_name || "";
+          profileNameStatus.textContent = "Name saved.";
+        } catch (error) {
+          profileNameStatus.textContent = `Failed to save name: ${error.message}`;
+        } finally {
+          saveProfileNameButton.disabled = false;
+        }
+      }
+
       themeChips.forEach((chip) => {
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
       saveMailboxButton.addEventListener("click", saveMailboxSettings);
+      saveProfileNameButton.addEventListener("click", saveProfileName);
 
       applyTheme(currentTheme);
       loadSession();

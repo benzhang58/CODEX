@@ -1386,8 +1386,7 @@
       <section class="topbar glass">
         <div class="hero-top">
           <div class="hero-copy">
-            <p class="eyebrow">Email Dashboard</p>
-            <h1 class="title">Email Dashboard</h1>
+            <p id="heroLabel" class="eyebrow">Email Dashboard</p>
             <div id="titleStatus" class="title-status" aria-live="polite">
               <span id="runnerIcon" class="runner" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -1602,6 +1601,7 @@
       const accountBar = document.getElementById("accountBar");
       const accountName = document.getElementById("accountName");
       const accountEmail = document.getElementById("accountEmail");
+      const heroLabel = document.getElementById("heroLabel");
       const logoutButton = document.getElementById("logoutButton");
       const profilePanel = document.getElementById("profilePanel");
       const toggleProfileButton = document.getElementById("toggleProfileButton");
@@ -1936,7 +1936,11 @@
         currentProfile = profile;
         currentUserId = profile.user_id;
         userIdInput.value = profile.user_id;
-        accountName.textContent = profile.email || profile.user_id;
+        const firstName = String(profile.settings?.first_name || "").trim();
+        const lastName = String(profile.settings?.last_name || "").trim();
+        const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        accountName.textContent = fullName || profile.email || profile.user_id;
+        heroLabel.textContent = fullName || "Email Dashboard";
         accountEmail.textContent = profile.google_connected
           ? "Signed in · Google connected"
           : profile.microsoft_connected
@@ -1968,6 +1972,7 @@
         currentContacts = [];
         accountBar.hidden = true;
         profilePanel.hidden = true;
+        heroLabel.textContent = "Email Dashboard";
         userIdInput.value = "";
         whitelistTextarea.value = "";
         renderSummaryPreferences([]);

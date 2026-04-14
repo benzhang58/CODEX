@@ -192,6 +192,8 @@ class LoginRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     email: str = ""
+    first_name: str = ""
+    last_name: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
     imap_server: str = ""
@@ -719,6 +721,8 @@ def get_json_with_bearer(url: str, access_token: str, error_prefix: str = "OAuth
 
 def default_profile_settings() -> Dict[str, str]:
     settings = {
+        "FIRST_NAME": "",
+        "LAST_NAME": "",
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
         "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4o"),
         "WHITELIST_SENDERS": "",
@@ -799,6 +803,8 @@ def remove_summary_style_preference(user_id: str, preference: str) -> List[str]:
 
 def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
+        "first_name": settings.get("FIRST_NAME", ""),
+        "last_name": settings.get("LAST_NAME", ""),
         "openai_model": settings.get("OPENAI_MODEL", "gpt-4o"),
         "summary_style_preferences": parse_summary_style_preferences(settings),
         "imap_user": settings.get("IMAP_USER", ""),
@@ -811,6 +817,8 @@ def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str,
     settings = dict(existing)
     settings.update(
         {
+            "FIRST_NAME": update.first_name.strip(),
+            "LAST_NAME": update.last_name.strip(),
             "IMAP_USER": update.imap_user.strip(),
             "IMAP_PASSWORD": update.imap_password,
         }
