@@ -133,6 +133,27 @@
         transform: translateX(-50%) translateY(0);
       }
 
+      .contacts-book-button {
+        width: 52px;
+        height: 52px;
+        min-width: 52px;
+        padding: 0;
+        border-radius: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .contacts-book-button svg {
+        width: 24px;
+        height: 24px;
+        stroke: #ffffff;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
       .auth-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -1310,7 +1331,16 @@
           </div>
           <div id="contactsBody" class="panel-body collapsed">
             <div class="controls">
-              <button id="loadWhitelistButton">Current Contacts</button>
+              <button id="loadWhitelistButton" class="contacts-book-button" type="button" aria-label="Current Contacts" title="Current Contacts">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 4h10a2 2 0 0 1 2 2v12a1 1 0 0 1-1.5.86L14 17.5l-2.5 1.36L9 17.5l-2.5 1.36A1 1 0 0 1 5 18V6a2 2 0 0 1 1-2Z"></path>
+                  <path d="M12 12.1a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z"></path>
+                  <path d="M8.6 16.2c.8-1.5 2-2.2 3.4-2.2s2.6.7 3.4 2.2"></path>
+                  <path d="M5 7.5h-1.2"></path>
+                  <path d="M5 11.5h-1.2"></path>
+                  <path d="M5 15.5h-1.2"></path>
+                </svg>
+              </button>
               <button id="saveWhitelistButton" aria-label="Add Contact">+</button>
             </div>
             <input
@@ -1842,12 +1872,19 @@
         return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
       }
 
+      function getProfileNameParts(profile) {
+        const settings = profile?.settings || {};
+        return {
+          firstName: String(settings.first_name || profile?.first_name || "").trim(),
+          lastName: String(settings.last_name || profile?.last_name || "").trim(),
+        };
+      }
+
       function applyProfileToForm(profile) {
         currentProfile = profile;
         currentUserId = profile.user_id;
         userIdInput.value = profile.user_id;
-        const firstName = String(profile.settings?.first_name || "").trim();
-        const lastName = String(profile.settings?.last_name || "").trim();
+        const { firstName, lastName } = getProfileNameParts(profile);
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
         if (fullName) {
           markProfileNamePromptState(profile.user_id, "saved");
@@ -1895,8 +1932,7 @@
 
       async function promptForProfileNameIfNeeded() {
         if (!currentProfile?.user_id) return;
-        const firstName = String(currentProfile.settings?.first_name || "").trim();
-        const lastName = String(currentProfile.settings?.last_name || "").trim();
+        const { firstName, lastName } = getProfileNameParts(currentProfile);
         if (firstName || lastName) {
           markProfileNamePromptState(currentProfile.user_id, "saved");
           return;
@@ -2433,6 +2469,17 @@
 
       async function runSummarizer() {
         if (!requireSignedIn()) return;
+        const requiresMailboxConnection = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
+        const mailboxConnected = Boolean(currentProfile?.settings?.mailbox_connected);
+        if (requiresMailboxConnection && !mailboxConnected) {
+          await openAppModal({
+            title: "Email Connection Required",
+            message: "Please connect an email first.",
+            confirmLabel: "OK",
+            cancelLabel: "Close",
+          });
+          return;
+        }
         const daysBack = Number(daysBackInput.value || 7);
         setRunStatus(
           `Checking the last ${daysBack} day(s) for new emails...\n${estimateRunTime(daysBack)}`,

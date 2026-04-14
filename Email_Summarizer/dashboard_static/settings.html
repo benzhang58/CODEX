@@ -741,17 +741,23 @@
         });
       }
 
+      function getProfileNameParts(profile) {
+        const settings = profile?.settings || {};
+        return {
+          firstName: String(settings.first_name || profile?.first_name || "").trim(),
+          lastName: String(settings.last_name || profile?.last_name || "").trim(),
+        };
+      }
+
       function syncProfileNameUI() {
-        const firstName = String(currentProfile?.settings?.first_name || "").trim();
-        const lastName = String(currentProfile?.settings?.last_name || "").trim();
+        const { firstName, lastName } = getProfileNameParts(currentProfile);
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
         profileNameDisplay.textContent = fullName || "Not set";
         editProfileNameButton.textContent = fullName ? "Edit" : "Add Name";
       }
 
       function openProfileNameModal() {
-        const firstName = String(currentProfile?.settings?.first_name || "").trim();
-        const lastName = String(currentProfile?.settings?.last_name || "").trim();
+        const { firstName, lastName } = getProfileNameParts(currentProfile);
         profileModalFirstNameInput.value = firstName;
         profileModalLastNameInput.value = lastName;
         profileNameModal.hidden = false;

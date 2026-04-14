@@ -782,6 +782,21 @@ def debug_mailbox_search(request: Request, days_back: int = Query(7, ge=1, le=60
         }
 
 
+@app.post("/debug/reset-processed-state")
+def debug_reset_processed_state(request: Request) -> Dict[str, Any]:
+    user_id = resolve_user_id(request)
+    state_path = get_user_processed_state_path(user_id)
+    existed = state_path.exists()
+    if existed:
+        state_path.unlink()
+    return {
+        "success": True,
+        "user_id": user_id,
+        "processed_state_removed": existed,
+        "processed_state_path": str(state_path),
+    }
+
+
 @app.put("/profile")
 def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
