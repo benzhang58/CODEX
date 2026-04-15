@@ -203,8 +203,9 @@ class ProfileUpdateRequest(BaseModel):
     email: str = ""
     first_name: str = ""
     last_name: str = ""
+    attachment_ai_enabled: Optional[bool] = None
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-5.1"
     imap_server: str = ""
     imap_port: str = "993"
     imap_user: str = ""
@@ -488,6 +489,9 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
     }
     save_profile(profile)
 
+    if profile_requires_how_to_onboarding(profile):
+        next_url = "/settings?onboarding=1#how-to"
+
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
     response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -630,6 +634,9 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
     }
     save_profile(profile)
 
+    if profile_requires_how_to_onboarding(profile):
+        next_url = "/settings?onboarding=1#how-to"
+
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
     response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -664,6 +671,13 @@ def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Opt
     profile["email"] = payload.email.strip()
     profile["settings"] = profile_update_to_settings(payload, {**default_profile_settings(), **(profile.get("settings") or {})})
     save_profile(profile)
+    return {"success": True, "profile": profile_response(profile)}
+
+
+@app.post("/profile/how-to-seen")
+def mark_how_to_seen(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    profile = mark_profile_how_to_seen(resolved_user_id)
     return {"success": True, "profile": profile_response(profile)}
 
 
@@ -812,8 +826,10 @@ def default_profile_settings() -> Dict[str, str]:
     settings = {
         "FIRST_NAME": "",
         "LAST_NAME": "",
+        "HOW_TO_SEEN": "false",
+        "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM": "false",
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
-        "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4o"),
+        "OPENAI_MODEL": "gpt-5.1",
         "WHITELIST_SENDERS": "",
         "CONTACT_PROFILES": "{}",
         "MAILBOX_CONNECTION_CONFIRMED": "false",
@@ -836,6 +852,14 @@ def default_profile_settings() -> Dict[str, str]:
             if not settings.get(key):
                 settings[key] = value
     return settings
+
+
+def normalize_openai_model(value: Any) -> str:
+    model = str(value or "").strip()
+    # Legacy deployments defaulted to gpt-4o. Normalize those defaults to gpt-5.1.
+    if not model or model == "gpt-4o":
+        return "gpt-5.1"
+    return model
 
 
 def parse_summary_style_preferences(settings_or_raw: Any) -> List[str]:
@@ -982,7 +1006,9 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
         "first_name": settings.get("FIRST_NAME", ""),
         "last_name": settings.get("LAST_NAME", ""),
-        "openai_model": settings.get("OPENAI_MODEL", "gpt-4o"),
+        "how_to_seen": str(settings.get("HOW_TO_SEEN", "false")).lower() == "true",
+        "attachment_ai_enabled": str(settings.get("EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM", "false")).lower() == "true",
+        "openai_model": normalize_openai_model(settings.get("OPENAI_MODEL", "gpt-5.1")),
         "summary_style_preferences": parse_summary_style_preferences(settings),
         "imap_user": settings.get("IMAP_USER", ""),
         "imap_server": settings.get("IMAP_SERVER", ""),
@@ -993,8 +1019,14 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
 
 def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str, str]) -> Dict[str, str]:
     settings = dict(existing)
-    settings["FIRST_NAME"] = update.first_name.strip()
-    settings["LAST_NAME"] = update.last_name.strip()
+    if update.first_name.strip():
+        settings["FIRST_NAME"] = update.first_name.strip()
+    if update.last_name.strip():
+        settings["LAST_NAME"] = update.last_name.strip()
+    if update.attachment_ai_enabled is not None:
+        settings["EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM"] = "true" if update.attachment_ai_enabled else "false"
+    if update.openai_model.strip():
+        settings["OPENAI_MODEL"] = normalize_openai_model(update.openai_model.strip())
     if update.imap_server.strip():
         settings["IMAP_SERVER"] = update.imap_server.strip()
     if update.imap_port.strip():
@@ -1021,6 +1053,22 @@ def merge_non_empty_settings(base: Dict[str, str], overrides: Dict[str, Any]) ->
             continue
         merged[str(key)] = value_str
     return merged
+
+
+def profile_requires_how_to_onboarding(profile: Dict[str, Any]) -> bool:
+    settings = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
+    how_to_seen = str(settings.get("HOW_TO_SEEN", "false")).lower() == "true"
+    return (google_connected or microsoft_connected) and not how_to_seen
+
+
+def mark_profile_how_to_seen(user_id: str) -> Dict[str, Any]:
+    profile = load_profile_or_404(user_id)
+    profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"]["HOW_TO_SEEN"] = "true"
+    save_profile(profile)
+    return profile
 
 
 def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, str]:
@@ -1064,6 +1112,7 @@ def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
         decrypt_json_payload(row["settings_json"] or "{}", APP_STORAGE_DIR),
     )
     settings = apply_provider_defaults(settings, row["email"])
+    settings["OPENAI_MODEL"] = normalize_openai_model(settings.get("OPENAI_MODEL"))
     google_oauth = decrypt_json_payload(row["google_oauth_json"] or "{}", APP_STORAGE_DIR)
     microsoft_oauth = decrypt_json_payload(row["microsoft_oauth_json"] or "{}", APP_STORAGE_DIR)
     return {
@@ -1125,6 +1174,8 @@ def load_profile_or_404(user_id: str) -> Dict[str, Any]:
 def save_profile(profile: Dict[str, Any]) -> None:
     profile["updated_at"] = datetime.now().isoformat()
     profile.setdefault("created_at", profile["updated_at"])
+    if isinstance(profile.get("settings"), dict):
+        profile["settings"]["OPENAI_MODEL"] = normalize_openai_model((profile.get("settings") or {}).get("OPENAI_MODEL"))
     settings_json = encrypt_json_payload(profile.get("settings") or {}, APP_STORAGE_DIR)
     google_oauth_json = encrypt_json_payload(profile.get("google_oauth") or {}, APP_STORAGE_DIR)
     microsoft_oauth_json = encrypt_json_payload(profile.get("microsoft_oauth") or {}, APP_STORAGE_DIR)
@@ -1287,10 +1338,14 @@ def write_env_key(env_path: Path, key: str, value: str) -> None:
 def get_settings_for_user(user_id: str) -> Dict[str, str]:
     profile = load_profile(user_id)
     if profile:
-        return {**default_profile_settings(), **(profile.get("settings") or {})}
+        settings = {**default_profile_settings(), **(profile.get("settings") or {})}
+        settings["OPENAI_MODEL"] = normalize_openai_model(settings.get("OPENAI_MODEL"))
+        return settings
 
     env_path = get_env_path_for_user(user_id)
-    return {**default_profile_settings(), **read_env_key_values(env_path)}
+    settings = {**default_profile_settings(), **read_env_key_values(env_path)}
+    settings["OPENAI_MODEL"] = normalize_openai_model(settings.get("OPENAI_MODEL"))
+    return settings
 
 
 def get_contacts_for_user(user_id: str) -> List[str]:
@@ -2111,7 +2166,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
 
     settings = get_settings_for_user(resolved_user_id)
     api_key = settings.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    model = settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o"
+    model = normalize_openai_model(settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1")
     if not api_key:
         raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
 
@@ -2191,7 +2246,7 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
 
     settings = get_settings_for_user(resolved_user_id)
     api_key = settings.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    model = settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o"
+    model = normalize_openai_model(settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1")
     saved_preferences = parse_summary_style_preferences(settings)
     if not api_key:
         raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")

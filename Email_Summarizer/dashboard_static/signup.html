@@ -188,7 +188,7 @@
             return;
           }
 
-          window.location.href = "/dashboard";
+          window.location.href = "/settings?onboarding=1#how-to";
         } catch (error) {
           status.textContent = `Failed to create account: ${error.message}`;
         } finally {

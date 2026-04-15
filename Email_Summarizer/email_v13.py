@@ -16,6 +16,7 @@ import logging
 import re
 import sqlite3
 import base64
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -317,7 +318,6 @@ class EmailRecord:
 class EmailSummarizer:
 
     MAX_ATTACHMENT_PREVIEW_CHARS = 180
-    MAX_SUMMARY_OUTPUT_TOKENS = 5000
     MAX_SUBJECT_FALLBACK_CANDIDATES = 25
 
     def __init__(self, output_base: Path, user_id: str):
@@ -344,7 +344,8 @@ class EmailSummarizer:
 
         self.state_file    = self.output_base / "processed_state.json"
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model         = os.getenv("OPENAI_MODEL", "gpt-4o")
+        configured_model   = str(os.getenv("OPENAI_MODEL", "gpt-5.1") or "").strip()
+        self.model         = "gpt-5.1" if not configured_model or configured_model == "gpt-4o" else configured_model
 
         self.whitelist: List[str] = [
             e.strip().lower()
@@ -1366,8 +1367,9 @@ class EmailSummarizer:
 
     def _attachment_preview_for_llm(self, preview: str) -> str:
         compact = self._compact_text(preview)
-        if len(compact) > self.MAX_ATTACHMENT_PREVIEW_CHARS:
-            return compact[:self.MAX_ATTACHMENT_PREVIEW_CHARS] + "\n... [truncated]"
+        max_chars = self.MAX_ATTACHMENT_PREVIEW_CHARS
+        if len(compact) > max_chars:
+            return compact[:max_chars] + "\n... [truncated]"
         return compact
 
     # ──────────────────────────────────────────────
@@ -1458,13 +1460,27 @@ class EmailSummarizer:
             for att in unique_attachments:
                 lines.append(f"\n── File: {att.filename} ──")
                 if self.include_attachment_previews_in_llm:
-                    lines.append(f"   Preview:\n{self._attachment_preview_for_llm(att.preview)}")
+                    preview_text = self._attachment_preview_for_llm(att.preview)
+                    if preview_text:
+                        lines.append(f"   Preview:\n{preview_text}")
+                    else:
+                        lines.append("   Preview omitted to keep the summary request within model limits.")
                 else:
                     lines.append("   Preview withheld for privacy. Use filename only unless local review is required.")
         else:
             lines.append("=== NO ATTACHMENTS IN THIS THREAD ===")
 
         return "\n".join(lines)
+
+    def _build_summary_prompt(
+        self,
+        records: List[EmailRecord],
+        preamble: str,
+        preference_block: str,
+        section_guide: str,
+    ) -> Tuple[str, str]:
+        data_block = "\n\n".join(self._format_record_for_llm(r) for r in records)
+        return preamble + preference_block + data_block + "\n\n" + section_guide, data_block
 
     # ──────────────────────────────────────────────
     # Summary generation
@@ -1473,8 +1489,6 @@ class EmailSummarizer:
     def generate_summary(self, records: List[EmailRecord], contact_name: Optional[str] = None, is_overall: bool = False) -> str:
         if not records:
             return "No emails to summarize."
-
-        data_block = "\n\n".join(self._format_record_for_llm(r) for r in records)
 
         if is_overall:
             instructions = (
@@ -1562,8 +1576,10 @@ class EmailSummarizer:
             "2-3 sentences in plain English: what do I need to know and what do I need to do?\n"
         )
 
-        full_input = preamble + preference_block + data_block + "\n\n" + section_guide
-        logger.info(f"LLM prompt length: {len(full_input)} chars (~{len(full_input)//4} tokens)")
+        full_input, _ = self._build_summary_prompt(records, preamble, preference_block, section_guide)
+        estimated_tokens = max(1, len(full_input) // 4)
+
+        logger.info(f"LLM prompt length: {len(full_input)} chars (~{estimated_tokens} tokens)")
 
         try:
             response = self.openai_client.responses.create(
@@ -1571,9 +1587,11 @@ class EmailSummarizer:
                 instructions=instructions,
                 input=full_input,
                 temperature=0.0,
-                max_output_tokens=self.MAX_SUMMARY_OUTPUT_TOKENS,
+                max_output_tokens=5000,
             )
-            summary = response.output_text
+            summary = str(getattr(response, "output_text", "") or "").strip()
+            if not summary:
+                raise RuntimeError("OpenAI returned empty summary text.")
             logger.info(f"✅ Generated {'overall' if is_overall else 'contact'} summary")
             return summary
         except Exception as e:
@@ -1719,13 +1737,20 @@ class EmailSummarizer:
     # ──────────────────────────────────────────────
 
     def run(self, days_back: int = 7) -> Dict[str, object]:
+        run_started_at = time.perf_counter()
+        stage_timings: Dict[str, float] = {}
+
         processed_uids = self.load_processed_uids()
         mail: Optional[imaplib.IMAP4_SSL] = None
         if not self.use_gmail_api:
+            connect_started_at = time.perf_counter()
             mail = self.connect_imap()
+            stage_timings["imap_connect_seconds"] = round(time.perf_counter() - connect_started_at, 3)
 
         try:
+            trigger_started_at = time.perf_counter()
             trigger_msgs, trigger_stats = self.fetch_trigger_emails(mail, days_back, processed_uids)
+            stage_timings["trigger_search_seconds"] = round(time.perf_counter() - trigger_started_at, 3)
 
             records: List[EmailRecord] = []
             new_uids: Set[str]         = set()
@@ -1746,21 +1771,25 @@ class EmailSummarizer:
             trigger_msgs = self._deduplicate_triggers_by_thread(trigger_msgs)
             unique_thread_count = len(trigger_msgs)
 
+            parse_started_at = time.perf_counter()
             for msg in trigger_msgs:
                 record = self.parse_email(msg, mail)
                 if record:
                     records.append(record)
                     new_uids.add(self._uid_token(record.uid))
                     self._save_email_record_json(record, run_date)
+            stage_timings["thread_parse_and_save_seconds"] = round(time.perf_counter() - parse_started_at, 3)
 
             if not records:
                 logger.info("No new emails from whitelisted contacts this run.")
+                stage_timings["total_run_seconds"] = round(time.perf_counter() - run_started_at, 3)
                 stats = {
                     **trigger_stats,
                     "unique_thread_count": unique_thread_count,
                     "new_email_records_saved": 0,
                     "new_contact_summaries_saved": 0,
                     "new_total_summaries_saved": 0,
+                    "stage_timings": stage_timings,
                 }
                 self._save_metadata(run_date, run_date_display, days_back, records, [])
                 return stats
@@ -1786,11 +1815,14 @@ class EmailSummarizer:
             contact_summaries: Dict[str, str] = {}
             contact_display:   Dict[str, str] = {}
             saved_summary_ids: List[str] = []
+            summary_started_at = time.perf_counter()
             for sender, recs in by_sender.items():
                 name  = display_names.get(sender, sender)
                 label = f"{name} ({sender})"
                 contact_display[sender] = label
                 summary = self.generate_summary(recs, contact_name=label)
+                if summary.startswith("Summary generation failed:"):
+                    raise RuntimeError(summary)
                 contact_summaries[sender] = summary
 
                 # Also save individual .md file to disk
@@ -1811,8 +1843,10 @@ class EmailSummarizer:
                 )
                 self._save_summary_json(summary_payload)
                 saved_summary_ids.append(summary_id)
+            stage_timings["llm_summary_seconds"] = round(time.perf_counter() - summary_started_at, 3)
 
             # Save combined master .md to disk
+            write_started_at = time.perf_counter()
             master_md = f"# {run_date_display}\n\n"
             master_md += "\n\n---\n\n".join(
                 f"## {contact_display.get(sender, sender)}\n\n{summary}"
@@ -1850,17 +1884,20 @@ class EmailSummarizer:
                 json.dumps([asdict(r) for r in records], indent=2, default=str),
                 encoding="utf-8",
             )
+            stage_timings["final_write_seconds"] = round(time.perf_counter() - write_started_at, 3)
 
             processed_uids.update(new_uids)
             self.save_processed_uids(processed_uids)
             self._save_metadata(run_date, run_date_display, days_back, records, saved_summary_ids)
             logger.info("✅ Pipeline complete.")
+            stage_timings["total_run_seconds"] = round(time.perf_counter() - run_started_at, 3)
             return {
                 **trigger_stats,
                 "unique_thread_count": unique_thread_count,
                 "new_email_records_saved": len(records),
                 "new_contact_summaries_saved": len(by_sender),
                 "new_total_summaries_saved": len(saved_summary_ids),
+                "stage_timings": stage_timings,
             }
 
         finally:

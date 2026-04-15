@@ -472,6 +472,42 @@
         </div>
       </section>
 
+      <section class="section">
+        <h2>AI Attachment Access</h2>
+        <div class="card">
+          <p class="inline-note">
+            Choose whether AI summaries can read attachment contents. If enabled, attachment data may be sent alongside your email data to AI for summarization.
+          </p>
+          <div class="row" style="align-items: center; gap: 14px;">
+            <label style="display:flex; align-items:center; gap:10px; font-weight:600;">
+              <input id="attachmentAiToggle" type="checkbox" />
+              Allow AI to read attachment contents
+            </label>
+            <button id="saveAttachmentAiButton" type="button">Save</button>
+          </div>
+          <div id="attachmentAiStatus" class="status"></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>AI Model</h2>
+        <div class="card">
+          <p class="inline-note">Choose the model used for summaries, AI chat, and refinement. `gpt-5.1` is the current default because it has a much higher token-per-minute limit than `gpt-4o` on your account.</p>
+          <div class="row" style="align-items: center; gap: 14px;">
+            <div class="field" style="flex: 1 1 auto;">
+              <label for="openAiModelSelect">Model</label>
+              <select id="openAiModelSelect">
+                <option value="gpt-5.1">gpt-5.1</option>
+                <option value="gpt-5-mini">gpt-5-mini</option>
+                <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+              </select>
+            </div>
+            <button id="saveOpenAiModelButton" type="button">Save</button>
+          </div>
+          <div id="openAiModelStatus" class="status"></div>
+        </div>
+      </section>
+
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
@@ -513,7 +549,7 @@
               <div class="howto-step">1</div>
               <div class="howto-copy">
                 <strong>Sign in the right way</strong>
-                <p>Use Google for Gmail and Microsoft for Outlook. If your email is not Gmail or Outlook, create a regular account first.</p>
+                <p>Log in via Gmail/Outlook, or create an account.</p>
               </div>
             </div>
 
@@ -615,6 +651,12 @@
       const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
       const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
       const summaryPreferenceList = document.getElementById("summaryPreferenceList");
+      const attachmentAiToggle = document.getElementById("attachmentAiToggle");
+      const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
+      const attachmentAiStatus = document.getElementById("attachmentAiStatus");
+      const openAiModelSelect = document.getElementById("openAiModelSelect");
+      const saveOpenAiModelButton = document.getElementById("saveOpenAiModelButton");
+      const openAiModelStatus = document.getElementById("openAiModelStatus");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxEmailInput = document.getElementById("mailboxEmailInput");
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
@@ -812,6 +854,27 @@
         }
       }
 
+      async function markHowToSeenIfNeeded() {
+        if (!currentProfile?.user_id) return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("onboarding") !== "1") return;
+
+        try {
+          const response = await fetch(`/profile/how-to-seen?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "POST",
+          });
+          const data = await response.json();
+          if (response.ok && data.profile) {
+            currentProfile = data.profile;
+          }
+        } catch (error) {
+          return;
+        } finally {
+          const cleanUrl = `${window.location.pathname}${window.location.hash || "#how-to"}`;
+          window.history.replaceState({}, "", cleanUrl);
+        }
+      }
+
       async function loadSession() {
         const response = await fetch("/auth/me");
         const data = await response.json();
@@ -826,11 +889,72 @@
           : data.profile.microsoft_connected
             ? "Microsoft OAuth"
             : "Standard";
+        attachmentAiToggle.checked = Boolean(data.profile.settings?.attachment_ai_enabled);
+        openAiModelSelect.value = data.profile.settings?.openai_model || "gpt-5.1";
         syncProfileNameUI();
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
         mailboxEditMode = false;
         syncMailboxConnectionUI();
+        await markHowToSeenIfNeeded();
         await refreshMailboxConnectionStatus();
+      }
+
+      async function saveAttachmentAiSetting() {
+        if (!currentProfile) return;
+        saveAttachmentAiButton.disabled = true;
+        attachmentAiStatus.textContent = "Saving setting...";
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || "",
+              attachment_ai_enabled: Boolean(attachmentAiToggle.checked),
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            attachmentAiStatus.textContent = data.detail || "Failed to save attachment setting.";
+            return;
+          }
+          currentProfile = data.profile;
+          attachmentAiToggle.checked = Boolean(data.profile.settings?.attachment_ai_enabled);
+          attachmentAiStatus.textContent = attachmentAiToggle.checked
+            ? "AI attachment access enabled."
+            : "AI attachment access disabled.";
+        } catch (error) {
+          attachmentAiStatus.textContent = `Failed to save attachment setting: ${error.message}`;
+        } finally {
+          saveAttachmentAiButton.disabled = false;
+        }
+      }
+
+      async function saveOpenAiModelSetting() {
+        if (!currentProfile) return;
+        saveOpenAiModelButton.disabled = true;
+        openAiModelStatus.textContent = "Saving model...";
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || "",
+              openai_model: String(openAiModelSelect.value || "gpt-5.1"),
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            openAiModelStatus.textContent = data.detail || "Failed to save model.";
+            return;
+          }
+          currentProfile = data.profile;
+          openAiModelSelect.value = data.profile.settings?.openai_model || "gpt-5.1";
+          openAiModelStatus.textContent = `AI model saved: ${openAiModelSelect.value}`;
+        } catch (error) {
+          openAiModelStatus.textContent = `Failed to save model: ${error.message}`;
+        } finally {
+          saveOpenAiModelButton.disabled = false;
+        }
       }
 
       async function saveMailboxSettings() {
@@ -965,6 +1089,8 @@
       themeChips.forEach((chip) => {
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
+      saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
+      saveOpenAiModelButton.addEventListener("click", saveOpenAiModelSetting);
       saveMailboxButton.addEventListener("click", saveMailboxSettings);
       changeMailboxButton.addEventListener("click", () => {
         mailboxEditMode = true;

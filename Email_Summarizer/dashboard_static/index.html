@@ -638,10 +638,35 @@
       }
 
       .markdown-box {
-        background: var(--surface-soft);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 246, 241, 0.96) 100%);
         border: 1px solid var(--border);
         border-radius: 20px;
-        padding: 16px 18px;
+        padding: 18px 20px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      }
+
+      .summary-rendered .markdown-box {
+        display: grid;
+        gap: 12px;
+      }
+
+      .summary-rendered p,
+      .summary-rendered li {
+        line-height: 1.72;
+      }
+
+      .summary-rendered p {
+        color: #1a1a17;
+      }
+
+      .summary-rendered ul {
+        display: grid;
+        gap: 8px;
+      }
+
+      .summary-rendered strong {
+        font-weight: 700;
+        color: #111111;
       }
 
       .thread-records {
@@ -2145,9 +2170,9 @@
         const bulletLines = lines.filter((line) => line.startsWith("- "));
         const textLines = lines.filter((line) => !line.startsWith("- "));
 
-        const textHtml = textLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+        const textHtml = textLines.map((line) => `<p>${renderInlineMarkdown(line)}</p>`).join("");
         const bulletHtml = bulletLines.length
-          ? `<ul>${bulletLines.map((line) => `<li>${escapeHtml(line.slice(2))}</li>`).join("")}</ul>`
+          ? `<ul>${bulletLines.map((line) => `<li>${renderInlineMarkdown(line.slice(2))}</li>`).join("")}</ul>`
           : "";
 
         return `
@@ -2159,6 +2184,11 @@
             </div>
           </div>
         `;
+      }
+
+      function renderInlineMarkdown(text) {
+        const escaped = escapeHtml(String(text || ""));
+        return escaped.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       }
 
       function renderThreadView(data) {
