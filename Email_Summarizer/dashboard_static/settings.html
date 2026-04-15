@@ -117,6 +117,11 @@
         gap: 12px;
       }
 
+      .top-settings-card {
+        min-height: 220px;
+        align-content: start;
+      }
+
       .field-grid {
         display: grid;
         gap: 12px;
@@ -394,7 +399,6 @@
       <section class="panel topbar">
         <div>
           <h1>Settings</h1>
-          <p>Account information, theme preferences, and simple help.</p>
         </div>
         <div class="row">
           <a class="button secondary" href="/dashboard">Back to Dashboard</a>
@@ -405,7 +409,7 @@
       <section class="grid">
         <div class="section">
           <h2>Profile Name</h2>
-          <div class="card">
+          <div class="card top-settings-card">
             <div id="profileNameSummary" class="profile-summary">
               <div>
                 <strong>Your Name</strong>
@@ -419,7 +423,7 @@
 
         <div class="section">
           <h2>Background Color</h2>
-          <div class="card">
+          <div class="card top-settings-card">
             <div class="theme-options">
               <button class="theme-chip" type="button" data-theme="default">Default</button>
               <button class="theme-chip" type="button" data-theme="white">White</button>
@@ -489,25 +493,6 @@
         </div>
       </section>
 
-      <section class="section">
-        <h2>AI Model</h2>
-        <div class="card">
-          <p class="inline-note">Choose the model used for summaries, AI chat, and refinement. `gpt-5.1` is the current default because it has a much higher token-per-minute limit than `gpt-4o` on your account.</p>
-          <div class="row" style="align-items: center; gap: 14px;">
-            <div class="field" style="flex: 1 1 auto;">
-              <label for="openAiModelSelect">Model</label>
-              <select id="openAiModelSelect">
-                <option value="gpt-5.1">gpt-5.1</option>
-                <option value="gpt-5-mini">gpt-5-mini</option>
-                <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-              </select>
-            </div>
-            <button id="saveOpenAiModelButton" type="button">Save</button>
-          </div>
-          <div id="openAiModelStatus" class="status"></div>
-        </div>
-      </section>
-
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
@@ -518,12 +503,12 @@
           </div>
           <div id="mailboxConnectedSummary" class="mailbox-summary" hidden>
             <div>
-              <strong>Mailbox connected</strong>
+              <strong id="mailboxConnectedLabel">Mailbox connected</strong>
               <span id="mailboxConnectedEmail">Connected</span>
             </div>
             <button id="changeMailboxButton" type="button" class="secondary">Change Email Connection</button>
           </div>
-          <div id="mailboxForm" class="field-grid">
+          <div id="mailboxForm" class="field-grid" hidden>
             <div class="field">
               <label for="mailboxEmailInput">Mailbox Email</label>
               <input id="mailboxEmailInput" type="email" placeholder="you@example.com" />
@@ -533,7 +518,7 @@
               <input id="mailboxPasswordInput" type="password" placeholder="Enter your real email password" />
             </div>
           </div>
-          <div id="mailboxActions" class="row">
+          <div id="mailboxActions" class="row" hidden>
             <span></span>
             <button id="saveMailboxButton" type="button">Save Mailbox</button>
           </div>
@@ -633,6 +618,30 @@
           </div>
         </div>
       </div>
+
+      <div id="mailboxModal" class="modal-shell" hidden>
+        <div class="modal-card">
+          <div>
+            <h3>Email Connection</h3>
+            <p>Enter the mailbox email and password the summarizer should use.</p>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <label for="mailboxModalEmailInput">Mailbox Email</label>
+              <input id="mailboxModalEmailInput" type="email" placeholder="you@example.com" />
+            </div>
+            <div class="field">
+              <label for="mailboxModalPasswordInput">Mailbox Password</label>
+              <input id="mailboxModalPasswordInput" type="password" placeholder="Enter your real email password" />
+            </div>
+          </div>
+          <div id="mailboxModalStatus" class="status"></div>
+          <div class="modal-actions">
+            <button id="cancelMailboxModalButton" type="button" class="secondary">Cancel</button>
+            <button id="saveMailboxModalButton" type="button">Save Mailbox</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
@@ -654,26 +663,29 @@
       const attachmentAiToggle = document.getElementById("attachmentAiToggle");
       const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
-      const openAiModelSelect = document.getElementById("openAiModelSelect");
-      const saveOpenAiModelButton = document.getElementById("saveOpenAiModelButton");
-      const openAiModelStatus = document.getElementById("openAiModelStatus");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxEmailInput = document.getElementById("mailboxEmailInput");
       const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
       const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
       const mailboxConnectionStatusText = document.getElementById("mailboxConnectionStatusText");
       const mailboxConnectedSummary = document.getElementById("mailboxConnectedSummary");
+      const mailboxConnectedLabel = document.getElementById("mailboxConnectedLabel");
       const mailboxConnectedEmail = document.getElementById("mailboxConnectedEmail");
       const mailboxForm = document.getElementById("mailboxForm");
       const mailboxActions = document.getElementById("mailboxActions");
       const changeMailboxButton = document.getElementById("changeMailboxButton");
       const saveMailboxButton = document.getElementById("saveMailboxButton");
       const mailboxStatus = document.getElementById("mailboxStatus");
+      const mailboxModal = document.getElementById("mailboxModal");
+      const mailboxModalEmailInput = document.getElementById("mailboxModalEmailInput");
+      const mailboxModalPasswordInput = document.getElementById("mailboxModalPasswordInput");
+      const mailboxModalStatus = document.getElementById("mailboxModalStatus");
+      const cancelMailboxModalButton = document.getElementById("cancelMailboxModalButton");
+      const saveMailboxModalButton = document.getElementById("saveMailboxModalButton");
       const logoutButton = document.getElementById("logoutButton");
       const deleteAccountButton = document.getElementById("deleteAccountButton");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let currentProfile = null;
-      let mailboxEditMode = false;
 
       function applyTheme(theme) {
         currentTheme = theme;
@@ -800,6 +812,19 @@
         profileNameModal.hidden = true;
       }
 
+      function openMailboxModal() {
+        const connectedEmail = currentProfile?.settings?.imap_user || currentProfile?.email || "";
+        mailboxModalEmailInput.value = connectedEmail;
+        mailboxModalPasswordInput.value = "";
+        mailboxModalStatus.textContent = "";
+        mailboxModal.hidden = false;
+        mailboxModalEmailInput.focus();
+      }
+
+      function closeMailboxModal() {
+        mailboxModal.hidden = true;
+      }
+
       function syncMailboxConnectionUI() {
         const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
         mailboxSection.hidden = !isPasswordBased;
@@ -808,33 +833,24 @@
         const mailboxConnected = mailboxConnectionStatus.classList.contains("connected")
           || Boolean(currentProfile?.settings?.mailbox_connected);
         const connectedEmail = currentProfile?.settings?.imap_user || currentProfile?.email || "";
-        const showConnectedState = mailboxConnected && !mailboxEditMode;
+        const showConnectedState = mailboxConnected;
 
-        mailboxConnectedSummary.hidden = !showConnectedState;
-        mailboxConnectedEmail.textContent = connectedEmail || "Connected";
-        mailboxForm.hidden = showConnectedState;
-        mailboxActions.hidden = showConnectedState;
-        mailboxEmailInput.disabled = showConnectedState;
-        mailboxPasswordInput.disabled = showConnectedState;
+        mailboxConnectedSummary.hidden = false;
+        mailboxConnectedLabel.textContent = showConnectedState ? "Mailbox connected" : "No mailbox connected";
+        mailboxConnectedEmail.textContent = showConnectedState ? (connectedEmail || "Connected") : "Add your mailbox login to continue.";
+        changeMailboxButton.textContent = showConnectedState ? "Change Email Connection" : "Add Email Connection";
+        mailboxForm.hidden = true;
+        mailboxActions.hidden = true;
+        mailboxEmailInput.disabled = true;
+        mailboxPasswordInput.disabled = true;
         mailboxEmailInput.value = connectedEmail;
-        if (showConnectedState) {
-          mailboxPasswordInput.value = "••••••••";
-        } else if (mailboxEditMode) {
-          mailboxPasswordInput.value = "";
-        }
+        mailboxPasswordInput.value = showConnectedState ? "••••••••" : "";
       }
 
       function setMailboxConnectionStatus(connected) {
         mailboxConnectionStatus.classList.toggle("connected", Boolean(connected));
         mailboxConnectionStatus.classList.toggle("disconnected", !connected);
         mailboxConnectionStatusText.textContent = connected ? "Connected" : "Not Connected";
-        if (connected && !mailboxEditMode) {
-          mailboxForm.hidden = true;
-          mailboxActions.hidden = true;
-          mailboxConnectedSummary.hidden = false;
-          mailboxEmailInput.disabled = true;
-          mailboxPasswordInput.disabled = true;
-        }
       }
 
       async function refreshMailboxConnectionStatus() {
@@ -890,10 +906,8 @@
             ? "Microsoft OAuth"
             : "Standard";
         attachmentAiToggle.checked = Boolean(data.profile.settings?.attachment_ai_enabled);
-        openAiModelSelect.value = data.profile.settings?.openai_model || "gpt-5.1";
         syncProfileNameUI();
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
-        mailboxEditMode = false;
         syncMailboxConnectionUI();
         await markHowToSeenIfNeeded();
         await refreshMailboxConnectionStatus();
@@ -929,45 +943,17 @@
         }
       }
 
-      async function saveOpenAiModelSetting() {
-        if (!currentProfile) return;
-        saveOpenAiModelButton.disabled = true;
-        openAiModelStatus.textContent = "Saving model...";
-        try {
-          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: currentProfile.email || "",
-              openai_model: String(openAiModelSelect.value || "gpt-5.1"),
-            }),
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            openAiModelStatus.textContent = data.detail || "Failed to save model.";
-            return;
-          }
-          currentProfile = data.profile;
-          openAiModelSelect.value = data.profile.settings?.openai_model || "gpt-5.1";
-          openAiModelStatus.textContent = `AI model saved: ${openAiModelSelect.value}`;
-        } catch (error) {
-          openAiModelStatus.textContent = `Failed to save model: ${error.message}`;
-        } finally {
-          saveOpenAiModelButton.disabled = false;
-        }
-      }
-
       async function saveMailboxSettings() {
         if (!currentProfile) return;
-        const email = mailboxEmailInput.value.trim();
-        const password = mailboxPasswordInput.value;
+        const email = mailboxModalEmailInput.value.trim();
+        const password = mailboxModalPasswordInput.value;
         if (!email || !password) {
-          mailboxStatus.textContent = "Enter the mailbox email and password first.";
+          mailboxModalStatus.textContent = "Enter the mailbox email and password first.";
           return;
         }
 
-        saveMailboxButton.disabled = true;
-        mailboxStatus.textContent = "Saving mailbox settings...";
+        saveMailboxModalButton.disabled = true;
+        mailboxModalStatus.textContent = "Saving mailbox settings...";
         try {
           const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
             method: "PUT",
@@ -980,20 +966,20 @@
           });
           const data = await response.json();
           if (!response.ok) {
-            mailboxStatus.textContent = data.detail || "Failed to save mailbox settings.";
+            mailboxModalStatus.textContent = data.detail || "Failed to save mailbox settings.";
             return;
           }
           currentProfile = data.profile;
           mailboxEmailInput.value = data.profile.settings?.imap_user || data.profile.email || "";
           mailboxPasswordInput.value = "";
-          mailboxEditMode = false;
           syncMailboxConnectionUI();
           await refreshMailboxConnectionStatus();
           mailboxStatus.textContent = "Mailbox settings saved.";
+          closeMailboxModal();
         } catch (error) {
-          mailboxStatus.textContent = `Failed to save mailbox settings: ${error.message}`;
+          mailboxModalStatus.textContent = `Failed to save mailbox settings: ${error.message}`;
         } finally {
-          saveMailboxButton.disabled = false;
+          saveMailboxModalButton.disabled = false;
         }
       }
 
@@ -1090,14 +1076,10 @@
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
       saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
-      saveOpenAiModelButton.addEventListener("click", saveOpenAiModelSetting);
       saveMailboxButton.addEventListener("click", saveMailboxSettings);
-      changeMailboxButton.addEventListener("click", () => {
-        mailboxEditMode = true;
-        syncMailboxConnectionUI();
-        mailboxStatus.textContent = "";
-        mailboxEmailInput.focus();
-      });
+      changeMailboxButton.addEventListener("click", openMailboxModal);
+      cancelMailboxModalButton.addEventListener("click", closeMailboxModal);
+      saveMailboxModalButton.addEventListener("click", saveMailboxSettings);
       logoutButton.addEventListener("click", async () => {
         if (!window.confirm("Are you sure you want to log out?")) return;
         logoutButton.disabled = true;

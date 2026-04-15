@@ -965,11 +965,14 @@
       .contacts-person-button {
         background: var(--accent);
         color: #fff;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
       }
 
       .contacts-person-button svg {
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
         stroke: #ffffff;
         fill: none;
         stroke-width: 1.9;
@@ -1070,10 +1073,10 @@
       }
 
       .hero-top {
-        display: flex;
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
         align-items: flex-start;
-        justify-content: space-between;
-        gap: 24px;
+        gap: 18px;
       }
 
       .eyebrow {
@@ -1115,10 +1118,11 @@
       }
 
       .hero-actions {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(180px, 1fr) 58px;
         gap: 12px;
-        align-items: center;
-        flex-wrap: wrap;
+        align-items: stretch;
+        width: 100%;
       }
 
       .input-chip {
@@ -1155,6 +1159,19 @@
         border-radius: 999px;
         padding: 14px 22px;
         min-height: 54px;
+      }
+
+      .hero-minimize-button {
+        min-height: 54px;
+        width: 58px;
+        min-width: 58px;
+        padding: 0;
+        border-radius: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        line-height: 1;
       }
 
       .hero-bottom {
@@ -1203,6 +1220,16 @@
       .pulse-card {
         display: grid;
         gap: 14px;
+      }
+
+      .pulse-card.is-collapsed {
+        gap: 0;
+        padding-bottom: 18px;
+      }
+
+      .pulse-card.is-collapsed .pulse-track,
+      .pulse-card.is-collapsed #pulseNote {
+        display: none;
       }
 
       .pulse-row {
@@ -1378,6 +1405,7 @@
               <input id="daysBackInput" type="number" min="1" value="7" />
             </div>
             <button id="runButton" class="hero-run-button">Run Summarizer</button>
+            <button id="togglePulseButton" class="hero-minimize-button secondary-button" type="button" aria-label="Minimize Current Focus">−</button>
           </div>
         </div>
 
@@ -1400,7 +1428,7 @@
             </div>
           </div>
 
-          <div class="pulse-card">
+          <div id="pulseCard" class="pulse-card">
             <div class="pulse-row">
               <div>
                 <div class="stat-label">Current focus</div>
@@ -1637,6 +1665,8 @@
       const pulseBadge = document.getElementById("pulseBadge");
       const pulseNote = document.getElementById("pulseNote");
       const pulseFill = document.getElementById("pulseFill");
+      const pulseCard = document.getElementById("pulseCard");
+      const togglePulseButton = document.getElementById("togglePulseButton");
       const appModal = document.getElementById("appModal");
       const appModalTitle = document.getElementById("appModalTitle");
       const appModalMessage = document.getElementById("appModalMessage");
@@ -1816,6 +1846,12 @@
         buttonEl.closest(".panel").classList.toggle("is-collapsed", collapsed);
       }
 
+      function setPulseCollapsed(collapsed) {
+        pulseCard.classList.toggle("is-collapsed", collapsed);
+        togglePulseButton.textContent = collapsed ? "+" : "−";
+        togglePulseButton.setAttribute("aria-label", collapsed ? "Expand Current Focus" : "Minimize Current Focus");
+      }
+
       function setRunStatus(message, loading = false) {
         const visibleMessage = String(message || "").trim();
         pulseTitle.textContent = loading ? "Checking emails" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
@@ -1907,7 +1943,8 @@
 
         contactsModalList.innerHTML = currentContacts
           .map((contact) => {
-            const profile = currentContactProfiles[contact] || {};
+            const normalizedContact = String(contact || "").trim().toLowerCase();
+            const profile = currentContactProfiles[normalizedContact] || {};
             const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
             return `
               <div class="contacts-modal-item">
@@ -3226,6 +3263,9 @@
           await fetchContacts();
         }
       });
+      togglePulseButton.addEventListener("click", () => {
+        setPulseCollapsed(!pulseCard.classList.contains("is-collapsed"));
+      });
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
       combinedReportButton.addEventListener("click", () => generateCombinedSummary());
@@ -3250,6 +3290,7 @@
       });
       setPanelCollapsed(contactsBody, toggleContactsButton, true);
       setPanelCollapsed(chatBody, toggleChatButton, true);
+      setPulseCollapsed(false);
       syncDoneViewControls();
       applyTheme(currentTheme);
       loadCurrentSession();
