@@ -10,15 +10,18 @@ import smtplib
 import sqlite3
 import subprocess
 import unicodedata
+import base64
 from functools import lru_cache
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from urllib.request import Request as UrlRequest, urlopen
 from urllib.error import HTTPError
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +29,12 @@ from fastapi.responses import FileResponse, RedirectResponse
 from openai import OpenAI
 from dotenv import dotenv_values
 from pydantic import BaseModel
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, ListFlowable, ListItem
 
 from security_utils import decrypt_json_payload, encrypt_json_payload, maybe_encrypt_legacy_json
 
@@ -64,6 +73,7 @@ OUTPUT_ROOT_DIR = Path(os.getenv("EMAIL_SUMMARIZER_OUTPUT_DIR", str(BASE_DIR / "
 DATA_DIR = APP_STORAGE_DIR / "users"
 APP_DATA_DIR = APP_STORAGE_DIR / "app"
 DB_PATH = APP_DATA_DIR / "app.db"
+PUBLIC_REPORTS_DIR = APP_STORAGE_DIR / "public_reports"
 SESSION_COOKIE_NAME = "email_dashboard_session"
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
@@ -88,6 +98,7 @@ MICROSOFT_OAUTH_SCOPES = [
 
 def get_db_connection() -> sqlite3.Connection:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PUBLIC_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     return connection
@@ -115,6 +126,29 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS report_schedules (
+                schedule_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                interval_value INTEGER NOT NULL,
+                interval_unit TEXT NOT NULL,
+                days_back INTEGER NOT NULL DEFAULT 7,
+                recipient_email TEXT NOT NULL,
+                run_summarizer_first INTEGER NOT NULL DEFAULT 1,
+                send_combined_report INTEGER NOT NULL DEFAULT 1,
+                preferred_hour INTEGER NOT NULL DEFAULT 8,
+                preferred_minute INTEGER NOT NULL DEFAULT 0,
+                timezone TEXT NOT NULL DEFAULT 'America/Los_Angeles',
+                delivery_channel TEXT NOT NULL DEFAULT 'email',
+                recipient_phone TEXT,
+                last_run_at TEXT,
+                next_run_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
             """
         )
         existing_columns = {
@@ -123,6 +157,16 @@ def initialize_database() -> None:
         }
         if "microsoft_oauth_json" not in existing_columns:
             connection.execute("ALTER TABLE users ADD COLUMN microsoft_oauth_json TEXT")
+
+        existing_schedule_columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(report_schedules)").fetchall()
+        }
+        if existing_schedule_columns:
+            if "delivery_channel" not in existing_schedule_columns:
+                connection.execute("ALTER TABLE report_schedules ADD COLUMN delivery_channel TEXT NOT NULL DEFAULT 'email'")
+            if "recipient_phone" not in existing_schedule_columns:
+                connection.execute("ALTER TABLE report_schedules ADD COLUMN recipient_phone TEXT")
 
         rows = connection.execute("SELECT user_id, settings_json, google_oauth_json, microsoft_oauth_json FROM users").fetchall()
         for row in rows:
@@ -216,6 +260,34 @@ class ProfileUpdateRequest(BaseModel):
     smtp_user: str = ""
     smtp_password: str = ""
     summary_recipient: str = ""
+
+
+class ReportScheduleRequest(BaseModel):
+    user_id: Optional[str] = None
+    name: str = "Scheduled Report"
+    active: bool = True
+    interval_value: int = 1
+    interval_unit: str = "days"
+    days_back: int = 7
+    recipient_email: str = ""
+    run_summarizer_first: bool = True
+    send_combined_report: bool = True
+    preferred_hour: int = 8
+    preferred_minute: int = 0
+    timezone: str = "America/Los_Angeles"
+    delivery_channel: str = "email"
+    recipient_phone: str = ""
+
+
+class ReportScheduleRunRequest(BaseModel):
+    user_id: Optional[str] = None
+    ran_at: Optional[str] = None
+
+
+class CombinedSummaryTextRequest(BaseModel):
+    user_id: Optional[str] = None
+    summary_ids: List[str]
+    phone_number: str = ""
 
 
 @app.get("/")
@@ -681,6 +753,205 @@ def mark_how_to_seen(request: Request, user_id: Optional[str] = Query(None)) -> 
     return {"success": True, "profile": profile_response(profile)}
 
 
+@app.get("/report-schedules")
+def list_report_schedules(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM report_schedules WHERE user_id = ? ORDER BY lower(name), created_at",
+            (resolved_user_id,),
+        ).fetchall()
+    return {
+        "user_id": resolved_user_id,
+        "count": len(rows),
+        "schedules": [row_to_report_schedule(row) for row in rows],
+    }
+
+
+@app.post("/report-schedules")
+def create_report_schedule(payload: ReportScheduleRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    normalized = normalize_schedule_payload(
+        payload,
+        fallback_recipient=(profile.get("settings") or {}).get("SUMMARY_RECIPIENT") or profile.get("email", ""),
+    )
+    now_iso = datetime.now().isoformat()
+    schedule_id = secrets.token_hex(12)
+    next_run_at = compute_next_schedule_run(
+        timezone_name=normalized["timezone"],
+        interval_value=normalized["interval_value"],
+        interval_unit=normalized["interval_unit"],
+        preferred_hour=normalized["preferred_hour"],
+        preferred_minute=normalized["preferred_minute"],
+    )
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO report_schedules (
+                schedule_id, user_id, name, active, interval_value, interval_unit, days_back,
+                recipient_email, run_summarizer_first, send_combined_report,
+                preferred_hour, preferred_minute, timezone, delivery_channel, recipient_phone,
+                last_run_at, next_run_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                schedule_id,
+                resolved_user_id,
+                normalized["name"],
+                1 if normalized["active"] else 0,
+                normalized["interval_value"],
+                normalized["interval_unit"],
+                normalized["days_back"],
+                normalized["recipient_email"],
+                1 if normalized["run_summarizer_first"] else 0,
+                1 if normalized["send_combined_report"] else 0,
+                normalized["preferred_hour"],
+                normalized["preferred_minute"],
+                normalized["timezone"],
+                normalized["delivery_channel"],
+                normalized["recipient_phone"],
+                None,
+                next_run_at,
+                now_iso,
+                now_iso,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM report_schedules WHERE schedule_id = ?",
+            (schedule_id,),
+        ).fetchone()
+    return {"success": True, "schedule": row_to_report_schedule(row)}
+
+
+@app.put("/report-schedules/{schedule_id}")
+def update_report_schedule(
+    schedule_id: str,
+    payload: ReportScheduleRequest,
+    request: Request,
+) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    normalized = normalize_schedule_payload(
+        payload,
+        fallback_recipient=(profile.get("settings") or {}).get("SUMMARY_RECIPIENT") or profile.get("email", ""),
+    )
+    with get_db_connection() as connection:
+        existing = connection.execute(
+            "SELECT * FROM report_schedules WHERE schedule_id = ? AND user_id = ?",
+            (schedule_id, resolved_user_id),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Scheduled report not found.")
+
+        next_run_at = compute_next_schedule_run(
+            timezone_name=normalized["timezone"],
+            interval_value=normalized["interval_value"],
+            interval_unit=normalized["interval_unit"],
+            preferred_hour=normalized["preferred_hour"],
+            preferred_minute=normalized["preferred_minute"],
+            last_run_at=existing["last_run_at"],
+        )
+        connection.execute(
+            """
+            UPDATE report_schedules
+            SET name = ?, active = ?, interval_value = ?, interval_unit = ?, days_back = ?,
+                recipient_email = ?, run_summarizer_first = ?, send_combined_report = ?,
+                preferred_hour = ?, preferred_minute = ?, timezone = ?, delivery_channel = ?, recipient_phone = ?,
+                next_run_at = ?, updated_at = ?
+            WHERE schedule_id = ? AND user_id = ?
+            """,
+            (
+                normalized["name"],
+                1 if normalized["active"] else 0,
+                normalized["interval_value"],
+                normalized["interval_unit"],
+                normalized["days_back"],
+                normalized["recipient_email"],
+                1 if normalized["run_summarizer_first"] else 0,
+                1 if normalized["send_combined_report"] else 0,
+                normalized["preferred_hour"],
+                normalized["preferred_minute"],
+                normalized["timezone"],
+                normalized["delivery_channel"],
+                normalized["recipient_phone"],
+                next_run_at,
+                datetime.now().isoformat(),
+                schedule_id,
+                resolved_user_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM report_schedules WHERE schedule_id = ? AND user_id = ?",
+            (schedule_id, resolved_user_id),
+        ).fetchone()
+    return {"success": True, "schedule": row_to_report_schedule(row)}
+
+
+@app.delete("/report-schedules/{schedule_id}")
+def delete_report_schedule(schedule_id: str, request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    with get_db_connection() as connection:
+        existing = connection.execute(
+            "SELECT schedule_id FROM report_schedules WHERE schedule_id = ? AND user_id = ?",
+            (schedule_id, resolved_user_id),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Scheduled report not found.")
+        connection.execute(
+            "DELETE FROM report_schedules WHERE schedule_id = ? AND user_id = ?",
+            (schedule_id, resolved_user_id),
+        )
+    return {"success": True, "schedule_id": schedule_id}
+
+
+@app.post("/report-schedules/{schedule_id}/mark-ran")
+def mark_report_schedule_ran(
+    schedule_id: str,
+    payload: ReportScheduleRunRequest,
+    request: Request,
+) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    with get_db_connection() as connection:
+        existing = connection.execute(
+            "SELECT * FROM report_schedules WHERE schedule_id = ? AND user_id = ?",
+            (schedule_id, resolved_user_id),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Scheduled report not found.")
+
+        ran_at_dt = parse_iso_datetime(payload.ran_at, existing["timezone"]) or datetime.now(ZoneInfo(existing["timezone"]))
+        next_run_at = compute_next_schedule_run(
+            now=ran_at_dt,
+            timezone_name=existing["timezone"],
+            interval_value=int(existing["interval_value"]),
+            interval_unit=str(existing["interval_unit"]),
+            preferred_hour=int(existing["preferred_hour"]),
+            preferred_minute=int(existing["preferred_minute"]),
+            last_run_at=ran_at_dt.isoformat(),
+        )
+        connection.execute(
+            """
+            UPDATE report_schedules
+            SET last_run_at = ?, next_run_at = ?, updated_at = ?
+            WHERE schedule_id = ? AND user_id = ?
+            """,
+            (
+                ran_at_dt.isoformat(),
+                next_run_at,
+                datetime.now().isoformat(),
+                schedule_id,
+                resolved_user_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM report_schedules WHERE schedule_id = ? AND user_id = ?",
+            (schedule_id, resolved_user_id),
+        ).fetchone()
+    return {"success": True, "schedule": row_to_report_schedule(row)}
+
+
 @app.get("/mailbox/status")
 def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
@@ -738,6 +1009,148 @@ def _slugify_user_id(value: str) -> str:
 def is_valid_email(value: str) -> bool:
     email = value.strip()
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))
+
+
+def is_valid_e164_phone(value: str) -> bool:
+    phone = str(value or "").strip()
+    return bool(re.fullmatch(r"\+[1-9]\d{7,14}", phone))
+
+
+def normalize_schedule_timezone(value: str) -> str:
+    candidate = str(value or "").strip() or "America/Los_Angeles"
+    try:
+        ZoneInfo(candidate)
+        return candidate
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid schedule timezone.")
+
+
+def normalize_schedule_unit(value: str) -> str:
+    unit = str(value or "").strip().lower()
+    if unit not in {"hours", "days", "weeks"}:
+        raise HTTPException(status_code=400, detail="interval_unit must be one of: hours, days, weeks.")
+    return unit
+
+
+def normalize_schedule_payload(
+    payload: ReportScheduleRequest,
+    fallback_recipient: str = "",
+) -> Dict[str, Any]:
+    interval_value = int(payload.interval_value or 0)
+    if interval_value < 1:
+        raise HTTPException(status_code=400, detail="interval_value must be at least 1.")
+    days_back = int(payload.days_back or 0)
+    if days_back < 1:
+        raise HTTPException(status_code=400, detail="days_back must be at least 1.")
+    preferred_hour = int(payload.preferred_hour or 0)
+    preferred_minute = int(payload.preferred_minute or 0)
+    if preferred_hour < 0 or preferred_hour > 23:
+        raise HTTPException(status_code=400, detail="preferred_hour must be between 0 and 23.")
+    if preferred_minute < 0 or preferred_minute > 59:
+        raise HTTPException(status_code=400, detail="preferred_minute must be between 0 and 59.")
+
+    delivery_channel = str(payload.delivery_channel or "email").strip().lower()
+    if delivery_channel not in {"email", "sms"}:
+        raise HTTPException(status_code=400, detail="delivery_channel must be either 'email' or 'sms'.")
+
+    recipient_email = str(payload.recipient_email or "").strip() or str(fallback_recipient or "").strip()
+    recipient_phone = str(payload.recipient_phone or "").strip()
+    if delivery_channel == "email" and not is_valid_email(recipient_email):
+        raise HTTPException(status_code=400, detail="A valid recipient_email is required for email delivery.")
+    if delivery_channel == "sms" and not is_valid_e164_phone(recipient_phone):
+        raise HTTPException(status_code=400, detail="A valid E.164 recipient_phone is required for SMS delivery.")
+
+    return {
+        "name": str(payload.name or "").strip() or "Scheduled Report",
+        "active": bool(payload.active),
+        "interval_value": interval_value,
+        "interval_unit": normalize_schedule_unit(payload.interval_unit),
+        "days_back": days_back,
+        "recipient_email": recipient_email,
+        "recipient_phone": recipient_phone,
+        "delivery_channel": delivery_channel,
+        "run_summarizer_first": bool(payload.run_summarizer_first),
+        "send_combined_report": bool(payload.send_combined_report),
+        "preferred_hour": preferred_hour,
+        "preferred_minute": preferred_minute,
+        "timezone": normalize_schedule_timezone(payload.timezone),
+    }
+
+
+def parse_iso_datetime(value: Optional[str], timezone_name: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except Exception:
+        return None
+    tz = ZoneInfo(timezone_name)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=tz)
+    return parsed.astimezone(tz)
+
+
+def compute_next_schedule_run(
+    *,
+    now: Optional[datetime] = None,
+    timezone_name: str,
+    interval_value: int,
+    interval_unit: str,
+    preferred_hour: int,
+    preferred_minute: int,
+    last_run_at: Optional[str] = None,
+) -> str:
+    tz = ZoneInfo(timezone_name)
+    reference_now = now.astimezone(tz) if now and now.tzinfo else (now.replace(tzinfo=tz) if now else datetime.now(tz))
+    last_run = parse_iso_datetime(last_run_at, timezone_name)
+
+    if interval_unit == "hours":
+        anchor = last_run or reference_now
+        candidate = anchor + timedelta(hours=interval_value)
+        if candidate <= reference_now:
+            candidate = reference_now + timedelta(hours=interval_value)
+        return candidate.isoformat()
+
+    base_date = (last_run or reference_now).date()
+    candidate = datetime(
+        year=base_date.year,
+        month=base_date.month,
+        day=base_date.day,
+        hour=preferred_hour,
+        minute=preferred_minute,
+        tzinfo=tz,
+    )
+    if last_run:
+        delta = timedelta(days=interval_value if interval_unit == "days" else interval_value * 7)
+        candidate = candidate + delta
+    elif candidate <= reference_now:
+        delta = timedelta(days=interval_value if interval_unit == "days" else interval_value * 7)
+        candidate = candidate + delta
+    return candidate.isoformat()
+
+
+def row_to_report_schedule(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "schedule_id": row["schedule_id"],
+        "user_id": row["user_id"],
+        "name": row["name"],
+        "active": bool(row["active"]),
+        "interval_value": int(row["interval_value"]),
+        "interval_unit": row["interval_unit"],
+        "days_back": int(row["days_back"]),
+        "recipient_email": row["recipient_email"],
+        "recipient_phone": row["recipient_phone"] or "",
+        "delivery_channel": row["delivery_channel"] or "email",
+        "run_summarizer_first": bool(row["run_summarizer_first"]),
+        "send_combined_report": bool(row["send_combined_report"]),
+        "preferred_hour": int(row["preferred_hour"]),
+        "preferred_minute": int(row["preferred_minute"]),
+        "timezone": row["timezone"],
+        "last_run_at": row["last_run_at"],
+        "next_run_at": row["next_run_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
 
 
 def user_id_from_email(email: str) -> str:
@@ -1731,6 +2144,11 @@ def _to_ascii_safe(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
+def render_inline_markdown_html(text: str) -> str:
+    escaped = escape(str(text or ""))
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+
 @app.get("/attachments")
 def get_attachment(request: Request, user_id: str = Query(...), path: str = Query(...)) -> FileResponse:
     resolved_user_id = resolve_user_id(request, user_id)
@@ -1749,6 +2167,31 @@ def get_attachment(request: Request, user_id: str = Query(...), path: str = Quer
         raise HTTPException(status_code=404, detail=f"Attachment not found for user '{resolved_user_id}'.")
 
     return FileResponse(requested_path, filename=requested_path.name)
+
+
+@app.get("/public-report")
+def get_public_report(
+    user_id: str = Query(...),
+    path: str = Query(...),
+    expires: int = Query(...),
+    sig: str = Query(...),
+) -> FileResponse:
+    if expires < int(datetime.now().timestamp()):
+        raise HTTPException(status_code=403, detail="Public report link has expired.")
+    expected_sig = sign_public_report_token(user_id, path, expires)
+    if not hmac.compare_digest(sig, expected_sig):
+        raise HTTPException(status_code=403, detail="Invalid public report signature.")
+
+    requested_path = (PUBLIC_REPORTS_DIR / path).resolve()
+    try:
+        requested_path.relative_to((PUBLIC_REPORTS_DIR / user_id).resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Invalid public report path.")
+
+    if not requested_path.exists() or not requested_path.is_file():
+        raise HTTPException(status_code=404, detail="Public report file not found.")
+
+    return FileResponse(requested_path, filename=requested_path.name, media_type="application/pdf")
 
 
 @app.delete("/summaries/{summary_id}")
@@ -2048,11 +2491,16 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
         plain_lines = [line for line in lines if not line.startswith("- ")]
         html_parts: List[str] = []
         for line in plain_lines:
-            html_parts.append(f"<p style='margin:0 0 10px 0; line-height:1.55;'>{line}</p>")
+            html_parts.append(
+                f"<p style='margin:0 0 10px 0; line-height:1.65; color:#191917; font-size:15px;'>{render_inline_markdown_html(line)}</p>"
+            )
         if bullet_lines:
             html_parts.append(
                 "<ul style='margin:0; padding-left:22px;'>"
-                + "".join(f"<li style='margin:0 0 6px 0; line-height:1.5;'>{item}</li>" for item in bullet_lines)
+                + "".join(
+                    f"<li style='margin:0 0 8px 0; line-height:1.6; color:#191917; font-size:15px;'>{render_inline_markdown_html(item)}</li>"
+                    for item in bullet_lines
+                )
                 + "</ul>"
             )
         return "".join(html_parts)
@@ -2073,8 +2521,8 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
             continue
         section_html.append(
             f"<section style='margin:0 0 18px 0;'>"
-            f"<h3 style='margin:0 0 8px 0; font-size:16px; color:#111;'>{section_title}</h3>"
-            f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>{block}</div>"
+            f"<h3 style='margin:0 0 8px 0; font-size:17px; color:#111; letter-spacing:-0.02em;'>{escape(section_title)}</h3>"
+            f"<div style='background:linear-gradient(180deg, #ffffff 0%, #f5f3ed 100%); border:1px solid #e3e3e8; border-radius:16px; padding:16px;'>{block}</div>"
             f"</section>"
         )
 
@@ -2085,15 +2533,15 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
                 continue
             section_html.append(
                 f"<section style='margin:0 0 18px 0;'>"
-                f"<h3 style='margin:0 0 8px 0; font-size:16px; color:#111;'>{section_title}</h3>"
-                f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>{block}</div>"
+                f"<h3 style='margin:0 0 8px 0; font-size:17px; color:#111; letter-spacing:-0.02em;'>{escape(section_title)}</h3>"
+                f"<div style='background:linear-gradient(180deg, #ffffff 0%, #f5f3ed 100%); border:1px solid #e3e3e8; border-radius:16px; padding:16px;'>{block}</div>"
                 f"</section>"
             )
 
     if not section_html:
         section_html.append(
             f"<section style='margin:0 0 18px 0;'>"
-            f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>"
+            f"<div style='background:linear-gradient(180deg, #ffffff 0%, #f5f3ed 100%); border:1px solid #e3e3e8; border-radius:16px; padding:16px;'>"
             f"{render_block(markdown)}"
             f"</div></section>"
         )
@@ -2101,7 +2549,7 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
     return (
         "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
         "max-width:760px; margin:0 auto; padding:24px; background:#fff;'>"
-        f"<h1 style='margin:0 0 24px 0; font-size:28px;'>{title}</h1>"
+        f"<h1 style='margin:0 0 24px 0; font-size:30px; letter-spacing:-0.04em; color:#111;'>{escape(title)}</h1>"
         + "".join(section_html)
         + "</body></html>"
     )
@@ -2139,6 +2587,172 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Di
         raise HTTPException(status_code=500, detail=f"Failed to send combined report email: {exc}") from exc
 
     return {"recipient": recipient, "subject": msg["Subject"]}
+
+
+def render_markdown_report_text(title: str, markdown: str, max_chars: int = 1400) -> str:
+    sections = parse_markdown_sections(markdown)
+    blocks: List[str] = [title.strip()]
+    for section_title, section_content in sections.items():
+        lines = [line.strip() for line in str(section_content or "").splitlines() if line.strip()]
+        if not lines:
+            continue
+        blocks.append(f"{section_title}:")
+        blocks.extend(lines)
+        blocks.append("")
+    text = _to_ascii_safe("\n".join(blocks).strip())
+    if len(text) > max_chars:
+        return text[:max_chars].rstrip() + "\n... [continued in email/app]"
+    return text
+
+
+def paragraph_markup(text: str) -> str:
+    escaped = escape(str(text or ""))
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
+
+
+def generate_report_pdf(user_id: str, title: str, markdown: str) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pdf_dir = PUBLIC_REPORTS_DIR / user_id
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = pdf_dir / f"report_{timestamp}.pdf"
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=22,
+        leading=26,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=18,
+        alignment=TA_LEFT,
+    )
+    heading_style = ParagraphStyle(
+        "SectionHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        leading=18,
+        textColor=colors.HexColor("#111111"),
+        spaceBefore=10,
+        spaceAfter=8,
+    )
+    body_style = ParagraphStyle(
+        "Body",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=11,
+        leading=16,
+        textColor=colors.HexColor("#1a1a17"),
+        spaceAfter=8,
+    )
+
+    sections = parse_markdown_sections(markdown)
+    story: List[Any] = [Paragraph(paragraph_markup(title), title_style), Spacer(1, 0.08 * inch)]
+
+    if not sections:
+        sections = {"Report": markdown}
+
+    for section_title, section_content in sections.items():
+        lines = [line.strip() for line in str(section_content or "").splitlines() if line.strip()]
+        if not lines:
+            continue
+        story.append(Paragraph(paragraph_markup(section_title), heading_style))
+        bullet_lines = [line[2:] for line in lines if line.startswith("- ")]
+        plain_lines = [line for line in lines if not line.startswith("- ")]
+        for line in plain_lines:
+            story.append(Paragraph(paragraph_markup(line), body_style))
+        if bullet_lines:
+            bullet_items = [
+                ListItem(Paragraph(paragraph_markup(item), body_style), leftIndent=6)
+                for item in bullet_lines
+            ]
+            story.append(
+                ListFlowable(
+                    bullet_items,
+                    bulletType="bullet",
+                    start="circle",
+                    leftIndent=14,
+                    bulletFontName="Helvetica-Bold",
+                )
+            )
+            story.append(Spacer(1, 0.06 * inch))
+
+    document = SimpleDocTemplate(
+        str(pdf_path),
+        pagesize=LETTER,
+        leftMargin=0.72 * inch,
+        rightMargin=0.72 * inch,
+        topMargin=0.72 * inch,
+        bottomMargin=0.72 * inch,
+    )
+    document.build(story)
+    return pdf_path
+
+
+def sign_public_report_token(user_id: str, relative_path: str, expires_at: int) -> str:
+    secret = get_app_config_value("EMAIL_SUMMARIZER_PUBLIC_REPORT_SECRET") or get_app_config_value("EMAIL_SUMMARIZER_ENCRYPTION_KEY")
+    if not secret:
+        raise HTTPException(status_code=500, detail="Public report signing secret is not configured.")
+    payload = f"{user_id}:{relative_path}:{expires_at}"
+    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def build_public_report_url(user_id: str, pdf_path: Path, expires_in_seconds: int = 86400) -> str:
+    if not PUBLIC_BASE_URL:
+        raise HTTPException(status_code=500, detail="EMAIL_SUMMARIZER_PUBLIC_BASE_URL must be configured for SMS PDF delivery.")
+    relative_path = str(pdf_path.relative_to(PUBLIC_REPORTS_DIR))
+    expires_at = int((datetime.now() + timedelta(seconds=expires_in_seconds)).timestamp())
+    signature = sign_public_report_token(user_id, relative_path, expires_at)
+    return f"{PUBLIC_BASE_URL}/public-report?user_id={quote(user_id)}&path={quote(relative_path)}&expires={expires_at}&sig={signature}"
+
+
+def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] = None) -> Dict[str, str]:
+    account_sid = get_app_config_value("TWILIO_ACCOUNT_SID")
+    auth_token = get_app_config_value("TWILIO_AUTH_TOKEN")
+    from_number = get_app_config_value("TWILIO_FROM_NUMBER")
+    messaging_service_sid = get_app_config_value("TWILIO_MESSAGING_SERVICE_SID")
+
+    if not account_sid or not auth_token:
+        raise HTTPException(status_code=500, detail="Twilio is not configured yet.")
+    if not from_number and not messaging_service_sid:
+        raise HTTPException(status_code=500, detail="Set TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID first.")
+    if not is_valid_e164_phone(phone_number):
+        raise HTTPException(status_code=400, detail="Phone number must be in E.164 format, for example +14155550123.")
+
+    payload = {
+        "To": phone_number,
+        "Body": body,
+    }
+    if media_url:
+        payload["MediaUrl"] = media_url
+    if messaging_service_sid:
+        payload["MessagingServiceSid"] = messaging_service_sid
+    else:
+        payload["From"] = from_number
+
+    auth_header = base64.b64encode(f"{account_sid}:{auth_token}".encode("utf-8")).decode("ascii")
+    request = UrlRequest(
+        f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
+        data=urlencode(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        payload_text = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {payload_text}") from exc
+
+    return {
+        "recipient_phone": phone_number,
+        "message_sid": str(response_payload.get("sid", "")),
+        "delivery_channel": "sms",
+    }
 
 
 @app.post("/chat")
@@ -2228,6 +2842,30 @@ def send_combined_summary_email(payload: CombinedSummaryRequest, request: Reques
         "user_id": resolved_user_id,
         "summary_ids": combined["summary_ids"],
         "count": combined["count"],
+        **delivery,
+    }
+
+
+@app.post("/summaries/combined/send-text")
+def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
+    phone_number = str(payload.phone_number or "").strip()
+    if not phone_number:
+        raise HTTPException(status_code=400, detail="phone_number is required for SMS delivery.")
+    pdf_path = generate_report_pdf(resolved_user_id, combined["title"], combined["combined_markdown"])
+    public_pdf_url = build_public_report_url(resolved_user_id, pdf_path)
+    delivery = send_text_via_twilio(
+        phone_number,
+        render_markdown_report_text(combined["title"], combined["combined_markdown"], max_chars=320),
+        media_url=public_pdf_url,
+    )
+    return {
+        "success": True,
+        "user_id": resolved_user_id,
+        "summary_ids": combined["summary_ids"],
+        "count": combined["count"],
+        "pdf_url": public_pdf_url,
         **delivery,
     }
 
