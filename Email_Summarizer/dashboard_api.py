@@ -2169,7 +2169,7 @@ def get_attachment(request: Request, user_id: str = Query(...), path: str = Quer
     return FileResponse(requested_path, filename=requested_path.name)
 
 
-@app.get("/public-report")
+@app.api_route("/public-report", methods=["GET", "HEAD"])
 def get_public_report(
     user_id: str = Query(...),
     path: str = Query(...),
@@ -2191,7 +2191,12 @@ def get_public_report(
     if not requested_path.exists() or not requested_path.is_file():
         raise HTTPException(status_code=404, detail="Public report file not found.")
 
-    return FileResponse(requested_path, filename=requested_path.name, media_type="application/pdf")
+    return FileResponse(
+        requested_path,
+        filename=requested_path.name,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{requested_path.name}"'},
+    )
 
 
 @app.delete("/summaries/{summary_id}")
@@ -2597,7 +2602,12 @@ def render_markdown_report_text(title: str, markdown: str, max_chars: int = 1400
         if not lines:
             continue
         blocks.append(f"{section_title}:")
-        blocks.extend(lines)
+        for line in lines:
+            cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+            if cleaned.startswith("- "):
+                blocks.append(f"• {cleaned[2:].strip()}")
+            else:
+                blocks.append(cleaned)
         blocks.append("")
     text = _to_ascii_safe("\n".join(blocks).strip())
     if len(text) > max_chars:
@@ -2611,10 +2621,10 @@ def paragraph_markup(text: str) -> str:
 
 
 def generate_report_pdf(user_id: str, title: str, markdown: str) -> Path:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
     pdf_dir = PUBLIC_REPORTS_DIR / user_id
     pdf_dir.mkdir(parents=True, exist_ok=True)
-    pdf_path = pdf_dir / f"report_{timestamp}.pdf"
+    pdf_path = pdf_dir / f"r_{timestamp}.pdf"
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -2707,6 +2717,14 @@ def build_public_report_url(user_id: str, pdf_path: Path, expires_in_seconds: in
     return f"{PUBLIC_BASE_URL}/public-report?user_id={quote(user_id)}&path={quote(relative_path)}&expires={expires_at}&sig={signature}"
 
 
+def should_attach_pdf_to_message(pdf_path: Path) -> bool:
+    try:
+        size_bytes = pdf_path.stat().st_size
+    except Exception:
+        return False
+    return size_bytes <= 600 * 1024
+
+
 def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] = None) -> Dict[str, str]:
     account_sid = get_app_config_value("TWILIO_ACCOUNT_SID")
     auth_token = get_app_config_value("TWILIO_AUTH_TOKEN")
@@ -2747,6 +2765,8 @@ def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] 
     except HTTPError as exc:
         payload_text = exc.read().decode("utf-8", errors="replace")
         raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {payload_text}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {exc}") from exc
 
     return {
         "recipient_phone": phone_number,
@@ -2855,10 +2875,15 @@ def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Req
         raise HTTPException(status_code=400, detail="phone_number is required for SMS delivery.")
     pdf_path = generate_report_pdf(resolved_user_id, combined["title"], combined["combined_markdown"])
     public_pdf_url = build_public_report_url(resolved_user_id, pdf_path)
+    message_body = (
+        render_markdown_report_text(combined["title"], combined["combined_markdown"], max_chars=240)
+        + f"\n\nOpen PDF: {public_pdf_url}"
+    )
+    media_url = public_pdf_url if should_attach_pdf_to_message(pdf_path) else None
     delivery = send_text_via_twilio(
         phone_number,
-        render_markdown_report_text(combined["title"], combined["combined_markdown"], max_chars=320),
-        media_url=public_pdf_url,
+        message_body,
+        media_url=media_url,
     )
     return {
         "success": True,
@@ -2866,6 +2891,7 @@ def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Req
         "summary_ids": combined["summary_ids"],
         "count": combined["count"],
         "pdf_url": public_pdf_url,
+        "pdf_attached": bool(media_url),
         **delivery,
     }
 
