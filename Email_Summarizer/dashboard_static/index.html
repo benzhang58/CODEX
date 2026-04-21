@@ -508,7 +508,7 @@
       .summary-card {
         width: 100%;
         border: 1px solid transparent;
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 244, 0.96));
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 250, 247, 0.98));
         color: var(--text);
         padding: 18px 18px 16px;
         border-radius: 20px;
@@ -525,6 +525,14 @@
         border-color: var(--border-strong);
         background: linear-gradient(180deg, rgba(241, 240, 234, 0.98), rgba(235, 233, 226, 0.98));
         box-shadow: 0 18px 34px rgba(17, 17, 17, 0.08);
+      }
+
+      .summary-card.is-read {
+        background: linear-gradient(180deg, rgba(238, 236, 230, 0.98), rgba(229, 227, 220, 0.98));
+      }
+
+      .summary-card.is-read:hover {
+        background: linear-gradient(180deg, rgba(233, 231, 224, 0.98), rgba(225, 222, 214, 0.98));
       }
 
       .summary-card-main {
@@ -926,6 +934,187 @@
         width: min(560px, 100%);
       }
 
+      .schedule-modal-card {
+        width: min(760px, 100%);
+        max-height: min(88vh, 920px);
+        overflow-y: auto;
+      }
+
+      .schedule-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .schedule-grid .field,
+      .schedule-grid .field-wide {
+        margin-bottom: 0;
+      }
+
+      .schedule-grid .field-wide {
+        grid-column: 1 / -1;
+      }
+
+      .schedule-grid select,
+      .schedule-grid input[type="time"] {
+        width: 100%;
+        padding: 13px 16px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        color: var(--text);
+      }
+
+      .schedule-inline {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.84);
+      }
+
+      .toggle-copy {
+        display: grid;
+        gap: 4px;
+      }
+
+      .toggle-copy strong {
+        font-size: 14px;
+        letter-spacing: -0.02em;
+      }
+
+      .toggle-copy span {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .toggle-switch {
+        width: 20px;
+        height: 20px;
+      }
+
+      .schedule-status {
+        min-height: 22px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .schedule-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .saved-schedules-modal {
+        z-index: 1200;
+      }
+
+      .schedule-item {
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(245,243,237,0.96));
+        padding: 16px 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .schedule-item-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .schedule-item-title {
+        display: grid;
+        gap: 6px;
+      }
+
+      .schedule-item-title h4 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+
+      .schedule-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .schedule-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: rgba(17, 17, 17, 0.07);
+      }
+
+      .schedule-pill.active {
+        background: rgba(29, 108, 79, 0.12);
+        color: #16553f;
+      }
+
+      .schedule-pill.inactive {
+        background: rgba(166, 63, 63, 0.12);
+        color: #8f2e2e;
+      }
+
+      .schedule-item-meta {
+        display: grid;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .schedule-item-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .schedule-item-actions button {
+        min-height: 40px;
+      }
+
+      .schedule-primary-actions > button {
+        flex: 1 1 0;
+        min-width: 0;
+        width: 0;
+      }
+
+      .schedule-toggle-control {
+        min-width: 112px;
+        justify-content: center;
+      }
+
+      .schedule-toggle-control.is-active {
+        background: rgba(29, 108, 79, 0.12);
+        border-color: rgba(29, 108, 79, 0.24);
+        color: #16553f;
+      }
+
+      .schedule-toggle-control.is-inactive {
+        background: rgba(166, 63, 63, 0.12);
+        border-color: rgba(166, 63, 63, 0.24);
+        color: #8f2e2e;
+      }
+
       .contacts-modal-header {
         display: flex;
         align-items: center;
@@ -1055,6 +1244,23 @@
         border-radius: 30px;
       }
 
+      .topbar.is-collapsed {
+        padding-top: 24px;
+        padding-bottom: 24px;
+      }
+
+      .topbar.is-collapsed .hero-bottom {
+        display: none;
+      }
+
+      .topbar.is-collapsed .hero-copy {
+        gap: 2px;
+      }
+
+      .topbar.is-collapsed .hero-welcome {
+        font-size: clamp(24px, 3.2vw, 34px);
+      }
+
       .topbar::before {
         content: "";
         position: absolute;
@@ -1119,7 +1325,7 @@
 
       .hero-actions {
         display: grid;
-        grid-template-columns: minmax(0, 1.5fr) minmax(180px, 1fr) 58px;
+        grid-template-columns: minmax(0, 1.5fr) 86px 86px 58px;
         gap: 12px;
         align-items: stretch;
         width: 100%;
@@ -1155,10 +1361,38 @@
         width: 100%;
       }
 
-      .hero-run-button {
-        border-radius: 999px;
-        padding: 14px 22px;
+      .hero-run-button,
+      .hero-schedule-button {
         min-height: 54px;
+        width: 86px;
+        min-width: 86px;
+        padding: 0;
+        border-radius: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .hero-run-button svg,
+      .hero-schedule-button svg {
+        width: 24px;
+        height: 24px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .hero-schedule-button {
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .hero-schedule-button:hover {
+        background: rgba(255, 255, 255, 1);
+        border-color: var(--border-strong);
       }
 
       .hero-minimize-button {
@@ -1392,7 +1626,7 @@
         </section>
       </div>
 
-      <section class="topbar glass">
+      <section id="heroShell" class="topbar glass">
         <div class="hero-top">
           <div class="hero-copy">
             <p id="heroLabel" class="eyebrow">Email Dashboard</p>
@@ -1404,8 +1638,28 @@
               <div class="input-chip-label">Days back</div>
               <input id="daysBackInput" type="number" min="1" value="7" />
             </div>
-            <button id="runButton" class="hero-run-button">Run Summarizer</button>
-            <button id="togglePulseButton" class="hero-minimize-button secondary-button" type="button" aria-label="Minimize Current Focus">−</button>
+            <span class="tooltip-wrap" data-tooltip="Run Summarizer">
+              <button id="runButton" class="hero-run-button" type="button" aria-label="Run Summarizer">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="16.5" cy="5.5" r="1.9"></circle>
+                  <path d="M10.5 8.5l3.2 1.4 2.2 2.6"></path>
+                  <path d="M11.4 10.2l-2.7 3.4"></path>
+                  <path d="M13.8 10.2l-1.1 4.5"></path>
+                  <path d="M12.8 14.7l4.4 1.5"></path>
+                  <path d="M8.5 14l-3 3.8"></path>
+                  <path d="M12.4 14.6l-2.2 4"></path>
+                </svg>
+              </button>
+            </span>
+            <span class="tooltip-wrap" data-tooltip="Scheduled Reports">
+              <button id="scheduleButton" class="hero-schedule-button" type="button" aria-label="Scheduled Reports">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="8"></circle>
+                  <path d="M12 7.8v4.6l3 1.8"></path>
+                </svg>
+              </button>
+            </span>
+            <button id="togglePulseButton" class="hero-minimize-button secondary-button" type="button" aria-label="Minimize Dashboard Summary">−</button>
           </div>
         </div>
 
@@ -1534,8 +1788,8 @@
                   </svg>
                 </button>
               </span>
-              <span class="tooltip-wrap" data-tooltip="Email Report">
-                <button id="emailReportButton" class="icon-button" type="button" aria-label="Email Report">
+              <span class="tooltip-wrap" data-tooltip="Send Report">
+                <button id="emailReportButton" class="icon-button" type="button" aria-label="Send Report">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M4 6h16v12H4z"></path>
                     <path d="m4 7 8 6 8-6"></path>
@@ -1602,6 +1856,7 @@
         <div id="appModalMessage" class="modal-copy"></div>
         <textarea id="appModalInput" class="modal-textarea" hidden></textarea>
         <div class="controls modal-actions">
+          <button id="appModalAltButton" class="secondary-button" type="button" hidden></button>
           <button id="appModalCancelButton" class="secondary-button" type="button">No</button>
           <button id="appModalConfirmButton" type="button">Yes</button>
         </div>
@@ -1622,18 +1877,112 @@
       </div>
     </div>
 
+    <div id="scheduleModal" class="modal-overlay" hidden>
+      <div class="modal-card schedule-modal-card">
+        <div class="contacts-modal-header">
+          <h3>Scheduled Reports</h3>
+          <button id="scheduleModalCloseTopButton" class="secondary-button" type="button">Close</button>
+        </div>
+        <div class="modal-copy">Create recurring email/phone summary reports</div>
+
+        <div class="schedule-grid">
+          <div class="field">
+            <label for="scheduleNameInput">Schedule Name</label>
+            <input id="scheduleNameInput" type="text" placeholder="Weekly Monday Report" />
+          </div>
+          <div class="field">
+            <label for="scheduleChannelInput">Delivery Method</label>
+            <select id="scheduleChannelInput">
+              <option value="email">Email</option>
+              <option value="sms">Phone</option>
+            </select>
+          </div>
+          <div id="scheduleEmailField" class="field">
+            <label for="scheduleEmailInput">Recipient Email</label>
+            <input id="scheduleEmailInput" type="email" placeholder="you@example.com" />
+          </div>
+          <div id="schedulePhoneField" class="field" hidden>
+            <label for="schedulePhoneInput">Phone Number</label>
+            <input id="schedulePhoneInput" type="tel" placeholder="+14155550123" />
+          </div>
+          <div class="field">
+            <label>Repeat Every</label>
+            <div class="schedule-inline">
+              <input id="scheduleIntervalValueInput" type="number" min="1" value="1" />
+              <select id="scheduleIntervalUnitInput">
+                <option value="hours">Hours</option>
+                <option value="days" selected>Days</option>
+                <option value="weeks">Weeks</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Send Time</label>
+            <input id="scheduleTimeInput" type="time" value="08:00" />
+          </div>
+          <div class="field">
+            <label for="scheduleDaysBackInput">Days Back</label>
+            <input id="scheduleDaysBackInput" type="number" min="1" value="7" />
+          </div>
+          <div class="field">
+            <label for="scheduleTimezoneInput">Timezone</label>
+            <select id="scheduleTimezoneInput">
+              <option value="America/Los_Angeles">Pacific Time</option>
+              <option value="America/Denver">Mountain Time</option>
+              <option value="America/Chicago">Central Time</option>
+              <option value="America/New_York">Eastern Time</option>
+              <option value="Europe/London">London</option>
+              <option value="Europe/Paris">Paris</option>
+              <option value="Asia/Shanghai">Shanghai</option>
+              <option value="Asia/Hong_Kong">Hong Kong</option>
+              <option value="Asia/Tokyo">Tokyo</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="scheduleStatus" class="schedule-status"></div>
+
+        <div class="controls modal-actions schedule-primary-actions">
+          <button id="scheduleViewSavedButton" class="secondary-button" type="button">View Saved Schedules</button>
+          <button id="scheduleResetButton" class="secondary-button" type="button" hidden>Create Different Schedule</button>
+          <button id="scheduleSaveButton" type="button">Create Schedule</button>
+        </div>
+
+        <div class="controls modal-actions">
+          <button id="scheduleModalCloseButton" class="secondary-button" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="savedSchedulesModal" class="modal-overlay saved-schedules-modal" hidden>
+      <div class="modal-card schedule-modal-card">
+        <div class="contacts-modal-header">
+          <h3>Saved Schedules</h3>
+          <button id="savedSchedulesCloseTopButton" class="secondary-button" type="button">Close</button>
+        </div>
+        <div class="modal-copy">Review saved schedules, turn them on or off, edit them, or remove them.</div>
+        <div id="savedSchedulesStatus" class="schedule-status"></div>
+        <div id="scheduleList" class="schedule-list"></div>
+        <div class="controls modal-actions">
+          <button id="savedSchedulesCloseButton" class="secondary-button" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const accountBar = document.getElementById("accountBar");
       const accountName = document.getElementById("accountName");
       const accountEmail = document.getElementById("accountEmail");
       const heroLabel = document.getElementById("heroLabel");
       const heroWelcome = document.getElementById("heroWelcome");
+      const heroShell = document.getElementById("heroShell");
       const logoutButton = document.getElementById("logoutButton");
       const profilePanel = document.getElementById("profilePanel");
       const settingsMenuButton = document.getElementById("settingsMenuButton");
       const settingsHelpButton = document.getElementById("settingsHelpButton");
       const userIdInput = document.getElementById("userIdInput");
       const runButton = document.getElementById("runButton");
+      const scheduleButton = document.getElementById("scheduleButton");
       const daysBackInput = document.getElementById("daysBackInput");
       const loadWhitelistButton = document.getElementById("loadWhitelistButton");
       const saveWhitelistButton = document.getElementById("saveWhitelistButton");
@@ -1671,12 +2020,36 @@
       const appModalTitle = document.getElementById("appModalTitle");
       const appModalMessage = document.getElementById("appModalMessage");
       const appModalInput = document.getElementById("appModalInput");
+      const appModalAltButton = document.getElementById("appModalAltButton");
       const appModalCancelButton = document.getElementById("appModalCancelButton");
       const appModalConfirmButton = document.getElementById("appModalConfirmButton");
       const contactsModal = document.getElementById("contactsModal");
       const contactsModalList = document.getElementById("contactsModalList");
       const contactsModalAddButton = document.getElementById("contactsModalAddButton");
       const contactsModalCloseButton = document.getElementById("contactsModalCloseButton");
+      const scheduleModal = document.getElementById("scheduleModal");
+      const scheduleModalCloseButton = document.getElementById("scheduleModalCloseButton");
+      const scheduleModalCloseTopButton = document.getElementById("scheduleModalCloseTopButton");
+      const savedSchedulesModal = document.getElementById("savedSchedulesModal");
+      const savedSchedulesCloseButton = document.getElementById("savedSchedulesCloseButton");
+      const savedSchedulesCloseTopButton = document.getElementById("savedSchedulesCloseTopButton");
+      const scheduleNameInput = document.getElementById("scheduleNameInput");
+      const scheduleChannelInput = document.getElementById("scheduleChannelInput");
+      const scheduleEmailField = document.getElementById("scheduleEmailField");
+      const schedulePhoneField = document.getElementById("schedulePhoneField");
+      const scheduleEmailInput = document.getElementById("scheduleEmailInput");
+      const schedulePhoneInput = document.getElementById("schedulePhoneInput");
+      const scheduleIntervalValueInput = document.getElementById("scheduleIntervalValueInput");
+      const scheduleIntervalUnitInput = document.getElementById("scheduleIntervalUnitInput");
+      const scheduleTimeInput = document.getElementById("scheduleTimeInput");
+      const scheduleDaysBackInput = document.getElementById("scheduleDaysBackInput");
+      const scheduleTimezoneInput = document.getElementById("scheduleTimezoneInput");
+      const scheduleStatus = document.getElementById("scheduleStatus");
+      const scheduleViewSavedButton = document.getElementById("scheduleViewSavedButton");
+      const scheduleResetButton = document.getElementById("scheduleResetButton");
+      const scheduleSaveButton = document.getElementById("scheduleSaveButton");
+      const scheduleList = document.getElementById("scheduleList");
+      const savedSchedulesStatus = document.getElementById("savedSchedulesStatus");
       const doneToggleButton = document.getElementById("doneToggleButton");
       const toggleDoneViewButton = document.getElementById("toggleDoneViewButton");
 
@@ -1696,6 +2069,11 @@
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let summaryViewRequestToken = 0;
       let showingDoneSummaries = false;
+      let currentRunJobId = "";
+      let activeRunPollTimer = null;
+      let scheduleItems = [];
+      let editingScheduleId = "";
+      let editingScheduleActive = true;
 
       function getReadSummaryIds(userId) {
         try {
@@ -1847,12 +2225,20 @@
       }
 
       function setPulseCollapsed(collapsed) {
-        pulseCard.classList.toggle("is-collapsed", collapsed);
+        heroShell.classList.toggle("is-collapsed", collapsed);
         togglePulseButton.textContent = collapsed ? "+" : "−";
-        togglePulseButton.setAttribute("aria-label", collapsed ? "Expand Current Focus" : "Minimize Current Focus");
+        togglePulseButton.setAttribute("aria-label", collapsed ? "Expand Dashboard Summary" : "Minimize Dashboard Summary");
       }
 
       function setRunStatus(message, loading = false) {
+        if (
+          !loading &&
+          currentRunJobId &&
+          String(message || "").trim() !== "" &&
+          !String(message || "").startsWith("Run failed")
+        ) {
+          return;
+        }
         const visibleMessage = String(message || "").trim();
         pulseTitle.textContent = loading ? "Checking emails" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
         pulseNote.textContent = visibleMessage || "Select summaries, ask questions, or run a new check.";
@@ -1889,11 +2275,272 @@
         contactsModal.hidden = true;
       }
 
+      function closeScheduleModal() {
+        scheduleModal.hidden = true;
+      }
+
+      function closeSavedSchedulesModal() {
+        savedSchedulesModal.hidden = true;
+      }
+
+      function getLocalTimezone() {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+      }
+
+      function updateScheduleChannelFields() {
+        const channel = scheduleChannelInput.value;
+        const showSms = channel === "sms";
+        scheduleEmailField.hidden = showSms;
+        schedulePhoneField.hidden = !showSms;
+      }
+
+      function resetScheduleForm() {
+        editingScheduleId = "";
+        editingScheduleActive = true;
+        scheduleNameInput.value = "";
+        scheduleChannelInput.value = "email";
+        scheduleEmailInput.value = currentProfile?.email || "";
+        schedulePhoneInput.value = "";
+        scheduleIntervalValueInput.value = "1";
+        scheduleIntervalUnitInput.value = "days";
+        scheduleTimeInput.value = "08:00";
+        scheduleDaysBackInput.value = daysBackInput.value || "7";
+        scheduleTimezoneInput.value = getLocalTimezone();
+        scheduleStatus.textContent = "Create a new schedule.";
+        savedSchedulesStatus.textContent = "";
+        scheduleSaveButton.textContent = "Create Schedule";
+        scheduleResetButton.hidden = true;
+        updateScheduleChannelFields();
+      }
+
+      function applyScheduleToForm(schedule) {
+        editingScheduleId = schedule.schedule_id || "";
+        editingScheduleActive = Boolean(schedule.active);
+        scheduleNameInput.value = schedule.name || "";
+        scheduleChannelInput.value = schedule.delivery_channel || "email";
+        scheduleEmailInput.value = schedule.recipient_email || currentProfile?.email || "";
+        schedulePhoneInput.value = schedule.recipient_phone || "";
+        scheduleIntervalValueInput.value = String(schedule.interval_value || 1);
+        scheduleIntervalUnitInput.value = schedule.interval_unit || "days";
+        scheduleTimeInput.value = `${String(schedule.preferred_hour || 0).padStart(2, "0")}:${String(schedule.preferred_minute || 0).padStart(2, "0")}`;
+        scheduleDaysBackInput.value = String(schedule.days_back || 7);
+        scheduleTimezoneInput.value = schedule.timezone || getLocalTimezone();
+        scheduleSaveButton.textContent = "Save Changes";
+        scheduleResetButton.hidden = false;
+        scheduleStatus.textContent = `Editing "${schedule.name || "Scheduled Report"}".`;
+        updateScheduleChannelFields();
+      }
+
+      function formatScheduleTime(schedule) {
+        const hour = String(schedule.preferred_hour || 0).padStart(2, "0");
+        const minute = String(schedule.preferred_minute || 0).padStart(2, "0");
+        return `${hour}:${minute}`;
+      }
+
+      function formatScheduleMeta(schedule) {
+        const channelLabel = schedule.delivery_channel === "sms" ? "Phone" : "Email";
+        const recipient = schedule.delivery_channel === "sms" ? (schedule.recipient_phone || "No phone set") : (schedule.recipient_email || "No email set");
+        const nextRun = schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "Not scheduled";
+        return [
+          `Every ${schedule.interval_value} ${schedule.interval_unit} at ${formatScheduleTime(schedule)}`,
+          `${channelLabel}: ${recipient}`,
+          `Days back: ${schedule.days_back}`,
+          `Next run: ${nextRun}`,
+        ];
+      }
+
+      function renderScheduleList() {
+        if (!scheduleItems.length) {
+          scheduleList.innerHTML = `<div class="contacts-modal-empty">No scheduled reports yet.</div>`;
+          return;
+        }
+
+        scheduleList.innerHTML = scheduleItems.map((schedule) => `
+          <div class="schedule-item">
+            <div class="schedule-item-header">
+              <div class="schedule-item-title">
+                <h4>${escapeHtml(schedule.name || "Scheduled Report")}</h4>
+                <div class="schedule-pill-row">
+                  <span class="schedule-pill ${schedule.active ? "active" : "inactive"}">${schedule.active ? "Active" : "Paused"}</span>
+                  <span class="schedule-pill">${escapeHtml(schedule.delivery_channel === "sms" ? "Phone" : "Email")}</span>
+                </div>
+              </div>
+            </div>
+            <div class="schedule-item-meta">
+              ${formatScheduleMeta(schedule).map((line) => `<div>${escapeHtml(line)}</div>`).join("")}
+            </div>
+            <div class="schedule-item-actions">
+              <button class="secondary-button schedule-edit-button" type="button" data-id="${escapeHtml(schedule.schedule_id)}">Edit</button>
+              <button class="secondary-button schedule-toggle-button schedule-toggle-control ${schedule.active ? "is-active" : "is-inactive"}" type="button" data-id="${escapeHtml(schedule.schedule_id)}">
+                ${schedule.active ? "On" : "Off"}
+              </button>
+              <button class="secondary-button schedule-delete-inline-button" type="button" data-id="${escapeHtml(schedule.schedule_id)}">Delete</button>
+            </div>
+          </div>
+        `).join("");
+
+        scheduleList.querySelectorAll(".schedule-edit-button").forEach((button) => {
+          button.addEventListener("click", () => {
+            const schedule = scheduleItems.find((item) => item.schedule_id === button.dataset.id);
+            if (schedule) {
+              applyScheduleToForm(schedule);
+              closeSavedSchedulesModal();
+            }
+          });
+        });
+
+        scheduleList.querySelectorAll(".schedule-toggle-button").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const schedule = scheduleItems.find((item) => item.schedule_id === button.dataset.id);
+            if (!schedule) return;
+            await saveSchedule({ ...schedule, active: !schedule.active }, true);
+          });
+        });
+
+        scheduleList.querySelectorAll(".schedule-delete-inline-button").forEach((button) => {
+          button.addEventListener("click", async () => {
+            await deleteSchedule(button.dataset.id || "");
+          });
+        });
+      }
+
+      async function loadSchedules() {
+        if (!requireSignedIn()) return;
+        savedSchedulesStatus.textContent = "Loading saved schedules...";
+        try {
+          const response = await fetch(`/report-schedules?user_id=${encodeURIComponent(currentUserId)}`);
+          const data = await response.json();
+          if (!response.ok) {
+            const errorText = data.detail || "Failed to load scheduled reports.";
+            scheduleStatus.textContent = errorText;
+            savedSchedulesStatus.textContent = errorText;
+            return;
+          }
+          scheduleItems = data.schedules || [];
+          savedSchedulesStatus.textContent = scheduleItems.length ? "" : "No saved schedules yet.";
+          renderScheduleList();
+        } catch (error) {
+          const errorText = `Failed to load scheduled reports: ${error.message}`;
+          scheduleStatus.textContent = errorText;
+          savedSchedulesStatus.textContent = errorText;
+        }
+      }
+
+      function buildSchedulePayload(overrides = {}) {
+        const [hourText, minuteText] = String(scheduleTimeInput.value || "08:00").split(":");
+        return {
+          user_id: currentUserId,
+          name: scheduleNameInput.value.trim() || "Scheduled Report",
+          active: editingScheduleActive,
+          interval_value: Number(scheduleIntervalValueInput.value || 1),
+          interval_unit: scheduleIntervalUnitInput.value,
+          days_back: Number(scheduleDaysBackInput.value || 7),
+          recipient_email: scheduleEmailInput.value.trim(),
+          recipient_phone: schedulePhoneInput.value.trim(),
+          delivery_channel: scheduleChannelInput.value,
+          run_summarizer_first: true,
+          send_combined_report: true,
+          preferred_hour: Number(hourText || 8),
+          preferred_minute: Number(minuteText || 0),
+          timezone: scheduleTimezoneInput.value.trim() || getLocalTimezone(),
+          ...overrides,
+        };
+      }
+
+      async function saveSchedule(payload = null, silentReload = false) {
+        if (!requireSignedIn()) return false;
+        scheduleSaveButton.disabled = true;
+        scheduleStatus.textContent = editingScheduleId && !silentReload ? "Saving changes..." : "Creating schedule...";
+        try {
+          const body = payload || buildSchedulePayload();
+          if (body.delivery_channel === "email" && !body.recipient_email) {
+            scheduleStatus.textContent = "Enter a recipient email first.";
+            return false;
+          }
+          if (body.delivery_channel === "sms" && !body.recipient_phone) {
+            scheduleStatus.textContent = "Enter a phone number first.";
+            return false;
+          }
+          const url = editingScheduleId && !payload
+            ? `/report-schedules/${encodeURIComponent(editingScheduleId)}`
+            : payload?.schedule_id
+              ? `/report-schedules/${encodeURIComponent(payload.schedule_id)}`
+              : "/report-schedules";
+          const method = editingScheduleId && !payload ? "PUT" : payload?.schedule_id ? "PUT" : "POST";
+          const response = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            scheduleStatus.textContent = data.detail || "Failed to save schedule.";
+            savedSchedulesStatus.textContent = data.detail || "Failed to save schedule.";
+            return false;
+          }
+          scheduleStatus.textContent = editingScheduleId && !silentReload ? "Schedule updated." : "Schedule created.";
+          await loadSchedules();
+          if (!silentReload) {
+            applyScheduleToForm(data.schedule);
+            savedSchedulesStatus.textContent = "Saved schedules updated.";
+          }
+          return true;
+        } catch (error) {
+          scheduleStatus.textContent = `Failed to save schedule: ${error.message}`;
+          savedSchedulesStatus.textContent = `Failed to save schedule: ${error.message}`;
+          return false;
+        } finally {
+          scheduleSaveButton.disabled = false;
+        }
+      }
+
+      async function deleteSchedule(scheduleId = editingScheduleId) {
+        if (!requireSignedIn() || !scheduleId) return;
+        if (!(await openAppModal({
+          title: "Delete Schedule",
+          message: "Delete this scheduled report?",
+        }))) return;
+
+        scheduleStatus.textContent = "Deleting schedule...";
+        try {
+          const response = await fetch(`/report-schedules/${encodeURIComponent(scheduleId)}?user_id=${encodeURIComponent(currentUserId)}`, {
+            method: "DELETE",
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            scheduleStatus.textContent = data.detail || "Failed to delete schedule.";
+            savedSchedulesStatus.textContent = data.detail || "Failed to delete schedule.";
+            return;
+          }
+          resetScheduleForm();
+          scheduleStatus.textContent = "Schedule deleted.";
+          savedSchedulesStatus.textContent = "Schedule deleted.";
+          await loadSchedules();
+        } catch (error) {
+          scheduleStatus.textContent = `Failed to delete schedule: ${error.message}`;
+          savedSchedulesStatus.textContent = `Failed to delete schedule: ${error.message}`;
+        }
+      }
+
+      async function openScheduleModal() {
+        if (!requireSignedIn()) return;
+        scheduleModal.hidden = false;
+        resetScheduleForm();
+      }
+
+      async function openSavedSchedulesModal() {
+        if (!requireSignedIn()) return;
+        savedSchedulesModal.hidden = false;
+        savedSchedulesStatus.textContent = "";
+        await loadSchedules();
+      }
+
       function openAppModal({
         title,
         message,
         confirmLabel = "Yes",
         cancelLabel = "No",
+        altLabel = "",
         withInput = false,
         inputValue = "",
         inputPlaceholder = "",
@@ -1902,6 +2549,8 @@
         appModalMessage.textContent = message || "";
         appModalConfirmButton.textContent = confirmLabel;
         appModalCancelButton.textContent = cancelLabel;
+        appModalAltButton.hidden = !altLabel;
+        appModalAltButton.textContent = altLabel || "";
         appModalInput.hidden = !withInput;
         appModalInput.value = inputValue || "";
         appModalInput.placeholder = inputPlaceholder || "";
@@ -1909,12 +2558,18 @@
 
         return new Promise((resolve) => {
           activeModalResolver = resolve;
+          appModalAltButton.onclick = null;
           appModalConfirmButton.onclick = () => {
             closeAppModal(withInput ? { confirmed: true, value: appModalInput.value } : true);
           };
           appModalCancelButton.onclick = () => {
             closeAppModal(withInput ? { confirmed: false, value: "" } : false);
           };
+          if (altLabel) {
+            appModalAltButton.onclick = () => {
+              closeAppModal(withInput ? { confirmed: false, alternate: true, value: appModalInput.value } : { alternate: true });
+            };
+          }
           appModalInput.onkeydown = null;
           if (withInput) {
             appModalInput.onkeydown = (event) => {
@@ -2018,6 +2673,44 @@
         if (!userId) return "";
         const key = getProfileNamePromptStateKey(userId);
         return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
+      }
+
+      function getRunJobStorageKey(userId) {
+        return `emailDashboardRunJob:${String(userId || "").trim()}`;
+      }
+
+      function saveActiveRunJob(userId, jobId) {
+        if (!userId) return;
+        const key = getRunJobStorageKey(userId);
+        if (jobId) {
+          localStorage.setItem(key, jobId);
+        } else {
+          localStorage.removeItem(key);
+        }
+      }
+
+      function readActiveRunJob(userId) {
+        if (!userId) return "";
+        return localStorage.getItem(getRunJobStorageKey(userId)) || "";
+      }
+
+      async function fetchActiveRunJob(userId) {
+        if (!userId) return "";
+        try {
+          const response = await fetch(`/run-summarizer/active?user_id=${encodeURIComponent(userId)}`);
+          const data = await response.json();
+          if (!response.ok) return "";
+          return data.job?.job_id || "";
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function clearRunPolling() {
+        if (activeRunPollTimer) {
+          clearTimeout(activeRunPollTimer);
+          activeRunPollTimer = null;
+        }
       }
 
       function getProfileNameParts(profile) {
@@ -2144,7 +2837,19 @@
           await promptForProfileNameIfNeeded();
           await fetchContacts();
           await loadSummaries();
-          setRunStatus("");
+          let existingJobId = readActiveRunJob(currentUserId);
+          if (!existingJobId) {
+            existingJobId = await fetchActiveRunJob(currentUserId);
+            if (existingJobId) {
+              saveActiveRunJob(currentUserId, existingJobId);
+            }
+          }
+          if (existingJobId) {
+            currentRunJobId = existingJobId;
+            pollRunJob(existingJobId);
+          } else {
+            setRunStatus("");
+          }
           return true;
         }
 
@@ -2350,6 +3055,20 @@
         });
       }
 
+      function markSummaryAsRead(summaryId) {
+        if (!currentUserId || !summaryId || showingDoneSummaries) return false;
+        const readSummaryIds = getReadSummaryIds(currentUserId);
+        if (readSummaryIds.has(summaryId)) {
+          return false;
+        }
+        readSummaryIds.add(summaryId);
+        saveReadSummaryIds(currentUserId, readSummaryIds);
+        updateSummariesHeading(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
+        updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
+        updateHeroStats();
+        return true;
+      }
+
       function renderSummaryList(readSummaryIds) {
         currentSummaries = getVisibleSummaries();
         summaryList.innerHTML = "";
@@ -2359,6 +3078,7 @@
           const card = document.createElement("div");
           card.className = "summary-card";
           card.dataset.summaryId = summary.summary_id;
+          card.classList.toggle("is-read", !isUnread);
           card.innerHTML = `
             <input class="summary-check" type="checkbox" aria-label="Select summary" />
             <div class="summary-card-main">
@@ -2380,19 +3100,18 @@
             } else {
               addSelectedSummary(summary.summary_id);
             }
-            if (!showingDoneSummaries && !readSummaryIds.has(summary.summary_id)) {
-              readSummaryIds.add(summary.summary_id);
-              saveReadSummaryIds(currentUserId, readSummaryIds);
-              const badge = card.querySelector(".summary-unread");
-              if (badge) badge.remove();
-              updateSummariesHeading(Math.max(0, allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length));
-            }
             updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
             updateHeroStats();
           });
 
           card.addEventListener("click", async () => {
             currentSummaryId = summary.summary_id;
+            const justMarkedRead = markSummaryAsRead(summary.summary_id);
+            if (justMarkedRead) {
+              const badge = card.querySelector(".summary-unread");
+              if (badge) badge.remove();
+              card.classList.add("is-read");
+            }
             syncSummaryCheckboxes();
             await loadSummaryDetail(summary.summary_id, { preserveSelection: true });
           });
@@ -2698,6 +3417,7 @@
         try {
           const response = await fetch("/run-summarizer", {
             method: "POST",
+            keepalive: true,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               user_id: currentUserId,
@@ -2709,16 +3429,60 @@
           if (!response.ok) {
             const detail = data.detail || data;
             setRunStatus(`Run failed. ${detail.stderr || "No error details returned."}`);
+            runButton.disabled = false;
+            return;
+          }
+          currentRunJobId = data.job_id || "";
+          saveActiveRunJob(currentUserId, currentRunJobId);
+          await pollRunJob(currentRunJobId);
+        } catch (error) {
+          setRunStatus(`Run failed: ${error.message}`);
+          runButton.disabled = false;
+        }
+      }
+
+      async function pollRunJob(jobId) {
+        if (!jobId || !currentUserId) return;
+        clearRunPolling();
+        try {
+          const response = await fetch(
+            `/run-summarizer/status/${encodeURIComponent(jobId)}?user_id=${encodeURIComponent(currentUserId)}`
+          );
+          const data = await response.json();
+          if (!response.ok) {
+            saveActiveRunJob(currentUserId, "");
+            currentRunJobId = "";
+            runButton.disabled = false;
+            setRunStatus(data.detail || "Failed to load run status.");
             return;
           }
 
-          const stats = data.stats || {};
-          setRunStatus("");
-          await loadSummaries();
-        } catch (error) {
-          setRunStatus(`Run failed: ${error.message}`);
-        } finally {
+          if (data.status === "running") {
+            currentRunJobId = jobId;
+            runButton.disabled = true;
+            setRunStatus(
+              `Checking the last ${data.days_back || daysBackInput.value || 7} day(s) for new emails...\n${estimateRunTime(data.days_back || daysBackInput.value || 7)}`,
+              true
+            );
+            activeRunPollTimer = setTimeout(() => pollRunJob(jobId), 2000);
+            return;
+          }
+
+          saveActiveRunJob(currentUserId, "");
+          currentRunJobId = "";
           runButton.disabled = false;
+
+          if (data.success) {
+            setRunStatus("");
+            await loadSummaries();
+            return;
+          }
+
+          const detail = data.stderr || data.stdout || "No error details returned.";
+          setRunStatus(`Run failed. ${detail}`);
+        } catch (error) {
+          runButton.disabled = false;
+          setRunStatus(`Run failed: ${error.message}`);
         }
       }
 
@@ -2806,17 +3570,59 @@
           return;
         }
 
-        if (!(await openAppModal({
-          title: "Email Report",
-          message: "Would you like to send a combined report to your email?",
-        }))) {
+        const deliveryChoice = await openAppModal({
+          title: "Send Report",
+          message: "Choose how you want to send the selected summaries.",
+          confirmLabel: "Email",
+          cancelLabel: "Cancel",
+          altLabel: "Text",
+        });
+        if (!deliveryChoice) {
           return;
         }
 
         emailReportButton.disabled = true;
-        setRunStatus(`Sending report for ${summaryIds.length} selected summaries...`, true);
-
         try {
+          if (deliveryChoice?.alternate) {
+            const phoneResult = await openAppModal({
+              title: "Text Report",
+              message: "Enter the phone number that should receive the text and PDF link.",
+              confirmLabel: "Send Text",
+              cancelLabel: "Cancel",
+              withInput: true,
+              inputValue: "",
+              inputPlaceholder: "+14155550123",
+            });
+            if (!phoneResult?.confirmed) {
+              return;
+            }
+
+            const phoneNumber = String(phoneResult.value || "").trim();
+            if (!phoneNumber) {
+              setRunStatus("Enter a phone number first.");
+              return;
+            }
+
+            setRunStatus(`Sending text report for ${summaryIds.length} selected summaries...`, true);
+            const response = await fetch("/summaries/combined/send-text", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                user_id: currentUserId,
+                summary_ids: summaryIds,
+                phone_number: phoneNumber,
+              }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+              setRunStatus(data.detail || "Failed to send text report.");
+              return;
+            }
+            setRunStatus(`Sent text report to ${data.to}.`);
+            return;
+          }
+
+          setRunStatus(`Sending email report for ${summaryIds.length} selected summaries...`, true);
           const response = await fetch("/summaries/combined/send-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2827,12 +3633,12 @@
           });
           const data = await response.json();
           if (!response.ok) {
-            setRunStatus(data.detail || "Failed to send combined report.");
+            setRunStatus(data.detail || "Failed to send email report.");
             return;
           }
-          setRunStatus(`Sent combined report to ${data.recipient}.`);
+          setRunStatus(`Sent email report to ${data.recipient}.`);
         } catch (error) {
-          setRunStatus(`Failed to send combined report: ${error.message}`);
+          setRunStatus(`Failed to send report: ${error.message}`);
         } finally {
           emailReportButton.disabled = false;
         }
@@ -3239,6 +4045,7 @@
       }
 
       runButton.addEventListener("click", runSummarizer);
+      scheduleButton.addEventListener("click", openScheduleModal);
       logoutButton.addEventListener("click", logout);
       loadWhitelistButton.addEventListener("click", loadWhitelist);
       saveWhitelistButton.addEventListener("click", saveWhitelist);
@@ -3250,6 +4057,14 @@
       });
       contactsModalAddButton.addEventListener("click", addContactFromModal);
       contactsModalCloseButton.addEventListener("click", closeContactsModal);
+      scheduleModalCloseButton.addEventListener("click", closeScheduleModal);
+      scheduleModalCloseTopButton.addEventListener("click", closeScheduleModal);
+      savedSchedulesCloseButton.addEventListener("click", closeSavedSchedulesModal);
+      savedSchedulesCloseTopButton.addEventListener("click", closeSavedSchedulesModal);
+      scheduleChannelInput.addEventListener("change", updateScheduleChannelFields);
+      scheduleViewSavedButton.addEventListener("click", openSavedSchedulesModal);
+      scheduleResetButton.addEventListener("click", resetScheduleForm);
+      scheduleSaveButton.addEventListener("click", () => saveSchedule());
       settingsMenuButton.addEventListener("click", () => {
         window.location.href = "/settings";
       });
@@ -3264,7 +4079,7 @@
         }
       });
       togglePulseButton.addEventListener("click", () => {
-        setPulseCollapsed(!pulseCard.classList.contains("is-collapsed"));
+        setPulseCollapsed(!heroShell.classList.contains("is-collapsed"));
       });
       toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
@@ -3288,9 +4103,20 @@
           closeContactsModal();
         }
       });
+      scheduleModal.addEventListener("click", (event) => {
+        if (event.target === scheduleModal) {
+          closeScheduleModal();
+        }
+      });
+      savedSchedulesModal.addEventListener("click", (event) => {
+        if (event.target === savedSchedulesModal) {
+          closeSavedSchedulesModal();
+        }
+      });
       setPanelCollapsed(contactsBody, toggleContactsButton, true);
       setPanelCollapsed(chatBody, toggleChatButton, true);
       setPulseCollapsed(false);
+      resetScheduleForm();
       syncDoneViewControls();
       applyTheme(currentTheme);
       loadCurrentSession();

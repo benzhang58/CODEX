@@ -508,20 +508,6 @@
             </div>
             <button id="changeMailboxButton" type="button" class="secondary">Change Email Connection</button>
           </div>
-          <div id="mailboxForm" class="field-grid" hidden>
-            <div class="field">
-              <label for="mailboxEmailInput">Mailbox Email</label>
-              <input id="mailboxEmailInput" type="email" placeholder="you@example.com" />
-            </div>
-            <div class="field">
-              <label for="mailboxPasswordInput">Mailbox Password</label>
-              <input id="mailboxPasswordInput" type="password" placeholder="Enter your real email password" />
-            </div>
-          </div>
-          <div id="mailboxActions" class="row" hidden>
-            <span></span>
-            <button id="saveMailboxButton" type="button">Save Mailbox</button>
-          </div>
           <div id="mailboxStatus" class="status"></div>
         </div>
       </section>
@@ -664,17 +650,12 @@
       const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
       const mailboxSection = document.getElementById("mailboxSection");
-      const mailboxEmailInput = document.getElementById("mailboxEmailInput");
-      const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
       const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
       const mailboxConnectionStatusText = document.getElementById("mailboxConnectionStatusText");
       const mailboxConnectedSummary = document.getElementById("mailboxConnectedSummary");
       const mailboxConnectedLabel = document.getElementById("mailboxConnectedLabel");
       const mailboxConnectedEmail = document.getElementById("mailboxConnectedEmail");
-      const mailboxForm = document.getElementById("mailboxForm");
-      const mailboxActions = document.getElementById("mailboxActions");
       const changeMailboxButton = document.getElementById("changeMailboxButton");
-      const saveMailboxButton = document.getElementById("saveMailboxButton");
       const mailboxStatus = document.getElementById("mailboxStatus");
       const mailboxModal = document.getElementById("mailboxModal");
       const mailboxModalEmailInput = document.getElementById("mailboxModalEmailInput");
@@ -839,12 +820,6 @@
         mailboxConnectedLabel.textContent = showConnectedState ? "Mailbox connected" : "No mailbox connected";
         mailboxConnectedEmail.textContent = showConnectedState ? (connectedEmail || "Connected") : "Add your mailbox login to continue.";
         changeMailboxButton.textContent = showConnectedState ? "Change Email Connection" : "Add Email Connection";
-        mailboxForm.hidden = true;
-        mailboxActions.hidden = true;
-        mailboxEmailInput.disabled = true;
-        mailboxPasswordInput.disabled = true;
-        mailboxEmailInput.value = connectedEmail;
-        mailboxPasswordInput.value = showConnectedState ? "••••••••" : "";
       }
 
       function setMailboxConnectionStatus(connected) {
@@ -970,8 +945,6 @@
             return;
           }
           currentProfile = data.profile;
-          mailboxEmailInput.value = data.profile.settings?.imap_user || data.profile.email || "";
-          mailboxPasswordInput.value = "";
           syncMailboxConnectionUI();
           await refreshMailboxConnectionStatus();
           mailboxStatus.textContent = "Mailbox settings saved.";
@@ -1076,7 +1049,6 @@
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
       saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
-      saveMailboxButton.addEventListener("click", saveMailboxSettings);
       changeMailboxButton.addEventListener("click", openMailboxModal);
       cancelMailboxModalButton.addEventListener("click", closeMailboxModal);
       saveMailboxModalButton.addEventListener("click", saveMailboxSettings);

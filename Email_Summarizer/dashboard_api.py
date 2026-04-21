@@ -9,6 +9,7 @@ import secrets
 import smtplib
 import sqlite3
 import subprocess
+import threading
 import unicodedata
 import base64
 from functools import lru_cache
@@ -55,6 +56,10 @@ APP_CORS_ORIGINS = [
 ]
 SESSION_COOKIE_SECURE = os.getenv("EMAIL_SUMMARIZER_COOKIE_SECURE", "false").lower() == "true"
 SESSION_COOKIE_DOMAIN = os.getenv("EMAIL_SUMMARIZER_COOKIE_DOMAIN", "").strip() or None
+RUN_JOB_LOCK = threading.Lock()
+RUN_JOBS: Dict[str, Dict[str, Any]] = {}
+SCHEDULE_RUNNER_LOCK = threading.Lock()
+ACTIVE_SCHEDULE_RUNS: set[str] = set()
 
 app = FastAPI(title="Email Summarizer Dashboard API")
 
@@ -235,6 +240,8 @@ class SignupRequest(BaseModel):
     user_id: Optional[str] = None
     email: str
     password: str
+    birthday: str = ""
+    gender: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -378,6 +385,8 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
     settings["SMTP_PASSWORD"] = settings.get("SMTP_PASSWORD") or request.password
     settings["SUMMARY_RECIPIENT"] = settings.get("SUMMARY_RECIPIENT") or email
     settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
+    settings["BIRTHDAY"] = str(request.birthday or "").strip()
+    settings["GENDER"] = str(request.gender or "").strip()
 
     password_hash, password_salt = _hash_password(request.password)
     now = datetime.now().isoformat()
@@ -1239,6 +1248,8 @@ def default_profile_settings() -> Dict[str, str]:
     settings = {
         "FIRST_NAME": "",
         "LAST_NAME": "",
+        "BIRTHDAY": "",
+        "GENDER": "",
         "HOW_TO_SEEN": "false",
         "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM": "false",
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
@@ -1419,6 +1430,8 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
         "first_name": settings.get("FIRST_NAME", ""),
         "last_name": settings.get("LAST_NAME", ""),
+        "birthday": settings.get("BIRTHDAY", ""),
+        "gender": settings.get("GENDER", ""),
         "how_to_seen": str(settings.get("HOW_TO_SEEN", "false")).lower() == "true",
         "attachment_ai_enabled": str(settings.get("EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM", "false")).lower() == "true",
         "openai_model": normalize_openai_model(settings.get("OPENAI_MODEL", "gpt-5.1")),
@@ -1980,6 +1993,24 @@ def load_summary_json(summary_path: Path) -> Dict[str, Any]:
     return payload
 
 
+def load_all_current_summaries_for_user(user_id: str) -> List[Dict[str, Any]]:
+    json_summaries_dir = get_user_json_summaries_dir(user_id)
+    if json_summaries_dir.exists():
+        summary_files = sorted(json_summaries_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        return [
+            load_summary_json(path)
+            for path in summary_files
+            if not path.stem.startswith("overall_master_")
+        ]
+
+    summaries_dir = get_user_summaries_dir(user_id)
+    if summaries_dir.exists():
+        summary_files = sorted(summaries_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
+        return [load_summary_file(path) for path in summary_files]
+
+    return []
+
+
 def apply_contact_profile_to_summary(summary: Dict[str, Any], profiles: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
     sender = str(summary.get("sender", "") or "").strip().lower()
     if not sender:
@@ -2438,6 +2469,38 @@ def build_combined_report_markdown(summaries: List[Dict[str, Any]]) -> str:
     return "\n\n".join(blocks)
 
 
+def build_scheduled_report_markdown(summaries: List[Dict[str, Any]]) -> str:
+    blocks: List[str] = []
+
+    section_map = [
+        ("Executive Summary", "executive_summary"),
+        ("Main Topics", "main_topics"),
+        ("New Developments", "new_developments"),
+        ("Action Items / Asks", "action_items"),
+        ("Deadlines / Dates / Meetings", "deadlines"),
+        ("Attachment Summary", "attachment_summary"),
+        ("Bottom Line", "bottom_line"),
+    ]
+
+    for summary in summaries:
+        title = clean_summary_title(summary.get("title", ""), summary.get("summary_id", "Summary"))
+        parts = [f"## {title}"]
+
+        if summary.get("updated_at"):
+            parts.append(f"Updated: {summary.get('updated_at')}")
+
+        for section_title, key in section_map:
+            content = str(summary.get(key, "") or "").strip()
+            if not content:
+                continue
+            parts.append(f"### {section_title}")
+            parts.append(content)
+
+        blocks.append("\n\n".join(parts))
+
+    return "\n\n".join(blocks)
+
+
 def generate_combined_summary_content(user_id: str, summary_ids: List[str], request: Request) -> Dict[str, Any]:
     cleaned_summary_ids = [summary_id.strip() for summary_id in summary_ids if summary_id.strip()]
     if not cleaned_summary_ids:
@@ -2560,14 +2623,14 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
     )
 
 
-def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Dict[str, str]:
+def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recipient_override: Optional[str] = None) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
     smtp_host = settings.get("SMTP_HOST", "")
     smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
     smtp_user = settings.get("SMTP_USER", "")
     smtp_password = settings.get("SMTP_PASSWORD", "")
-    recipient = settings.get("SUMMARY_RECIPIENT") or settings.get("IMAP_USER") or profile.get("email", "")
+    recipient = recipient_override or settings.get("SUMMARY_RECIPIENT") or settings.get("IMAP_USER") or profile.get("email", "")
 
     if not all([smtp_host, smtp_user, smtp_password, recipient]):
         raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
@@ -2773,6 +2836,105 @@ def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] 
         "message_sid": str(response_payload.get("sid", "")),
         "delivery_channel": "sms",
     }
+
+
+def send_combined_report_via_sms(user_id: str, title: str, markdown: str, phone_number: str) -> Dict[str, Any]:
+    pdf_path = generate_report_pdf(user_id, title, markdown)
+    public_pdf_url = build_public_report_url(user_id, pdf_path)
+    message_body = render_markdown_report_text(title, markdown, max_chars=240) + f"\n\nOpen PDF: {public_pdf_url}"
+    media_url = public_pdf_url if should_attach_pdf_to_message(pdf_path) else None
+    delivery = send_text_via_twilio(phone_number, message_body, media_url=media_url)
+    return {
+        "pdf_url": public_pdf_url,
+        "pdf_attached": bool(media_url),
+        **delivery,
+    }
+
+
+def process_due_schedule(schedule_id: str) -> None:
+    with SCHEDULE_RUNNER_LOCK:
+        if schedule_id in ACTIVE_SCHEDULE_RUNS:
+            return
+        ACTIVE_SCHEDULE_RUNS.add(schedule_id)
+
+    try:
+        with get_db_connection() as connection:
+            schedule = connection.execute(
+                "SELECT * FROM report_schedules WHERE schedule_id = ?",
+                (schedule_id,),
+            ).fetchone()
+        if not schedule or not bool(schedule["active"]):
+            return
+
+        user_id = str(schedule["user_id"])
+        days_back = int(schedule["days_back"])
+        delivery_channel = str(schedule["delivery_channel"] or "email")
+        recipient_email = str(schedule["recipient_email"] or "").strip()
+        recipient_phone = str(schedule["recipient_phone"] or "").strip()
+
+        execute_summarizer_run(user_id, days_back)
+
+        summaries = load_all_current_summaries_for_user(user_id)
+        if summaries:
+            markdown = build_scheduled_report_markdown(summaries)
+            title = str(schedule["name"] or "Scheduled Report").strip() or "Scheduled Report"
+            if delivery_channel == "sms" and recipient_phone:
+                send_combined_report_via_sms(user_id, title, markdown, recipient_phone)
+            elif recipient_email:
+                send_combined_report_via_smtp(user_id, title, markdown, recipient_override=recipient_email)
+
+        now_dt = datetime.now(ZoneInfo(str(schedule["timezone"] or "America/Los_Angeles")))
+        next_run_at = compute_next_schedule_run(
+            now=now_dt,
+            timezone_name=str(schedule["timezone"] or "America/Los_Angeles"),
+            interval_value=int(schedule["interval_value"]),
+            interval_unit=str(schedule["interval_unit"]),
+            preferred_hour=int(schedule["preferred_hour"]),
+            preferred_minute=int(schedule["preferred_minute"]),
+            last_run_at=now_dt.isoformat(),
+        )
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                UPDATE report_schedules
+                SET last_run_at = ?, next_run_at = ?, updated_at = ?
+                WHERE schedule_id = ?
+                """,
+                (now_dt.isoformat(), next_run_at, datetime.now().isoformat(), schedule_id),
+            )
+    finally:
+        with SCHEDULE_RUNNER_LOCK:
+            ACTIVE_SCHEDULE_RUNS.discard(schedule_id)
+
+
+def schedule_runner_loop() -> None:
+    while True:
+        try:
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            with get_db_connection() as connection:
+                rows = connection.execute(
+                    "SELECT schedule_id, next_run_at FROM report_schedules WHERE active = 1"
+                ).fetchall()
+            for row in rows:
+                next_run_raw = str(row["next_run_at"] or "").strip()
+                if not next_run_raw:
+                    continue
+                try:
+                    next_run = datetime.fromisoformat(next_run_raw)
+                except Exception:
+                    continue
+                if next_run.tzinfo is None:
+                    next_run = next_run.replace(tzinfo=ZoneInfo("UTC"))
+                else:
+                    next_run = next_run.astimezone(ZoneInfo("UTC"))
+                if next_run <= now_utc:
+                    threading.Thread(target=process_due_schedule, args=(str(row["schedule_id"]),), daemon=True).start()
+        except Exception:
+            pass
+        threading.Event().wait(60)
+
+
+threading.Thread(target=schedule_runner_loop, daemon=True).start()
 
 
 @app.post("/chat")
@@ -2981,13 +3143,11 @@ def delete_summary_style_preference(payload: SummaryStylePreferenceRequest, requ
     return {"success": True, "user_id": resolved_user_id, "summary_style_preferences": preferences}
 
 
-@app.post("/run-summarizer")
-def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str, Any]:
-    resolved_user_id = resolve_user_id(request, payload.user_id)
+def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
     env = os.environ.copy()
-    env["CLIENT_NAME"] = resolved_user_id
-    env["PROFILE_USER_ID"] = resolved_user_id
-    env["DAYS_BACK"] = str(payload.days_back)
+    env["CLIENT_NAME"] = user_id
+    env["PROFILE_USER_ID"] = user_id
+    env["DAYS_BACK"] = str(days_back)
 
     result = subprocess.run(
         ["python3", "email_v13.py"],
@@ -2998,32 +3158,128 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
         timeout=600,
     )
 
-    response = {
-        "user_id": resolved_user_id,
-        "days_back": payload.days_back,
-        "returncode": result.returncode,
-        "stdout": result.stdout[-4000:],
-        "stderr": result.stderr[-4000:],
-        "success": result.returncode == 0,
-    }
-    if result.returncode != 0:
-        raise HTTPException(status_code=500, detail=response)
-
-    parsed_stats = {}
+    parsed_stats: Dict[str, Any] = {}
     for line in reversed(result.stdout.splitlines()):
         line = line.strip()
         if not line:
             continue
         try:
-            payload = json.loads(line)
+            parsed_payload = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and "stats" in payload:
-            parsed_stats = payload.get("stats") or {}
+        if isinstance(parsed_payload, dict) and "stats" in parsed_payload:
+            parsed_stats = parsed_payload.get("stats") or {}
             break
 
-    response["stats"] = parsed_stats
-    return response
+    return {
+        "returncode": result.returncode,
+        "stdout": result.stdout[-4000:],
+        "stderr": result.stderr[-4000:],
+        "stats": parsed_stats,
+        "success": result.returncode == 0,
+    }
+
+
+def launch_summarizer_job(user_id: str, days_back: int) -> Dict[str, Any]:
+    job_id = secrets.token_hex(12)
+    started_at = datetime.now().isoformat()
+    initial_job = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "days_back": days_back,
+        "status": "running",
+        "started_at": started_at,
+        "finished_at": None,
+        "returncode": None,
+        "stdout": "",
+        "stderr": "",
+        "stats": {},
+        "success": False,
+    }
+    with RUN_JOB_LOCK:
+        RUN_JOBS[job_id] = dict(initial_job)
+
+    def worker() -> None:
+        try:
+            result_payload = execute_summarizer_run(user_id, days_back)
+            final_job = {
+                "job_id": job_id,
+                "user_id": user_id,
+                "days_back": days_back,
+                "status": "completed" if result_payload["success"] else "failed",
+                "started_at": started_at,
+                "finished_at": datetime.now().isoformat(),
+                **result_payload,
+            }
+        except subprocess.TimeoutExpired as exc:
+            final_job = {
+                "job_id": job_id,
+                "user_id": user_id,
+                "days_back": days_back,
+                "status": "failed",
+                "started_at": started_at,
+                "finished_at": datetime.now().isoformat(),
+                "returncode": None,
+                "stdout": (exc.stdout or "")[-4000:],
+                "stderr": ((exc.stderr or "") + "\nTimed out after 600 seconds.")[-4000:],
+                "stats": {},
+                "success": False,
+            }
+        except Exception as exc:
+            final_job = {
+                "job_id": job_id,
+                "user_id": user_id,
+                "days_back": days_back,
+                "status": "failed",
+                "started_at": started_at,
+                "finished_at": datetime.now().isoformat(),
+                "returncode": None,
+                "stdout": "",
+                "stderr": str(exc),
+                "stats": {},
+                "success": False,
+            }
+
+        with RUN_JOB_LOCK:
+            RUN_JOBS[job_id] = final_job
+
+    threading.Thread(target=worker, daemon=True).start()
+    return dict(initial_job)
+
+
+@app.get("/run-summarizer/status/{job_id}")
+def get_run_summarizer_status(job_id: str, request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    with RUN_JOB_LOCK:
+        job = dict(RUN_JOBS.get(job_id) or {})
+    if not job or job.get("user_id") != resolved_user_id:
+        raise HTTPException(status_code=404, detail="Run job not found.")
+    return job
+
+
+@app.get("/run-summarizer/active")
+def get_active_run_summarizer_job(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    active_job: Dict[str, Any] = {}
+    with RUN_JOB_LOCK:
+        for job in RUN_JOBS.values():
+            if job.get("user_id") != resolved_user_id:
+                continue
+            if job.get("status") != "running":
+                continue
+            if not active_job or str(job.get("started_at") or "") > str(active_job.get("started_at") or ""):
+                active_job = dict(job)
+
+    return {
+        "user_id": resolved_user_id,
+        "job": active_job or None,
+    }
+
+
+@app.post("/run-summarizer")
+def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    return launch_summarizer_job(resolved_user_id, payload.days_back)
 
 
 @app.get("/summaries")
