@@ -136,7 +136,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
         connection.row_factory = sqlite3.Row
         try:
             row = connection.execute(
-                "SELECT email, settings_json FROM users WHERE user_id = ?",
+                "SELECT email, settings_json, microsoft_oauth_json FROM users WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
         finally:
@@ -146,6 +146,7 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
             payload = {
                 "email": row["email"],
                 "settings": decrypt_json_payload(row["settings_json"] or "{}", APP_STORAGE_DIR),
+                "microsoft_oauth": decrypt_json_payload(row["microsoft_oauth_json"] or "{}", APP_STORAGE_DIR),
             }
             source_label = f"database profile: {app_db_path}"
             config_reference_path = app_db_path
@@ -167,7 +168,16 @@ def load_profile_config_by_user_id(user_id: str, cwd: Path = Path(".")) -> Path:
         "SMTP_PORT": "465",
         "IMAP_FOLDER": "INBOX",
     }
-    if email_value.endswith("@gmail.com"):
+    microsoft_oauth = payload.get("microsoft_oauth") or {}
+    if str(microsoft_oauth.get("provider", "")).strip().lower() == "microsoft":
+        provider_defaults = {
+            "IMAP_SERVER": "outlook.office365.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp-mail.outlook.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif email_value.endswith("@gmail.com"):
         provider_defaults = {
             "IMAP_SERVER": "imap.gmail.com",
             "IMAP_PORT": "993",
@@ -361,7 +371,9 @@ class EmailSummarizer:
         self._all_folders: List[str] = []  # populated after connect
         self.profile_email = os.getenv("PROFILE_EMAIL", "").strip().lower()
         self.google_oauth = self._load_google_oauth()
+        self.microsoft_oauth = self._load_microsoft_oauth()
         self.use_gmail_api = self._should_use_gmail_api()
+        self.use_microsoft_imap_oauth = self._should_use_microsoft_imap_oauth()
         self.include_attachment_previews_in_llm = os.getenv(
             "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM",
             "false",
@@ -410,10 +422,39 @@ class EmailSummarizer:
         except Exception:
             return {}
 
+    def _load_microsoft_oauth(self) -> Dict[str, Any]:
+        app_db_path = APP_STORAGE_DIR / "app" / "app.db"
+        if not app_db_path.exists():
+            return {}
+        connection = sqlite3.connect(app_db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            row = connection.execute(
+                "SELECT microsoft_oauth_json FROM users WHERE user_id = ?",
+                (self.user_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if not row or not row["microsoft_oauth_json"]:
+            return {}
+        try:
+            payload = decrypt_json_payload(row["microsoft_oauth_json"], APP_STORAGE_DIR)
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
     def _should_use_gmail_api(self) -> bool:
         if not self.profile_email.endswith("@gmail.com"):
             return False
         return bool(self.google_oauth.get("refresh_token") or self.google_oauth.get("access_token"))
+
+    def _should_use_microsoft_imap_oauth(self) -> bool:
+        if self.use_gmail_api:
+            return False
+        provider = str(self.microsoft_oauth.get("provider", "")).strip().lower()
+        if provider != "microsoft":
+            return False
+        return bool(self.microsoft_oauth.get("refresh_token") or self.microsoft_oauth.get("access_token"))
 
     def _prune_path_tree(self, root: Path, retention_days: int):
         if retention_days <= 0 or not root.exists():
@@ -491,6 +532,55 @@ class EmailSummarizer:
             raise ValueError("Google token refresh did not return an access token.")
         self.google_oauth["access_token"] = new_access_token
         return new_access_token
+
+    def _microsoft_refresh_access_token(self) -> str:
+        refresh_token = str(self.microsoft_oauth.get("refresh_token", "")).strip()
+        access_token = str(self.microsoft_oauth.get("access_token", "")).strip()
+        if access_token and not refresh_token:
+            return access_token
+        if not refresh_token:
+            raise ValueError("Microsoft OAuth tokens are not available for this Outlook account.")
+
+        client_id = get_app_config_value("MICROSOFT_CLIENT_ID", APP_BASE_DIR)
+        client_secret = get_app_config_value("MICROSOFT_CLIENT_SECRET", APP_BASE_DIR)
+        tenant_id = get_app_config_value("MICROSOFT_TENANT_ID", APP_BASE_DIR) or "common"
+        if not client_id or not client_secret:
+            raise ValueError("Microsoft OAuth client settings are missing.")
+
+        body = urlencode(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+                "scope": "https://outlook.office.com/IMAP.AccessAsUser.All offline_access",
+            }
+        ).encode("utf-8")
+        request = UrlRequest(
+            f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            payload = exc.read().decode("utf-8", errors="replace")
+            raise ValueError(f"Microsoft token refresh failed: {payload}") from exc
+
+        new_access_token = str(payload.get("access_token", "")).strip()
+        if not new_access_token:
+            raise ValueError("Microsoft token refresh did not return an access token.")
+        self.microsoft_oauth["access_token"] = new_access_token
+        maybe_refresh_token = str(payload.get("refresh_token", "")).strip()
+        if maybe_refresh_token:
+            self.microsoft_oauth["refresh_token"] = maybe_refresh_token
+        return new_access_token
+
+    @staticmethod
+    def _build_xoauth2_string(user: str, access_token: str) -> bytes:
+        return f"user={user}\x01auth=Bearer {access_token}\x01\x01".encode("utf-8")
 
     def _gmail_api_json(self, path: str, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         access_token = self._gmail_refresh_access_token()
@@ -677,7 +767,13 @@ class EmailSummarizer:
         user     = os.getenv("IMAP_USER")
         password = os.getenv("IMAP_PASSWORD")
 
-        if not all([server, user, password]):
+        if self.use_microsoft_imap_oauth:
+            server = "outlook.office365.com"
+            port = 993
+            user = user or str(self.microsoft_oauth.get("email", "")).strip() or self.profile_email
+            if not all([server, user]):
+                raise ValueError("Missing Outlook IMAP settings for Microsoft OAuth mailbox access.")
+        elif not all([server, user, password]):
             raise ValueError("Missing IMAP credentials.")
 
         logger.info(f"Connecting to {server}:{port}")
@@ -686,7 +782,12 @@ class EmailSummarizer:
             mail.sock.settimeout(self.imap_timeout_seconds)
         except Exception:
             pass
-        mail.login(user, password)
+        if self.use_microsoft_imap_oauth:
+            access_token = self._microsoft_refresh_access_token()
+            auth_string = self._build_xoauth2_string(user, access_token)
+            mail.authenticate("XOAUTH2", lambda _: auth_string)
+        else:
+            mail.login(user, password)
         mail.select(self._primary_folder)
 
         self._all_folders = self._list_all_folders(mail)

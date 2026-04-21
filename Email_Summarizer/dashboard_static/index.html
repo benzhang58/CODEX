@@ -2830,6 +2830,7 @@
       async function loadCurrentSession() {
         const params = new URLSearchParams(window.location.search);
         const googleError = params.get("google_error");
+        const microsoftError = params.get("microsoft_error");
         const response = await fetch("/auth/me");
         const data = await response.json();
         if (data.authenticated && data.profile) {
@@ -2854,7 +2855,12 @@
         }
 
         resetSignedOutState();
-        const redirectUrl = googleError ? `/login?google_error=${encodeURIComponent(googleError)}` : "/login";
+        let redirectUrl = "/login";
+        if (googleError) {
+          redirectUrl = `/login?google_error=${encodeURIComponent(googleError)}`;
+        } else if (microsoftError) {
+          redirectUrl = `/login?microsoft_error=${encodeURIComponent(microsoftError)}`;
+        }
         window.location.href = redirectUrl;
         return false;
       }

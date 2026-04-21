@@ -98,6 +98,7 @@ MICROSOFT_OAUTH_SCOPES = [
     "profile",
     "offline_access",
     "User.Read",
+    "https://outlook.office.com/IMAP.AccessAsUser.All",
 ]
 
 
@@ -685,6 +686,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
     if not profile:
         user_id = user_id_from_email(email)
         settings = default_profile_settings()
+        settings = apply_provider_defaults(settings, email, force_outlook=True)
         settings["IMAP_USER"] = email
         settings["SMTP_USER"] = email
         settings["SUMMARY_RECIPIENT"] = email
@@ -1208,7 +1210,7 @@ def get_microsoft_oauth_config() -> Dict[str, str]:
     client_secret = get_app_config_value("MICROSOFT_CLIENT_SECRET")
     tenant = get_app_config_value("MICROSOFT_TENANT_ID") or "common"
     redirect_uri = get_app_config_value("MICROSOFT_REDIRECT_URI") or (
-        f"{PUBLIC_BASE_URL}/auth/microsoft/callback" if PUBLIC_BASE_URL else "http://127.0.0.1:8000/auth/microsoft/callback"
+        f"{PUBLIC_BASE_URL}/auth/microsoft/callback" if PUBLIC_BASE_URL else "http://localhost:8000/auth/microsoft/callback"
     )
     if not client_id or not client_secret:
         raise HTTPException(
@@ -1497,7 +1499,7 @@ def mark_profile_how_to_seen(user_id: str) -> Dict[str, Any]:
     return profile
 
 
-def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, str]:
+def apply_provider_defaults(settings: Dict[str, str], email: str, force_outlook: bool = False) -> Dict[str, str]:
     normalized = (email or "").strip().lower()
     merged = dict(settings)
     provider_defaults = {
@@ -1508,7 +1510,15 @@ def apply_provider_defaults(settings: Dict[str, str], email: str) -> Dict[str, s
         "IMAP_FOLDER": "INBOX",
     }
 
-    if normalized.endswith("@gmail.com"):
+    if force_outlook:
+        provider_defaults = {
+            "IMAP_SERVER": "outlook.office365.com",
+            "IMAP_PORT": "993",
+            "SMTP_HOST": "smtp-mail.outlook.com",
+            "SMTP_PORT": "587",
+            "IMAP_FOLDER": "INBOX",
+        }
+    elif normalized.endswith("@gmail.com"):
         provider_defaults = {
             "IMAP_SERVER": "imap.gmail.com",
             "IMAP_PORT": "993",
@@ -1537,10 +1547,14 @@ def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
         default_profile_settings(),
         decrypt_json_payload(row["settings_json"] or "{}", APP_STORAGE_DIR),
     )
-    settings = apply_provider_defaults(settings, row["email"])
-    settings["OPENAI_MODEL"] = normalize_openai_model(settings.get("OPENAI_MODEL"))
     google_oauth = decrypt_json_payload(row["google_oauth_json"] or "{}", APP_STORAGE_DIR)
     microsoft_oauth = decrypt_json_payload(row["microsoft_oauth_json"] or "{}", APP_STORAGE_DIR)
+    settings = apply_provider_defaults(
+        settings,
+        row["email"],
+        force_outlook=str((microsoft_oauth or {}).get("provider", "")).strip().lower() == "microsoft",
+    )
+    settings["OPENAI_MODEL"] = normalize_openai_model(settings.get("OPENAI_MODEL"))
     return {
         "user_id": row["user_id"],
         "email": row["email"],
@@ -1560,7 +1574,11 @@ def migrate_profile_json_to_db(user_id: str) -> Optional[Dict[str, Any]]:
         return None
     payload = json.loads(profile_path.read_text(encoding="utf-8"))
     payload["settings"] = merge_non_empty_settings(default_profile_settings(), payload.get("settings") or {})
-    payload["settings"] = apply_provider_defaults(payload["settings"], payload.get("email", ""))
+    payload["settings"] = apply_provider_defaults(
+        payload["settings"],
+        payload.get("email", ""),
+        force_outlook=str((payload.get("microsoft_oauth") or {}).get("provider", "")).strip().lower() == "microsoft",
+    )
     save_profile(payload)
     return payload
 
