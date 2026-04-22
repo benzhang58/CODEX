@@ -1934,43 +1934,6 @@ def set_contacts_for_user(user_id: str, contacts: List[str]) -> None:
     write_env_key(env_path, "WHITELIST_SENDERS", ",".join(cleaned_contacts))
 
 
-@app.get("/users")
-def list_available_users() -> Dict[str, Any]:
-    users = []
-    seen_user_ids = set()
-
-    with get_db_connection() as connection:
-        rows = connection.execute("SELECT * FROM users ORDER BY lower(email)").fetchall()
-
-    for row in rows:
-        profile = row_to_profile(row)
-        settings = profile.get("settings") or {}
-        contacts = [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
-        users.append(
-            {
-                "user_id": profile.get("user_id"),
-                "source": "profile",
-                "email": profile.get("email", ""),
-                "whitelist_contacts": contacts,
-            }
-        )
-        seen_user_ids.add(profile.get("user_id"))
-
-    for option in sorted(BASE_DIR.glob(".env*")):
-        if option.name == ".env":
-            label = "default"
-        elif option.name.startswith(".env."):
-            label = option.name.replace(".env.", "")
-        else:
-            continue
-        if label in seen_user_ids:
-            continue
-        env_values = read_env_key_values(option)
-        whitelist = [item.strip() for item in env_values.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
-        users.append({"user_id": label, "source": "env", "env_file": option.name, "whitelist_contacts": whitelist})
-    return {"users": users}
-
-
 @app.get("/whitelist")
 def get_whitelist(request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)

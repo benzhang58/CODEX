@@ -2078,10 +2078,9 @@
       function rememberOauthProvider(profile) {
         if (!profile) return;
         const provider = profile.google_connected ? "google" : profile.microsoft_connected ? "microsoft" : "";
-        const email = String(profile.email || "").trim().toLowerCase();
-        if (!provider || !email) return;
+        if (!provider) return;
         localStorage.setItem("oauth:lastProvider", provider);
-        localStorage.setItem("oauth:lastEmail", email);
+        sessionStorage.setItem("oauth:lastEmail", String(profile.email || "").trim().toLowerCase());
       }
 
       function getReadSummaryIds(userId) {
@@ -2731,6 +2730,30 @@
       }
 
       function applyProfileToForm(profile) {
+        const previousUserId = currentUserId;
+        if (previousUserId && profile.user_id && previousUserId !== profile.user_id) {
+          selectedSummaryIds = [];
+          currentSummaryId = null;
+          currentSummaries = [];
+          allSummaries = [];
+          currentDisplayedSummaryMarkdown = "";
+          currentDisplayedSummaryTitle = "";
+          currentDisplayedThreadAvailable = false;
+          contactsLoadedForUser = null;
+          currentContacts = [];
+          currentContactProfiles = {};
+          scheduleItems = [];
+          editingScheduleId = "";
+          editingScheduleActive = true;
+          summaryList.innerHTML = "";
+          summaryDetail.innerHTML = "No summary selected yet.";
+          sendSummaryEmailButton.hidden = true;
+          viewThreadButton.hidden = true;
+          detailStatus.textContent = "Select a summary to view it.";
+          chatLog.innerHTML = "";
+          chatComposer.value = "";
+          whitelistTextarea.value = "";
+        }
         currentProfile = profile;
         currentUserId = profile.user_id;
         rememberOauthProvider(profile);
@@ -2764,6 +2787,9 @@
         contactsLoadedForUser = null;
         currentContacts = [];
         currentContactProfiles = {};
+        scheduleItems = [];
+        editingScheduleId = "";
+        editingScheduleActive = true;
         accountBar.hidden = true;
         profilePanel.hidden = true;
         heroLabel.textContent = "Email Dashboard";
@@ -2877,6 +2903,10 @@
 
       async function logout() {
         await fetch("/auth/logout", { method: "POST" });
+        sessionStorage.removeItem("oauth:lastEmail");
+        sessionStorage.removeItem("oauth:attemptProvider");
+        sessionStorage.removeItem("oauth:attemptMode");
+        sessionStorage.removeItem("oauth:attemptEmail");
         resetSignedOutState();
         window.location.href = "/login";
       }

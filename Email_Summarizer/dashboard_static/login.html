@@ -177,24 +177,24 @@
       function getRememberedOauth() {
         return {
           provider: String(localStorage.getItem("oauth:lastProvider") || "").trim(),
-          email: String(localStorage.getItem("oauth:lastEmail") || "").trim().toLowerCase(),
+          email: String(sessionStorage.getItem("oauth:lastEmail") || "").trim().toLowerCase(),
         };
       }
 
       function setOauthAttempt(provider, mode, email = "") {
-        localStorage.setItem("oauth:attemptProvider", provider);
-        localStorage.setItem("oauth:attemptMode", mode);
+        sessionStorage.setItem("oauth:attemptProvider", provider);
+        sessionStorage.setItem("oauth:attemptMode", mode);
         if (email) {
-          localStorage.setItem("oauth:attemptEmail", email);
+          sessionStorage.setItem("oauth:attemptEmail", email);
         } else {
-          localStorage.removeItem("oauth:attemptEmail");
+          sessionStorage.removeItem("oauth:attemptEmail");
         }
       }
 
       function clearOauthAttempt() {
-        localStorage.removeItem("oauth:attemptProvider");
-        localStorage.removeItem("oauth:attemptMode");
-        localStorage.removeItem("oauth:attemptEmail");
+        sessionStorage.removeItem("oauth:attemptProvider");
+        sessionStorage.removeItem("oauth:attemptMode");
+        sessionStorage.removeItem("oauth:attemptEmail");
       }
 
       function startOauth(provider, mode = "interactive") {
@@ -271,9 +271,9 @@
           return;
         }
 
-        const attemptedProvider = String(localStorage.getItem("oauth:attemptProvider") || "").trim();
-        const attemptedMode = String(localStorage.getItem("oauth:attemptMode") || "").trim();
-        const attemptedEmail = String(localStorage.getItem("oauth:attemptEmail") || "").trim().toLowerCase();
+        const attemptedProvider = String(sessionStorage.getItem("oauth:attemptProvider") || "").trim();
+        const attemptedMode = String(sessionStorage.getItem("oauth:attemptMode") || "").trim();
+        const attemptedEmail = String(sessionStorage.getItem("oauth:attemptEmail") || "").trim().toLowerCase();
 
         if (googleError && attemptedProvider === "google" && attemptedMode === "silent") {
           clearOauthAttempt();
