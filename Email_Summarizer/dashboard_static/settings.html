@@ -668,6 +668,15 @@
       const logoutButton = document.getElementById("logoutButton");
       const deleteAccountButton = document.getElementById("deleteAccountButton");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+
+      function rememberOauthProvider(profile) {
+        if (!profile) return;
+        const provider = profile.google_connected ? "google" : profile.microsoft_connected ? "microsoft" : "";
+        const email = String(profile.email || "").trim().toLowerCase();
+        if (!provider || !email) return;
+        localStorage.setItem("oauth:lastProvider", provider);
+        localStorage.setItem("oauth:lastEmail", email);
+      }
       let currentProfile = null;
 
       function applyTheme(theme) {
@@ -881,6 +890,7 @@
         }
         mailboxSection.hidden = true;
         currentProfile = data.profile;
+        rememberOauthProvider(data.profile);
         settingsLoginEmail.textContent = data.profile.email || "Not available";
         settingsLoginMethod.textContent = data.profile.google_connected
           ? "Google OAuth"

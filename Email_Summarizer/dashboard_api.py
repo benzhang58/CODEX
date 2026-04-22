@@ -449,7 +449,11 @@ def delete_account(request: Request, response: Response) -> Dict[str, Any]:
 
 
 @app.get("/auth/google/start")
-def auth_google_start(next: str = "/dashboard") -> RedirectResponse:
+def auth_google_start(
+    next: str = "/dashboard",
+    login_hint: str = "",
+    prompt: str = "",
+) -> RedirectResponse:
     try:
         config = get_google_oauth_config()
     except HTTPException:
@@ -457,6 +461,8 @@ def auth_google_start(next: str = "/dashboard") -> RedirectResponse:
     state = secrets.token_urlsafe(24)
     GOOGLE_OAUTH_STATE[state] = {"next": next}
     scope = " ".join(GOOGLE_OAUTH_SCOPES)
+    login_hint_value = login_hint.strip()
+    prompt_value = prompt.strip()
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         f"?client_id={quote(config['client_id'], safe='')}"
@@ -466,6 +472,10 @@ def auth_google_start(next: str = "/dashboard") -> RedirectResponse:
         "&access_type=offline"
         f"&state={quote(state, safe='')}"
     )
+    if login_hint_value:
+        auth_url += f"&login_hint={quote(login_hint_value, safe='')}"
+    if prompt_value:
+        auth_url += f"&prompt={quote(prompt_value, safe='')}"
     response = RedirectResponse(auth_url)
     response.set_cookie(
         GOOGLE_OAUTH_STATE_COOKIE,
@@ -588,7 +598,11 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
 
 
 @app.get("/auth/microsoft/start")
-def auth_microsoft_start(next: str = "/dashboard") -> RedirectResponse:
+def auth_microsoft_start(
+    next: str = "/dashboard",
+    login_hint: str = "",
+    prompt: str = "",
+) -> RedirectResponse:
     try:
         config = get_microsoft_oauth_config()
     except HTTPException:
@@ -597,6 +611,8 @@ def auth_microsoft_start(next: str = "/dashboard") -> RedirectResponse:
     state = secrets.token_urlsafe(24)
     MICROSOFT_OAUTH_STATE[state] = {"next": next}
     scope = " ".join(MICROSOFT_OAUTH_SCOPES)
+    login_hint_value = login_hint.strip()
+    prompt_value = prompt.strip()
     auth_url = (
         f"https://login.microsoftonline.com/{quote(config['tenant'], safe='')}/oauth2/v2.0/authorize"
         f"?client_id={quote(config['client_id'], safe='')}"
@@ -606,6 +622,10 @@ def auth_microsoft_start(next: str = "/dashboard") -> RedirectResponse:
         f"&scope={quote(scope, safe='')}"
         f"&state={quote(state, safe='')}"
     )
+    if login_hint_value:
+        auth_url += f"&login_hint={quote(login_hint_value, safe='')}"
+    if prompt_value:
+        auth_url += f"&prompt={quote(prompt_value, safe='')}"
     response = RedirectResponse(auth_url)
     response.set_cookie(
         MICROSOFT_OAUTH_STATE_COOKIE,

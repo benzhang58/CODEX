@@ -155,8 +155,8 @@
 
       <div class="actions">
         <button id="loginButton" type="button">Log In</button>
-        <a class="secondary-button" href="/auth/google/start">Continue with Google</a>
-        <a class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
+        <a id="googleOauthButton" class="secondary-button" href="/auth/google/start">Continue with Google</a>
+        <a id="microsoftOauthButton" class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
       </div>
 
       <div class="create-account-row">
@@ -170,7 +170,57 @@
       const emailInput = document.getElementById("emailInput");
       const passwordInput = document.getElementById("passwordInput");
       const loginButton = document.getElementById("loginButton");
+      const googleOauthButton = document.getElementById("googleOauthButton");
+      const microsoftOauthButton = document.getElementById("microsoftOauthButton");
       const status = document.getElementById("status");
+
+      function getRememberedOauth() {
+        return {
+          provider: String(localStorage.getItem("oauth:lastProvider") || "").trim(),
+          email: String(localStorage.getItem("oauth:lastEmail") || "").trim().toLowerCase(),
+        };
+      }
+
+      function setOauthAttempt(provider, mode, email = "") {
+        localStorage.setItem("oauth:attemptProvider", provider);
+        localStorage.setItem("oauth:attemptMode", mode);
+        if (email) {
+          localStorage.setItem("oauth:attemptEmail", email);
+        } else {
+          localStorage.removeItem("oauth:attemptEmail");
+        }
+      }
+
+      function clearOauthAttempt() {
+        localStorage.removeItem("oauth:attemptProvider");
+        localStorage.removeItem("oauth:attemptMode");
+        localStorage.removeItem("oauth:attemptEmail");
+      }
+
+      function startOauth(provider, mode = "interactive") {
+        const remembered = getRememberedOauth();
+        const rememberedEmail = remembered.provider === provider ? remembered.email : "";
+        const params = new URLSearchParams();
+        if (rememberedEmail) {
+          params.set("login_hint", rememberedEmail);
+        }
+        if (mode === "silent") {
+          params.set("prompt", "none");
+        }
+        const query = params.toString();
+        setOauthAttempt(provider, mode, rememberedEmail);
+        window.location.href = `/auth/${provider}/start${query ? `?${query}` : ""}`;
+      }
+
+      function beginOauth(provider) {
+        const remembered = getRememberedOauth();
+        if (remembered.provider === provider && remembered.email) {
+          status.textContent = `Checking ${provider === "google" ? "Google" : "Microsoft"} session...`;
+          startOauth(provider, "silent");
+          return;
+        }
+        startOauth(provider, "interactive");
+      }
 
       function looksLikeEmail(value) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
@@ -216,11 +266,41 @@
         const response = await fetch("/auth/me");
         const data = await response.json();
         if (data.authenticated) {
+          clearOauthAttempt();
           window.location.href = "/dashboard";
           return;
         }
 
+        const attemptedProvider = String(localStorage.getItem("oauth:attemptProvider") || "").trim();
+        const attemptedMode = String(localStorage.getItem("oauth:attemptMode") || "").trim();
+        const attemptedEmail = String(localStorage.getItem("oauth:attemptEmail") || "").trim().toLowerCase();
+
+        if (googleError && attemptedProvider === "google" && attemptedMode === "silent") {
+          clearOauthAttempt();
+          status.textContent = "Continuing with Google...";
+          setOauthAttempt("google", "interactive", attemptedEmail);
+          const params = new URLSearchParams();
+          if (attemptedEmail) {
+            params.set("login_hint", attemptedEmail);
+          }
+          window.location.href = `/auth/google/start${params.toString() ? `?${params.toString()}` : ""}`;
+          return;
+        }
+
+        if (microsoftError && attemptedProvider === "microsoft" && attemptedMode === "silent") {
+          clearOauthAttempt();
+          status.textContent = "Continuing with Microsoft...";
+          const params = new URLSearchParams();
+          if (attemptedEmail) {
+            params.set("login_hint", attemptedEmail);
+          }
+          setOauthAttempt("microsoft", "interactive", attemptedEmail);
+          window.location.href = `/auth/microsoft/start${params.toString() ? `?${params.toString()}` : ""}`;
+          return;
+        }
+
         if (googleError) {
+          clearOauthAttempt();
           status.textContent =
             googleError === "not_configured"
               ? "Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first."
@@ -229,6 +309,7 @@
         }
 
         if (microsoftError) {
+          clearOauthAttempt();
           status.textContent =
             microsoftError === "not_configured"
               ? "Microsoft sign-in is not configured yet. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET first."
@@ -242,6 +323,14 @@
           event.preventDefault();
           login();
         }
+      });
+      googleOauthButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        beginOauth("google");
+      });
+      microsoftOauthButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        beginOauth("microsoft");
       });
       loadSession();
     </script>

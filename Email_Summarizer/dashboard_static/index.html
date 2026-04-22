@@ -2075,6 +2075,15 @@
       let editingScheduleId = "";
       let editingScheduleActive = true;
 
+      function rememberOauthProvider(profile) {
+        if (!profile) return;
+        const provider = profile.google_connected ? "google" : profile.microsoft_connected ? "microsoft" : "";
+        const email = String(profile.email || "").trim().toLowerCase();
+        if (!provider || !email) return;
+        localStorage.setItem("oauth:lastProvider", provider);
+        localStorage.setItem("oauth:lastEmail", email);
+      }
+
       function getReadSummaryIds(userId) {
         try {
           const raw = localStorage.getItem(`readSummaries:${userId}`);
@@ -2724,6 +2733,7 @@
       function applyProfileToForm(profile) {
         currentProfile = profile;
         currentUserId = profile.user_id;
+        rememberOauthProvider(profile);
         userIdInput.value = profile.user_id;
         const { firstName, lastName } = getProfileNameParts(profile);
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
