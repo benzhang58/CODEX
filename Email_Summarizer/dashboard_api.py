@@ -1287,6 +1287,19 @@ def is_microsoft_guest_upn(value: str) -> bool:
     return "#ext#" in text or text.endswith(".onmicrosoft.com")
 
 
+def normalize_microsoft_display_email(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if "#ext#@" not in text:
+        return text
+    local_part = text.split("#ext#@", 1)[0]
+    if "_" not in local_part:
+        return text
+    mailbox_local, mailbox_domain = local_part.split("_", 1)
+    if not mailbox_local or not mailbox_domain or "." not in mailbox_domain:
+        return text
+    return f"{mailbox_local}@{mailbox_domain}"
+
+
 def resolve_microsoft_account_email(userinfo: Dict[str, Any], token_payload: Dict[str, Any]) -> str:
     claims = decode_jwt_payload(str(token_payload.get("id_token", "")))
     candidates = [
@@ -1725,6 +1738,7 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
         oauth_email = str((profile.get("microsoft_oauth") or {}).get("email", "")).strip()
         if oauth_email:
             response_email = oauth_email
+        response_email = normalize_microsoft_display_email(response_email)
     return {
         "user_id": profile["user_id"],
         "email": response_email,

@@ -473,6 +473,7 @@
             <button id="addSummaryPreferenceButton" type="button">Add</button>
           </div>
           <div id="summaryPreferenceList" class="preference-list"></div>
+          <div id="summaryPreferenceStatus" class="status"></div>
         </div>
       </section>
 
@@ -646,6 +647,7 @@
       const summaryPreferenceInput = document.getElementById("summaryPreferenceInput");
       const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
       const summaryPreferenceList = document.getElementById("summaryPreferenceList");
+      const summaryPreferenceStatus = document.getElementById("summaryPreferenceStatus");
       const attachmentAiToggle = document.getElementById("attachmentAiToggle");
       const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
@@ -994,6 +996,7 @@
         if (!preference) return;
 
         addSummaryPreferenceButton.disabled = true;
+        summaryPreferenceStatus.textContent = "Saving summary preference...";
         try {
           const response = await fetch("/summary-style-preferences", {
             method: "POST",
@@ -1005,16 +1008,16 @@
           });
           const data = await response.json();
           if (!response.ok) {
-            profileNameStatus.textContent = data.detail || "Failed to save summary preference.";
+            summaryPreferenceStatus.textContent = data.detail || "Failed to save summary preference.";
             return;
           }
           currentProfile.settings = currentProfile.settings || {};
           currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
           summaryPreferenceInput.value = "";
           renderSummaryPreferences(currentProfile.settings.summary_style_preferences);
-          profileNameStatus.textContent = "Summary preference saved.";
+          summaryPreferenceStatus.textContent = "Summary preference saved.";
         } catch (error) {
-          profileNameStatus.textContent = `Failed to save summary preference: ${error.message}`;
+          summaryPreferenceStatus.textContent = `Failed to save summary preference: ${error.message}`;
         } finally {
           addSummaryPreferenceButton.disabled = false;
         }
@@ -1022,6 +1025,7 @@
 
       async function removeSummaryPreference(preference) {
         if (!currentProfile || !preference) return;
+        summaryPreferenceStatus.textContent = "Removing summary preference...";
         try {
           const response = await fetch("/summary-style-preferences/remove", {
             method: "POST",
@@ -1033,15 +1037,15 @@
           });
           const data = await response.json();
           if (!response.ok) {
-            profileNameStatus.textContent = data.detail || "Failed to remove summary preference.";
+            summaryPreferenceStatus.textContent = data.detail || "Failed to remove summary preference.";
             return;
           }
           currentProfile.settings = currentProfile.settings || {};
           currentProfile.settings.summary_style_preferences = data.summary_style_preferences || [];
           renderSummaryPreferences(currentProfile.settings.summary_style_preferences);
-          profileNameStatus.textContent = "Summary preference removed.";
+          summaryPreferenceStatus.textContent = "Summary preference removed.";
         } catch (error) {
-          profileNameStatus.textContent = `Failed to remove summary preference: ${error.message}`;
+          summaryPreferenceStatus.textContent = `Failed to remove summary preference: ${error.message}`;
         }
       }
 
