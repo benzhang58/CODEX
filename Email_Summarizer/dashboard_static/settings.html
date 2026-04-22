@@ -819,9 +819,12 @@
       function syncMailboxConnectionUI() {
         const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
         mailboxSection.hidden = !isPasswordBased;
+        mailboxSection.style.display = isPasswordBased ? "" : "none";
         if (!isPasswordBased) {
           mailboxConnectedSummary.hidden = true;
           mailboxStatus.textContent = "";
+          mailboxConnectionStatus.classList.remove("connected", "disconnected");
+          mailboxConnectionStatusText.textContent = "";
           return;
         }
 
@@ -844,7 +847,11 @@
 
       async function refreshMailboxConnectionStatus() {
         const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
-        if (!isPasswordBased || !currentProfile?.user_id) return;
+        if (!isPasswordBased || !currentProfile?.user_id) {
+          mailboxSection.hidden = true;
+          mailboxSection.style.display = "none";
+          return;
+        }
 
         setMailboxConnectionStatus(Boolean(currentProfile?.settings?.mailbox_connected));
         try {
@@ -888,6 +895,7 @@
           return;
         }
         mailboxSection.hidden = true;
+        mailboxSection.style.display = "none";
         currentProfile = data.profile;
         rememberOauthProvider(data.profile);
         settingsLoginEmail.textContent = data.profile.email || "Not available";
