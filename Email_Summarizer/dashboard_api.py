@@ -505,7 +505,14 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
     if error:
         return RedirectResponse(f"/dashboard?google_error={quote(error, safe='')}")
     cookie_state = request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)
-    if not code or not state or not cookie_state or state != cookie_state:
+    known_state = GOOGLE_OAUTH_STATE.get(state or "")
+    if not code or not state:
+        return RedirectResponse("/dashboard?google_error=invalid_callback")
+    if cookie_state and state == cookie_state:
+        pass
+    elif known_state:
+        pass
+    else:
         return RedirectResponse("/dashboard?google_error=invalid_callback")
 
     config = get_google_oauth_config()
@@ -656,7 +663,14 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         return RedirectResponse(f"/dashboard?microsoft_error={quote(error, safe='')}")
 
     cookie_state = request.cookies.get(MICROSOFT_OAUTH_STATE_COOKIE)
-    if not code or not state or not cookie_state or state != cookie_state:
+    known_state = MICROSOFT_OAUTH_STATE.get(state or "")
+    if not code or not state:
+        return RedirectResponse("/dashboard?microsoft_error=invalid_callback")
+    if cookie_state and state == cookie_state:
+        pass
+    elif known_state:
+        pass
+    else:
         return RedirectResponse("/dashboard?microsoft_error=invalid_callback")
 
     config = get_microsoft_oauth_config()
