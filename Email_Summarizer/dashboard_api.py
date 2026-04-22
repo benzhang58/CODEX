@@ -545,6 +545,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         settings["IMAP_USER"] = email
         settings["SMTP_USER"] = email
         settings["SUMMARY_RECIPIENT"] = email
+        settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
         random_password = secrets.token_urlsafe(24)
         password_hash, password_salt = _hash_password(random_password)
         now = datetime.now().isoformat()
@@ -569,6 +570,11 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         "id_token": token_payload.get("id_token", ""),
         "updated_at": datetime.now().isoformat(),
     }
+    profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"]["IMAP_USER"] = profile["settings"].get("IMAP_USER") or email
+    profile["settings"]["SMTP_USER"] = profile["settings"].get("SMTP_USER") or email
+    profile["settings"]["SUMMARY_RECIPIENT"] = profile["settings"].get("SUMMARY_RECIPIENT") or email
+    profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     save_profile(profile)
 
     if profile_requires_how_to_onboarding(profile):
@@ -690,6 +696,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         settings["IMAP_USER"] = email
         settings["SMTP_USER"] = email
         settings["SUMMARY_RECIPIENT"] = email
+        settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
         random_password = secrets.token_urlsafe(24)
         password_hash, password_salt = _hash_password(random_password)
         now = datetime.now().isoformat()
@@ -715,6 +722,12 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         "id_token": token_payload.get("id_token", ""),
         "updated_at": datetime.now().isoformat(),
     }
+    profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = apply_provider_defaults(profile["settings"], email, force_outlook=True)
+    profile["settings"]["IMAP_USER"] = profile["settings"].get("IMAP_USER") or email
+    profile["settings"]["SMTP_USER"] = profile["settings"].get("SMTP_USER") or email
+    profile["settings"]["SUMMARY_RECIPIENT"] = profile["settings"].get("SUMMARY_RECIPIENT") or email
+    profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     save_profile(profile)
 
     if profile_requires_how_to_onboarding(profile):
@@ -970,7 +983,11 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
     if google_connected or microsoft_connected:
-        raise HTTPException(status_code=400, detail="Mailbox status is only used for non-Gmail and non-Outlook accounts.")
+        return {
+            "connected": True,
+            "status": "Connected",
+            "reason": "oauth_connected",
+        }
 
     settings = apply_provider_defaults(
         merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {}),
@@ -1660,6 +1677,9 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
     auth_provider = "google" if google_connected else "microsoft" if microsoft_connected else "password"
+    response_settings = profile_settings_to_response(settings)
+    if google_connected or microsoft_connected:
+        response_settings["mailbox_connected"] = True
     return {
         "user_id": profile["user_id"],
         "email": profile.get("email", ""),
@@ -1670,7 +1690,7 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
         "google_connected": google_connected,
         "microsoft_connected": microsoft_connected,
         "auth_provider": auth_provider,
-        "settings": profile_settings_to_response(settings),
+        "settings": response_settings,
     }
 
 
