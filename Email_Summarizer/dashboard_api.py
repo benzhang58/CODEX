@@ -681,7 +681,8 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         return response
 
-    email = str(userinfo.get("mail") or userinfo.get("userPrincipalName") or "").strip().lower()
+    fallback_email = str(userinfo.get("mail") or userinfo.get("userPrincipalName") or "").strip().lower()
+    email = resolve_microsoft_account_email(userinfo, token_payload) or fallback_email
     if not email:
         response = RedirectResponse("/dashboard?microsoft_error=no_email_returned")
         response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -689,6 +690,8 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         return response
 
     profile = find_profile_by_email(email)
+    if not profile and fallback_email and fallback_email != email:
+        profile = find_profile_by_email(fallback_email)
     if not profile:
         user_id = user_id_from_email(email)
         settings = default_profile_settings()
@@ -709,6 +712,8 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
             "updated_at": now,
             "settings": settings,
         }
+    else:
+        profile["email"] = email
 
     profile["microsoft_oauth"] = {
         "provider": "microsoft",
@@ -1263,6 +1268,41 @@ def get_json_with_bearer(url: str, access_token: str, error_prefix: str = "OAuth
         raise HTTPException(status_code=500, detail=f"{error_prefix}: {payload}") from exc
 
 
+def decode_jwt_payload(token: str) -> Dict[str, Any]:
+    token_text = str(token or "").strip()
+    if not token_text or token_text.count(".") < 2:
+        return {}
+    try:
+        payload_segment = token_text.split(".")[1]
+        padding = "=" * (-len(payload_segment) % 4)
+        decoded = base64.urlsafe_b64decode((payload_segment + padding).encode("utf-8")).decode("utf-8")
+        payload = json.loads(decoded)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def is_microsoft_guest_upn(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return "#ext#" in text or text.endswith(".onmicrosoft.com")
+
+
+def resolve_microsoft_account_email(userinfo: Dict[str, Any], token_payload: Dict[str, Any]) -> str:
+    claims = decode_jwt_payload(str(token_payload.get("id_token", "")))
+    candidates = [
+        str(userinfo.get("mail") or "").strip().lower(),
+        str(claims.get("preferred_username") or "").strip().lower(),
+        str(claims.get("email") or "").strip().lower(),
+        str(claims.get("upn") or "").strip().lower(),
+        str(userinfo.get("userPrincipalName") or "").strip().lower(),
+    ]
+    candidates = [candidate for candidate in candidates if candidate and "@" in candidate]
+    for candidate in candidates:
+        if not is_microsoft_guest_upn(candidate):
+            return candidate
+    return candidates[0] if candidates else ""
+
+
 def default_profile_settings() -> Dict[str, str]:
     settings = {
         "FIRST_NAME": "",
@@ -1680,9 +1720,14 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
     response_settings = profile_settings_to_response(settings)
     if google_connected or microsoft_connected:
         response_settings["mailbox_connected"] = True
+    response_email = profile.get("email", "")
+    if microsoft_connected:
+        oauth_email = str((profile.get("microsoft_oauth") or {}).get("email", "")).strip()
+        if oauth_email:
+            response_email = oauth_email
     return {
         "user_id": profile["user_id"],
-        "email": profile.get("email", ""),
+        "email": response_email,
         "created_at": profile.get("created_at"),
         "updated_at": profile.get("updated_at"),
         "contacts": contacts,
