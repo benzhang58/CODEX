@@ -647,7 +647,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         "id_token": token_payload.get("id_token", ""),
         "updated_at": datetime.now().isoformat(),
     }
-    profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
     profile["settings"] = apply_profile_name_defaults(profile["settings"], display_name)
     profile["settings"]["IMAP_USER"] = profile["settings"].get("IMAP_USER") or email
     profile["settings"]["SMTP_USER"] = profile["settings"].get("SMTP_USER") or email
@@ -824,7 +824,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         "id_token": token_payload.get("id_token", ""),
         "updated_at": datetime.now().isoformat(),
     }
-    profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
     profile["settings"] = apply_profile_name_defaults(profile["settings"], display_name)
     profile["settings"] = apply_provider_defaults(profile["settings"], email, force_outlook=True)
     profile["settings"]["IMAP_USER"] = profile["settings"].get("IMAP_USER") or email
@@ -1102,7 +1102,7 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
         }
 
     settings = apply_provider_defaults(
-        merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {}),
+        merge_stored_settings(default_profile_settings(), profile.get("settings") or {}),
         profile.get("email", ""),
     )
     email = str(settings.get("IMAP_USER", "")).strip()
@@ -1598,7 +1598,7 @@ def encode_summary_style_preferences(preferences: List[str]) -> str:
 
 def add_summary_style_preference(user_id: str, preference: str) -> List[str]:
     profile = load_profile_or_404(user_id)
-    settings = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
     preferences = parse_summary_style_preferences(settings)
     preferences.append(preference)
     settings["SUMMARY_STYLE_PREFERENCES"] = encode_summary_style_preferences(preferences)
@@ -1609,7 +1609,7 @@ def add_summary_style_preference(user_id: str, preference: str) -> List[str]:
 
 def remove_summary_style_preference(user_id: str, preference: str) -> List[str]:
     profile = load_profile_or_404(user_id)
-    settings = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
     target = preference.strip().lower()
     preferences = [
         item for item in parse_summary_style_preferences(settings)
@@ -1681,8 +1681,17 @@ def merge_non_empty_settings(base: Dict[str, str], overrides: Dict[str, Any]) ->
     return merged
 
 
+def merge_stored_settings(base: Dict[str, str], overrides: Dict[str, Any]) -> Dict[str, str]:
+    merged = dict(base)
+    for key, value in (overrides or {}).items():
+        if value is None:
+            continue
+        merged[str(key)] = str(value)
+    return merged
+
+
 def profile_requires_how_to_onboarding(profile: Dict[str, Any]) -> bool:
-    settings = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
     how_to_seen = str(settings.get("HOW_TO_SEEN", "false")).lower() == "true"
@@ -1691,7 +1700,7 @@ def profile_requires_how_to_onboarding(profile: Dict[str, Any]) -> bool:
 
 def mark_profile_how_to_seen(user_id: str) -> Dict[str, Any]:
     profile = load_profile_or_404(user_id)
-    profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
     profile["settings"]["HOW_TO_SEEN"] = "true"
     save_profile(profile)
     return profile
@@ -1741,7 +1750,7 @@ def apply_provider_defaults(settings: Dict[str, str], email: str, force_outlook:
 
 
 def row_to_profile(row: sqlite3.Row) -> Dict[str, Any]:
-    settings = merge_non_empty_settings(
+    settings = merge_stored_settings(
         default_profile_settings(),
         decrypt_json_payload(row["settings_json"] or "{}", APP_STORAGE_DIR),
     )
@@ -1771,7 +1780,7 @@ def migrate_profile_json_to_db(user_id: str) -> Optional[Dict[str, Any]]:
     if not profile_path.exists():
         return None
     payload = json.loads(profile_path.read_text(encoding="utf-8"))
-    payload["settings"] = merge_non_empty_settings(default_profile_settings(), payload.get("settings") or {})
+    payload["settings"] = merge_stored_settings(default_profile_settings(), payload.get("settings") or {})
     payload["settings"] = apply_provider_defaults(
         payload["settings"],
         payload.get("email", ""),

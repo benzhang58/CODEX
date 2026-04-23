@@ -897,6 +897,8 @@
 
       .modal-card {
         width: min(520px, 100%);
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: var(--radius-xl);
@@ -905,6 +907,11 @@
         padding: 24px;
         display: grid;
         gap: 16px;
+      }
+
+      #appModal .modal-card.is-howto-modal {
+        width: min(1240px, 96vw);
+        max-height: min(86vh, 760px);
       }
 
       .modal-card h3 {
@@ -921,7 +928,7 @@
 
       .howto-popup {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 10px 12px;
       }
 
@@ -957,6 +964,12 @@
         margin: 0;
         color: var(--muted);
         line-height: 1.45;
+      }
+
+      @media (max-width: 1200px) {
+        .howto-popup {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
 
       @media (max-width: 900px) {
@@ -1242,17 +1255,11 @@
 
       .contacts-minus-button,
       .contacts-person-button {
-        width: 34px;
-        height: 34px;
-        font-size: 20px;
-        border-radius: 10px;
-      }
-
-      .contacts-person-button {
-        background: var(--accent);
-        color: #fff;
         width: 42px;
         height: 42px;
+        min-width: 42px;
+        min-height: 42px;
+        font-size: 20px;
         border-radius: 14px;
       }
 
@@ -1377,7 +1384,7 @@
 
       .hero-top {
         display: grid;
-        grid-template-columns: 1.2fr 0.8fr;
+        grid-template-columns: minmax(0, 1fr) 566px;
         align-items: flex-start;
         gap: 18px;
       }
@@ -1521,7 +1528,7 @@
 
       .hero-bottom {
         display: grid;
-        grid-template-columns: 1.2fr 0.8fr;
+        grid-template-columns: minmax(0, 1fr) 566px;
         gap: 18px;
       }
 
@@ -1787,7 +1794,7 @@
               <div class="stat-note">Unread Summaries</div>
             </div>
             <div class="stat-card">
-              <div class="stat-label">Tracked contacts</div>
+              <div class="stat-label">Contacts</div>
               <div id="statContactCount" class="stat-value">0</div>
               <div class="stat-note">Total Contacts</div>
             </div>
@@ -1967,7 +1974,7 @@
     </div>
 
     <div id="appModal" class="modal-overlay" hidden>
-      <div class="modal-card">
+      <div id="appModalCard" class="modal-card">
         <h3 id="appModalTitle">Confirm</h3>
         <div id="appModalMessage" class="modal-copy"></div>
         <textarea id="appModalInput" class="modal-textarea" hidden></textarea>
@@ -2162,6 +2169,7 @@
       const pulseCard = document.getElementById("pulseCard");
       const togglePulseButton = document.getElementById("togglePulseButton");
       const appModal = document.getElementById("appModal");
+      const appModalCard = document.getElementById("appModalCard");
       const appModalTitle = document.getElementById("appModalTitle");
       const appModalMessage = document.getElementById("appModalMessage");
       const appModalInput = document.getElementById("appModalInput");
@@ -2432,6 +2440,7 @@
 
       function closeAppModal(result = null) {
         appModal.hidden = true;
+        appModalCard.classList.remove("is-howto-modal");
         activeModalResolver?.(result);
         activeModalResolver = null;
       }
@@ -2781,7 +2790,9 @@
         inputValue = "",
         inputPlaceholder = "",
       }) {
+        const isHowToModal = title === "How To" || String(messageHtml || "").includes("howto-popup");
         appModalTitle.textContent = title || "Confirm";
+        appModalCard.classList.toggle("is-howto-modal", isHowToModal);
         if (messageHtml) {
           appModalMessage.innerHTML = messageHtml;
         } else {
