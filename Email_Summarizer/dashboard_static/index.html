@@ -2112,6 +2112,17 @@
       let scheduleItems = [];
       let editingScheduleId = "";
       let editingScheduleActive = true;
+      const SCHEDULE_TIMEZONE_LABELS = {
+        "America/Los_Angeles": "Pacific Time",
+        "America/Denver": "Mountain Time",
+        "America/Chicago": "Central Time",
+        "America/New_York": "Eastern Time",
+        "Europe/London": "London",
+        "Europe/Paris": "Paris",
+        "Asia/Shanghai": "Shanghai",
+        "Asia/Hong_Kong": "Hong Kong",
+        "Asia/Tokyo": "Tokyo",
+      };
 
       function rememberOauthProvider(profile) {
         if (!profile) return;
@@ -2333,6 +2344,39 @@
         return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
       }
 
+      function getTimezoneLabel(timezone) {
+        return SCHEDULE_TIMEZONE_LABELS[timezone] || timezone;
+      }
+
+      function ensureScheduleTimezoneOption(timezone) {
+        const value = String(timezone || "").trim();
+        if (!value) return "America/Los_Angeles";
+        const existing = Array.from(scheduleTimezoneInput.options).find((option) => option.value === value);
+        if (existing) return value;
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = getTimezoneLabel(value);
+        scheduleTimezoneInput.appendChild(option);
+        return value;
+      }
+
+      function setScheduleTimezoneValue(timezone) {
+        scheduleTimezoneInput.value = ensureScheduleTimezoneOption(timezone);
+      }
+
+      function formatScheduleNextRun(schedule) {
+        if (!schedule.next_run_at) return "Not scheduled";
+        try {
+          return new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone: schedule.timezone || getLocalTimezone(),
+          }).format(new Date(schedule.next_run_at));
+        } catch {
+          return new Date(schedule.next_run_at).toLocaleString();
+        }
+      }
+
       function updateScheduleChannelFields() {
         const channel = scheduleChannelInput.value;
         const showSms = channel === "sms";
@@ -2351,7 +2395,7 @@
         scheduleIntervalUnitInput.value = "days";
         scheduleTimeInput.value = "08:00";
         scheduleDaysBackInput.value = daysBackInput.value || "7";
-        scheduleTimezoneInput.value = getLocalTimezone();
+        setScheduleTimezoneValue(getLocalTimezone());
         scheduleStatus.textContent = "Create a new schedule.";
         savedSchedulesStatus.textContent = "";
         scheduleSaveButton.textContent = "Create Schedule";
@@ -2370,7 +2414,7 @@
         scheduleIntervalUnitInput.value = schedule.interval_unit || "days";
         scheduleTimeInput.value = `${String(schedule.preferred_hour || 0).padStart(2, "0")}:${String(schedule.preferred_minute || 0).padStart(2, "0")}`;
         scheduleDaysBackInput.value = String(schedule.days_back || 7);
-        scheduleTimezoneInput.value = schedule.timezone || getLocalTimezone();
+        setScheduleTimezoneValue(schedule.timezone || getLocalTimezone());
         scheduleSaveButton.textContent = "Save Changes";
         scheduleResetButton.hidden = false;
         scheduleStatus.textContent = `Editing "${schedule.name || "Scheduled Report"}".`;
@@ -2386,9 +2430,10 @@
       function formatScheduleMeta(schedule) {
         const channelLabel = schedule.delivery_channel === "sms" ? "Phone" : "Email";
         const recipient = schedule.delivery_channel === "sms" ? (schedule.recipient_phone || "No phone set") : (schedule.recipient_email || "No email set");
-        const nextRun = schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "Not scheduled";
+        const nextRun = formatScheduleNextRun(schedule);
         return [
           `Every ${schedule.interval_value} ${schedule.interval_unit} at ${formatScheduleTime(schedule)}`,
+          `Timezone: ${schedule.timezone ? getTimezoneLabel(schedule.timezone) : getTimezoneLabel(getLocalTimezone())}`,
           `${channelLabel}: ${recipient}`,
           `Days back: ${schedule.days_back}`,
           `Next run: ${nextRun}`,
@@ -2704,7 +2749,9 @@
 
       async function showHowToIfNeeded(force = false) {
         if (!currentProfile?.user_id) return;
-        if (!force && Boolean(currentProfile?.settings?.how_to_seen)) return;
+        const params = new URLSearchParams(window.location.search);
+        const requestedOnboarding = params.get("onboarding") === "1";
+        if (!force && !requestedOnboarding && Boolean(currentProfile?.settings?.how_to_seen)) return;
         await openAppModal({
           title: "How To",
           messageHtml: buildHowToModalHtml(),
@@ -2712,6 +2759,10 @@
           cancelLabel: "Close",
         });
         await markHowToSeen();
+        if (requestedOnboarding) {
+          const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+          window.history.replaceState({}, "", cleanUrl);
+        }
       }
 
       function getSavedSummaryPreferences() {
@@ -3230,6 +3281,10 @@
         }
         readSummaryIds.add(summaryId);
         saveReadSummaryIds(currentUserId, readSummaryIds);
+        fetch(`/summaries/${encodeURIComponent(summaryId)}/mark-read?user_id=${encodeURIComponent(currentUserId)}`, {
+          method: "POST",
+          keepalive: true,
+        }).catch(() => {});
         updateSummariesHeading(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
         updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
         updateHeroStats();

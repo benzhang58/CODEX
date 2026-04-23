@@ -665,6 +665,7 @@ class EmailSummarizer:
             "risks": self._extract_section(summary_markdown, "Risks / Things to Watch"),
             "attachment_summary": self._extract_section(summary_markdown, "Attachment Summary"),
             "bottom_line": self._extract_section(summary_markdown, "Bottom Line"),
+            "source_uids": [str(record.uid).strip() for record in records if str(record.uid).strip()],
             "source_message_ids": source_message_ids,
             "related_thread_message_ids": related_thread_message_ids,
             "source_email_file_ids": [self._message_file_id(record.message_id, record.uid) for record in records],

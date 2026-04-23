@@ -154,6 +154,59 @@
         line-height: 1.5;
       }
 
+      .faq-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .faq-item {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.92);
+        padding: 0 18px;
+      }
+
+      .faq-item summary {
+        list-style: none;
+        cursor: pointer;
+        font-size: 1.02rem;
+        font-weight: 700;
+        padding: 18px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .faq-item summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq-item summary::after {
+        content: "+";
+        font-size: 1.4rem;
+        line-height: 1;
+        color: var(--muted);
+      }
+
+      .faq-item[open] summary::after {
+        content: "−";
+      }
+
+      .faq-answer {
+        color: var(--muted);
+        line-height: 1.7;
+        padding: 0 0 18px;
+      }
+
+      .faq-answer p {
+        margin: 0 0 10px;
+      }
+
+      .faq-answer p:last-child {
+        margin-bottom: 0;
+      }
+
       .status {
         min-height: 20px;
         font-size: 13px;
@@ -312,6 +365,33 @@
         display: flex;
         justify-content: flex-end;
         gap: 10px;
+      }
+
+      .segmented-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .segmented-toggle button {
+        min-width: 82px;
+        min-height: 42px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: #ffffff;
+        color: #111111;
+        font-weight: 700;
+      }
+
+      .segmented-toggle button.active {
+        background: #111111;
+        border-color: #111111;
+        color: #ffffff;
       }
 
       .connection-status {
@@ -484,10 +564,13 @@
             Choose whether AI summaries can read attachment contents. If enabled, attachment data may be sent alongside your email data to AI for summarization.
           </p>
           <div class="row" style="align-items: center; gap: 14px;">
-            <label style="display:flex; align-items:center; gap:10px; font-weight:600;">
-              <input id="attachmentAiToggle" type="checkbox" />
-              Allow AI to read attachment contents
-            </label>
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:10px;">Allow AI to read attachment contents</label>
+              <div class="segmented-toggle" role="group" aria-label="AI Attachment Access">
+                <button id="attachmentAiOffButton" type="button" class="active" aria-pressed="true">Off</button>
+                <button id="attachmentAiOnButton" type="button" aria-pressed="false">On</button>
+              </div>
+            </div>
             <button id="saveAttachmentAiButton" type="button">Save</button>
           </div>
           <div id="attachmentAiStatus" class="status"></div>
@@ -579,7 +662,83 @@
       <section class="section">
         <h2>FAQ</h2>
         <div class="card">
-          <p>Coming soon.</p>
+          <p class="inline-note">Plain-English answers to the questions business users usually ask before trusting an email product.</p>
+          <div class="faq-list">
+            <details class="faq-item">
+              <summary>Where does my email data go?</summary>
+              <div class="faq-answer">
+                <p>Your mailbox is accessed by the app so it can find emails from the contacts you track and generate summaries from those threads.</p>
+                <p>To generate summaries, the relevant email content is sent to the AI provider through the API. If AI attachment access is turned on, attachment content can be included too.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>Who can see my data?</summary>
+              <div class="faq-answer">
+                <p>Your saved summaries, thread data, and attachments are scoped to your account inside the product.</p>
+                <p>The app server processes the data, and the AI provider receives the content needed to generate summaries. Other users should not be able to see your account data through the product UI.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>Are attachments sent to AI?</summary>
+              <div class="faq-answer">
+                <p>Only if you turn on <strong>AI Attachment Access</strong>.</p>
+                <p>If it is off, the app withholds attachment contents from the AI and only uses the email thread plus basic attachment references.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>How long is source email data kept?</summary>
+              <div class="faq-answer">
+                <p>Once a summary has been read, the app keeps the processed email ID so it does not summarize the same email again by accident.</p>
+                <p>After 7 days, the stored source thread body and saved attachments for that read summary are purged automatically for safety, unless you delete the summary manually first.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>What are the main privacy and security risks?</summary>
+              <div class="faq-answer">
+                <p>The main risks are server-side storage of email-derived data, third-party AI processing of summary inputs, and any future delivery paths such as emailed reports or texted PDF links.</p>
+                <p>This is reasonable for many normal workflows, but highly confidential legal, finance, board, or executive use should be evaluated more carefully.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>Is this a formal privacy policy or enterprise security certification?</summary>
+              <div class="faq-answer">
+                <p>No. This FAQ is a plain-English overview, not a legal policy or enterprise certification.</p>
+                <p>Businesses that need a formal review should request a privacy policy, retention explanation, and a written security overview before production rollout.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>Can I control what the summaries emphasize?</summary>
+              <div class="faq-answer">
+                <p>Yes. Use <strong>Summary Preferences</strong> to save reusable instructions such as focusing more on deadlines, asks, or action items.</p>
+                <p>You can also use <strong>Refine Summary</strong> on individual summaries without changing the underlying source thread.</p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Bug Reports</h2>
+        <div class="card">
+          <p class="inline-note">Report bugs directly from the app. Reports are stored with your account email, current page, and browser context so they can be reviewed later.</p>
+          <div class="field">
+            <label for="bugTitleInput">Bug Title</label>
+            <input id="bugTitleInput" type="text" placeholder="Short description of the problem" />
+          </div>
+          <div class="field">
+            <label for="bugDescriptionInput">What happened?</label>
+            <textarea id="bugDescriptionInput" rows="5" placeholder="Describe what you clicked, what you expected, and what actually happened."></textarea>
+          </div>
+          <div class="row" style="justify-content:flex-end;">
+            <button id="submitBugReportButton" type="button">Submit Bug Report</button>
+          </div>
+          <div id="bugReportStatus" class="status"></div>
         </div>
       </section>
 
@@ -648,7 +807,8 @@
       const addSummaryPreferenceButton = document.getElementById("addSummaryPreferenceButton");
       const summaryPreferenceList = document.getElementById("summaryPreferenceList");
       const summaryPreferenceStatus = document.getElementById("summaryPreferenceStatus");
-      const attachmentAiToggle = document.getElementById("attachmentAiToggle");
+      const attachmentAiOffButton = document.getElementById("attachmentAiOffButton");
+      const attachmentAiOnButton = document.getElementById("attachmentAiOnButton");
       const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
       const mailboxSection = document.getElementById("mailboxSection");
@@ -665,9 +825,14 @@
       const mailboxModalStatus = document.getElementById("mailboxModalStatus");
       const cancelMailboxModalButton = document.getElementById("cancelMailboxModalButton");
       const saveMailboxModalButton = document.getElementById("saveMailboxModalButton");
+      const bugTitleInput = document.getElementById("bugTitleInput");
+      const bugDescriptionInput = document.getElementById("bugDescriptionInput");
+      const submitBugReportButton = document.getElementById("submitBugReportButton");
+      const bugReportStatus = document.getElementById("bugReportStatus");
       const logoutButton = document.getElementById("logoutButton");
       const deleteAccountButton = document.getElementById("deleteAccountButton");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+      let attachmentAiEnabled = false;
 
       function rememberOauthProvider(profile) {
         if (!profile) return;
@@ -677,6 +842,13 @@
         sessionStorage.setItem("oauth:lastEmail", String(profile.email || "").trim().toLowerCase());
       }
       let currentProfile = null;
+
+      function syncAttachmentAiToggle() {
+        attachmentAiOffButton.classList.toggle("active", !attachmentAiEnabled);
+        attachmentAiOffButton.setAttribute("aria-pressed", String(!attachmentAiEnabled));
+        attachmentAiOnButton.classList.toggle("active", attachmentAiEnabled);
+        attachmentAiOnButton.setAttribute("aria-pressed", String(attachmentAiEnabled));
+      }
 
       function applyTheme(theme) {
         currentTheme = theme;
@@ -866,27 +1038,6 @@
         }
       }
 
-      async function markHowToSeenIfNeeded() {
-        if (!currentProfile?.user_id) return;
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("onboarding") !== "1") return;
-
-        try {
-          const response = await fetch(`/profile/how-to-seen?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
-            method: "POST",
-          });
-          const data = await response.json();
-          if (response.ok && data.profile) {
-            currentProfile = data.profile;
-          }
-        } catch (error) {
-          return;
-        } finally {
-          const cleanUrl = `${window.location.pathname}${window.location.hash || "#how-to"}`;
-          window.history.replaceState({}, "", cleanUrl);
-        }
-      }
-
       async function loadSession() {
         const response = await fetch("/auth/me");
         const data = await response.json();
@@ -904,11 +1055,11 @@
           : data.profile.microsoft_connected
             ? "Microsoft OAuth"
             : "Standard";
-        attachmentAiToggle.checked = Boolean(data.profile.settings?.attachment_ai_enabled);
+        attachmentAiEnabled = Boolean(data.profile.settings?.attachment_ai_enabled);
+        syncAttachmentAiToggle();
         syncProfileNameUI();
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
         syncMailboxConnectionUI();
-        await markHowToSeenIfNeeded();
         await refreshMailboxConnectionStatus();
       }
 
@@ -922,7 +1073,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               email: currentProfile.email || "",
-              attachment_ai_enabled: Boolean(attachmentAiToggle.checked),
+              attachment_ai_enabled: attachmentAiEnabled,
             }),
           });
           const data = await response.json();
@@ -931,8 +1082,9 @@
             return;
           }
           currentProfile = data.profile;
-          attachmentAiToggle.checked = Boolean(data.profile.settings?.attachment_ai_enabled);
-          attachmentAiStatus.textContent = attachmentAiToggle.checked
+          attachmentAiEnabled = Boolean(data.profile.settings?.attachment_ai_enabled);
+          syncAttachmentAiToggle();
+          attachmentAiStatus.textContent = attachmentAiEnabled
             ? "AI attachment access enabled."
             : "AI attachment access disabled.";
         } catch (error) {
@@ -1071,10 +1223,67 @@
         }
       }
 
+      async function submitBugReport() {
+        if (!currentProfile) return;
+        const title = bugTitleInput.value.trim();
+        const description = bugDescriptionInput.value.trim();
+        if (!title) {
+          bugReportStatus.textContent = "Enter a short bug title first.";
+          return;
+        }
+        if (!description) {
+          bugReportStatus.textContent = "Describe the bug first.";
+          return;
+        }
+
+        submitBugReportButton.disabled = true;
+        bugReportStatus.textContent = "Submitting bug report...";
+        try {
+          const response = await fetch("/bug-reports", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentProfile.user_id,
+              title,
+              description,
+              page_url: window.location.href,
+              user_agent: navigator.userAgent,
+              metadata: {
+                screen_width: window.screen?.width || null,
+                screen_height: window.screen?.height || null,
+                viewport_width: window.innerWidth,
+                viewport_height: window.innerHeight,
+              },
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            bugReportStatus.textContent = data.detail || "Failed to submit bug report.";
+            return;
+          }
+          bugTitleInput.value = "";
+          bugDescriptionInput.value = "";
+          bugReportStatus.textContent = `Bug report submitted. ID: ${data.bug_id}`;
+        } catch (error) {
+          bugReportStatus.textContent = `Failed to submit bug report: ${error.message}`;
+        } finally {
+          submitBugReportButton.disabled = false;
+        }
+      }
+
       themeChips.forEach((chip) => {
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
+      attachmentAiOffButton.addEventListener("click", () => {
+        attachmentAiEnabled = false;
+        syncAttachmentAiToggle();
+      });
+      attachmentAiOnButton.addEventListener("click", () => {
+        attachmentAiEnabled = true;
+        syncAttachmentAiToggle();
+      });
       saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
+      submitBugReportButton.addEventListener("click", submitBugReport);
       changeMailboxButton.addEventListener("click", openMailboxModal);
       cancelMailboxModalButton.addEventListener("click", closeMailboxModal);
       saveMailboxModalButton.addEventListener("click", saveMailboxSettings);

@@ -80,6 +80,7 @@ APP_DATA_DIR = APP_STORAGE_DIR / "app"
 DB_PATH = APP_DATA_DIR / "app.db"
 PUBLIC_REPORTS_DIR = APP_STORAGE_DIR / "public_reports"
 SESSION_COOKIE_NAME = "email_dashboard_session"
+READ_RETENTION_DAYS = 7
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
 GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
@@ -108,6 +109,32 @@ def get_db_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     return connection
+
+
+def track_analytics_event(user_id: str, event_name: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO analytics_events (event_id, user_id, event_name, created_at, metadata_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                secrets.token_hex(12),
+                user_id,
+                event_name,
+                datetime.now().isoformat(),
+                json.dumps(metadata or {}, ensure_ascii=False),
+            ),
+        )
+
+
+def analytics_event_exists(user_id: str, event_name: str) -> bool:
+    with get_db_connection() as connection:
+        row = connection.execute(
+            "SELECT 1 FROM analytics_events WHERE user_id = ? AND event_name = ? LIMIT 1",
+            (user_id, event_name),
+        ).fetchone()
+    return bool(row)
 
 
 def initialize_database() -> None:
@@ -154,6 +181,26 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS analytics_events (
+                event_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                event_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
+            );
+
+            CREATE TABLE IF NOT EXISTS bug_reports (
+                bug_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                email TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                page_url TEXT,
+                user_agent TEXT,
+                created_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
             );
             """
         )
@@ -235,6 +282,15 @@ class RefineSummaryRequest(BaseModel):
 class SummaryStylePreferenceRequest(BaseModel):
     user_id: Optional[str] = None
     preference: str
+
+
+class BugReportRequest(BaseModel):
+    user_id: Optional[str] = None
+    title: str
+    description: str
+    page_url: str = ""
+    user_agent: str = ""
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class SignupRequest(BaseModel):
@@ -401,6 +457,7 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
         "settings": settings,
     }
     save_profile(profile)
+    track_analytics_event(user_id, "signup_conversion", {"auth_provider": "password"})
     create_session(response, user_id)
     return {"success": True, "profile": profile_response(profile)}
 
@@ -557,7 +614,9 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         return response
 
     profile = find_profile_by_email(email)
+    created_new_profile = False
     if not profile:
+        created_new_profile = True
         user_id = user_id_from_email(email)
         settings = default_profile_settings()
         settings["IMAP_USER"] = email
@@ -595,6 +654,8 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
     profile["settings"]["SUMMARY_RECIPIENT"] = profile["settings"].get("SUMMARY_RECIPIENT") or email
     profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     save_profile(profile)
+    if created_new_profile:
+        track_analytics_event(profile["user_id"], "signup_conversion", {"auth_provider": "google"})
 
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
@@ -724,9 +785,11 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         return response
 
     profile = find_profile_by_email(email)
+    created_new_profile = False
     if not profile and fallback_email and fallback_email != email:
         profile = find_profile_by_email(fallback_email)
     if not profile:
+        created_new_profile = True
         user_id = user_id_from_email(email)
         settings = default_profile_settings()
         settings = apply_provider_defaults(settings, email, force_outlook=True)
@@ -769,6 +832,8 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
     profile["settings"]["SUMMARY_RECIPIENT"] = profile["settings"].get("SUMMARY_RECIPIENT") or email
     profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     save_profile(profile)
+    if created_new_profile:
+        track_analytics_event(profile["user_id"], "signup_conversion", {"auth_provider": "microsoft"})
 
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
@@ -883,6 +948,16 @@ def create_report_schedule(payload: ReportScheduleRequest, request: Request) -> 
             "SELECT * FROM report_schedules WHERE schedule_id = ?",
             (schedule_id,),
         ).fetchone()
+    track_analytics_event(
+        resolved_user_id,
+        "scheduled_report_created",
+        {
+            "schedule_id": schedule_id,
+            "delivery_channel": normalized["delivery_channel"],
+            "interval_unit": normalized["interval_unit"],
+            "interval_value": normalized["interval_value"],
+        },
+    )
     return {"success": True, "schedule": row_to_report_schedule(row)}
 
 
@@ -1971,12 +2046,24 @@ def get_whitelist(request: Request, user_id: Optional[str] = Query(None, descrip
 @app.post("/whitelist")
 def update_whitelist(payload: WhitelistUpdateRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    existing_contacts = set(
+        item.strip()
+        for item in get_settings_for_user(resolved_user_id).get("WHITELIST_SENDERS", "").split(",")
+        if item.strip()
+    )
     cleaned_contacts = [contact.strip() for contact in payload.contacts if contact.strip()]
     invalid_contacts = [contact for contact in cleaned_contacts if not is_valid_email(contact)]
     if invalid_contacts:
         raise HTTPException(status_code=400, detail="Incorrect email.")
     set_contacts_for_user(resolved_user_id, cleaned_contacts)
     settings = get_settings_for_user(resolved_user_id)
+    added_contacts = [contact for contact in cleaned_contacts if contact not in existing_contacts]
+    if added_contacts:
+        track_analytics_event(
+            resolved_user_id,
+            "contact_added",
+            {"count": len(added_contacts), "contacts": added_contacts[:10]},
+        )
     return {
         "user_id": resolved_user_id,
         "contacts": [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()],
@@ -2106,6 +2193,10 @@ def load_summary_json(summary_path: Path) -> Dict[str, Any]:
     return payload
 
 
+def save_summary_json(summary_path: Path, payload: Dict[str, Any]) -> None:
+    summary_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def load_all_current_summaries_for_user(user_id: str) -> List[Dict[str, Any]]:
     json_summaries_dir = get_user_json_summaries_dir(user_id)
     if json_summaries_dir.exists():
@@ -2178,6 +2269,82 @@ def save_processed_uids_for_user(user_id: str, uids: List[str]) -> None:
         "last_run": __import__("datetime").datetime.now().isoformat(),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def parse_iso_timestamp(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=ZoneInfo("UTC"))
+    return parsed.astimezone(ZoneInfo("UTC"))
+
+
+def purge_old_read_source_data(user_id: str) -> None:
+    summaries_dir = get_user_json_summaries_dir(user_id)
+    emails_dir = get_user_json_emails_dir(user_id)
+    if not summaries_dir.exists() or not emails_dir.exists():
+        return
+
+    cutoff = datetime.now(ZoneInfo("UTC")) - timedelta(days=READ_RETENTION_DAYS)
+    email_refs: Dict[str, List[bool]] = {}
+
+    for summary_path in summaries_dir.glob("*.json"):
+        if summary_path.stem.startswith("overall_master_"):
+            continue
+        try:
+            payload = load_summary_json(summary_path)
+        except Exception:
+            continue
+        read_at = parse_iso_timestamp(payload.get("read_at"))
+        eligible = bool(read_at and read_at <= cutoff)
+        for email_id in payload.get("source_email_file_ids", []) or []:
+            email_text = str(email_id).strip()
+            if email_text:
+                email_refs.setdefault(email_text, []).append(eligible)
+
+    purgeable_email_ids = {
+        email_id
+        for email_id, flags in email_refs.items()
+        if flags and all(flags)
+    }
+
+    for email_id in purgeable_email_ids:
+        email_path = emails_dir / f"{email_id}.json"
+        if not email_path.exists():
+            continue
+        try:
+            email_payload = load_email_json(email_path)
+        except Exception:
+            continue
+        if email_payload.get("content_purged_at"):
+            continue
+
+        attachment_paths: List[Path] = []
+        for message in email_payload.get("thread", []) or []:
+            for attachment in message.get("attachments", []) or []:
+                saved_path = str(attachment.get("saved_path", "") or "").strip()
+                if saved_path:
+                    attachment_paths.append(Path(saved_path))
+
+        for path in attachment_paths:
+            try:
+                resolved = path.resolve() if path.is_absolute() else (BASE_DIR / path).resolve()
+                resolved.unlink(missing_ok=True)
+            except Exception:
+                continue
+
+        for message in email_payload.get("thread", []) or []:
+            message["body"] = ""
+            message["attachments"] = []
+        email_payload["raw_path"] = ""
+        email_payload["content_purged_at"] = datetime.now().isoformat()
+        email_payload["content_retention_policy"] = f"Source bodies and attachments purged {READ_RETENTION_DAYS} days after read."
+        email_path.write_text(json.dumps(email_payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def get_chat_ready_summaries(user_id: str) -> List[Dict[str, Any]]:
@@ -2358,7 +2525,7 @@ def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Q
     ]
 
     removed_email_ids: List[str] = []
-    removed_uids: List[str] = []
+    removed_uids: List[str] = [str(uid).strip() for uid in summary_payload.get("source_uids", []) or [] if str(uid).strip()]
     for email_id in summary_payload.get("source_email_file_ids", []) or []:
         if any(email_id in (other.get("source_email_file_ids", []) or []) for other in other_summaries):
             continue
@@ -2375,7 +2542,8 @@ def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Q
     summary_path.unlink()
 
     if removed_uids:
-        remaining_uids = [uid for uid in load_processed_uids_for_user(user_id) if uid not in set(removed_uids)]
+        removed_uid_set = set(uid for uid in removed_uids if uid)
+        remaining_uids = [uid for uid in load_processed_uids_for_user(user_id) if uid not in removed_uid_set]
         save_processed_uids_for_user(user_id, remaining_uids)
 
     return {
@@ -2528,17 +2696,46 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
 
     if not all([smtp_host, smtp_user, smtp_password, recipient]):
         raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
+    if not is_valid_email(recipient):
+        raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = summary.get("title", f"Summary: {summary.get('summary_id', '')}")
     msg["From"] = smtp_user
     msg["To"] = recipient
+    text_parts: List[str] = [
+        str(summary.get("title") or summary.get("summary_id") or "Summary").strip(),
+        "",
+    ]
+    for key in [
+        "executive_summary",
+        "main_topics",
+        "new_developments",
+        "action_items",
+        "deadlines",
+        "attachment_summary",
+        "bottom_line",
+    ]:
+        value = str(summary.get(key) or "").strip()
+        if not value:
+            continue
+        label = key.replace("_", " ").title()
+        text_parts.append(f"{label}:")
+        text_parts.append(re.sub(r"\*\*(.+?)\*\*", r"\1", value))
+        text_parts.append("")
+    msg.attach(MIMEText(_to_ascii_safe("\n".join(text_parts).strip()), "plain", "utf-8"))
     msg.attach(MIMEText(render_summary_email_html(summary), "html", "utf-8"))
 
     try:
-        with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
-            server.login(smtp_user, smtp_password)
-            server.sendmail(smtp_user, [recipient], msg.as_string())
+        if smtp_port == 587:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, [recipient], msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, [recipient], msg.as_string())
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to send summary email: {exc}") from exc
 
@@ -2747,11 +2944,14 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recip
 
     if not all([smtp_host, smtp_user, smtp_password, recipient]):
         raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
+    if not is_valid_email(recipient):
+        raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = title
     msg["From"] = smtp_user
     msg["To"] = recipient
+    msg.attach(MIMEText(render_markdown_report_text(title, markdown, max_chars=20000), "plain", "utf-8"))
     msg.attach(MIMEText(render_markdown_report_email_html(title, markdown), "html", "utf-8"))
 
     try:
@@ -2767,6 +2967,11 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recip
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to send combined report email: {exc}") from exc
 
+    track_analytics_event(
+        user_id,
+        "report_delivered",
+        {"delivery_channel": "email", "recipient": recipient, "title": title},
+    )
     return {"recipient": recipient, "subject": msg["Subject"]}
 
 
@@ -2957,6 +3162,11 @@ def send_combined_report_via_sms(user_id: str, title: str, markdown: str, phone_
     message_body = render_markdown_report_text(title, markdown, max_chars=240) + f"\n\nOpen PDF: {public_pdf_url}"
     media_url = public_pdf_url if should_attach_pdf_to_message(pdf_path) else None
     delivery = send_text_via_twilio(phone_number, message_body, media_url=media_url)
+    track_analytics_event(
+        user_id,
+        "report_delivered",
+        {"delivery_channel": "sms", "recipient_phone": phone_number, "title": title, "pdf_attached": bool(media_url)},
+    )
     return {
         "pdf_url": public_pdf_url,
         "pdf_attached": bool(media_url),
@@ -3228,6 +3438,16 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
     if payload.save_preference:
         updated_preferences = add_summary_style_preference(resolved_user_id, instructions)
 
+    track_analytics_event(
+        resolved_user_id,
+        "refinement_used",
+        {
+            "title": title,
+            "instruction_length": len(instructions),
+            "saved_preference": bool(payload.save_preference),
+        },
+    )
+
     return {
         "user_id": resolved_user_id,
         "title": title,
@@ -3256,7 +3476,47 @@ def delete_summary_style_preference(payload: SummaryStylePreferenceRequest, requ
     return {"success": True, "user_id": resolved_user_id, "summary_style_preferences": preferences}
 
 
+@app.post("/bug-reports")
+def create_bug_report(payload: BugReportRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    title = str(payload.title or "").strip()
+    description = str(payload.description or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Bug title cannot be empty.")
+    if not description:
+        raise HTTPException(status_code=400, detail="Bug description cannot be empty.")
+
+    bug_id = secrets.token_hex(12)
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO bug_reports (bug_id, user_id, email, title, description, page_url, user_agent, created_at, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bug_id,
+                resolved_user_id,
+                str(profile.get("email", "") or "").strip(),
+                title,
+                description,
+                str(payload.page_url or "").strip(),
+                str(payload.user_agent or "").strip(),
+                datetime.now().isoformat(),
+                json.dumps(payload.metadata or {}, ensure_ascii=False),
+            ),
+        )
+
+    track_analytics_event(
+        resolved_user_id,
+        "bug_reported",
+        {"bug_id": bug_id, "title": title[:120], "page_url": str(payload.page_url or "").strip()},
+    )
+    return {"success": True, "bug_id": bug_id}
+
+
 def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
+    before_count = len(load_all_current_summaries_for_user(user_id))
     env = os.environ.copy()
     env["CLIENT_NAME"] = user_id
     env["PROFILE_USER_ID"] = user_id
@@ -3284,13 +3544,21 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
             parsed_stats = parsed_payload.get("stats") or {}
             break
 
-    return {
+    result_payload = {
         "returncode": result.returncode,
         "stdout": result.stdout[-4000:],
         "stderr": result.stderr[-4000:],
         "stats": parsed_stats,
         "success": result.returncode == 0,
     }
+    after_count = len(load_all_current_summaries_for_user(user_id))
+    if result_payload["success"] and before_count == 0 and after_count > 0 and not analytics_event_exists(user_id, "first_summary_generated"):
+        track_analytics_event(
+            user_id,
+            "first_summary_generated",
+            {"days_back": days_back, "summary_count": after_count},
+        )
+    return result_payload
 
 
 def launch_summarizer_job(user_id: str, days_back: int) -> Dict[str, Any]:
@@ -3398,6 +3666,7 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
 @app.get("/summaries")
 def list_summaries(request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    purge_old_read_source_data(user_id)
     contact_profiles = parse_contact_profiles(get_settings_for_user(user_id))
     json_summaries_dir = get_user_json_summaries_dir(user_id)
     summaries_dir = get_user_summaries_dir(user_id)
@@ -3425,6 +3694,7 @@ def list_summaries(request: Request, user_id: Optional[str] = Query(None, descri
 @app.get("/summaries/{summary_id}")
 def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    purge_old_read_source_data(user_id)
     contact_profiles = parse_contact_profiles(get_settings_for_user(user_id))
     json_summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
     if json_summary_path.exists():
@@ -3440,6 +3710,7 @@ def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Quer
 @app.get("/summaries/{summary_id}/thread")
 def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    purge_old_read_source_data(user_id)
     summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
@@ -3480,6 +3751,33 @@ def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str]
         "contact_label": summary.get("contact_label", ""),
         "email_record_count": len(threads),
         "threads": threads,
+    }
+
+
+@app.post("/summaries/{summary_id}/mark-read")
+def mark_summary_read(summary_id: str, request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    user_id = resolve_user_id(request, user_id)
+    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    if not summary_path.exists():
+        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+
+    payload = load_summary_json(summary_path)
+    was_unread = not str(payload.get("read_at", "")).strip()
+    if was_unread:
+        payload["read_at"] = datetime.now().isoformat()
+        save_summary_json(summary_path, payload)
+        track_analytics_event(
+            user_id,
+            "summary_opened",
+            {"summary_id": summary_id, "sender": str(payload.get("sender", "")).strip()},
+        )
+
+    purge_old_read_source_data(user_id)
+    return {
+        "success": True,
+        "user_id": user_id,
+        "summary_id": summary_id,
+        "read_at": payload.get("read_at", ""),
     }
 
 
