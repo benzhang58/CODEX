@@ -549,6 +549,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         return response
     email = str(userinfo.get("email", "")).strip().lower()
+    display_name = str(userinfo.get("name") or userinfo.get("given_name") or "").strip()
     if not email:
         response = RedirectResponse("/dashboard?google_error=no_email_returned")
         response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -588,14 +589,12 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         "updated_at": datetime.now().isoformat(),
     }
     profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = apply_profile_name_defaults(profile["settings"], display_name)
     profile["settings"]["IMAP_USER"] = profile["settings"].get("IMAP_USER") or email
     profile["settings"]["SMTP_USER"] = profile["settings"].get("SMTP_USER") or email
     profile["settings"]["SUMMARY_RECIPIENT"] = profile["settings"].get("SUMMARY_RECIPIENT") or email
     profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     save_profile(profile)
-
-    if profile_requires_how_to_onboarding(profile):
-        next_url = "/settings?onboarding=1#how-to"
 
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
@@ -716,6 +715,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         return response
 
     fallback_email = str(userinfo.get("mail") or userinfo.get("userPrincipalName") or "").strip().lower()
+    display_name = str(userinfo.get("displayName", "") or "").strip()
     email = resolve_microsoft_account_email(userinfo, token_payload) or fallback_email
     if not email:
         response = RedirectResponse("/dashboard?microsoft_error=no_email_returned")
@@ -762,15 +762,13 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         "updated_at": datetime.now().isoformat(),
     }
     profile["settings"] = merge_non_empty_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = apply_profile_name_defaults(profile["settings"], display_name)
     profile["settings"] = apply_provider_defaults(profile["settings"], email, force_outlook=True)
     profile["settings"]["IMAP_USER"] = profile["settings"].get("IMAP_USER") or email
     profile["settings"]["SMTP_USER"] = profile["settings"].get("SMTP_USER") or email
     profile["settings"]["SUMMARY_RECIPIENT"] = profile["settings"].get("SUMMARY_RECIPIENT") or email
     profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     save_profile(profile)
-
-    if profile_requires_how_to_onboarding(profile):
-        next_url = "/settings?onboarding=1#how-to"
 
     response = RedirectResponse(next_url)
     create_session(response, profile["user_id"])
@@ -1457,6 +1455,27 @@ def contact_profile_display_name(profile: Dict[str, str]) -> str:
         part for part in [str(profile.get("first_name", "")).strip(), str(profile.get("last_name", "")).strip()]
         if part
     ).strip()
+
+
+def split_display_name(display_name: str) -> tuple[str, str]:
+    parts = [part for part in str(display_name or "").strip().split() if part]
+    if not parts:
+        return "", ""
+    return parts[0], " ".join(parts[1:])
+
+
+def apply_profile_name_defaults(settings: Dict[str, str], display_name: str) -> Dict[str, str]:
+    merged = dict(settings)
+    existing_first = str(merged.get("FIRST_NAME", "") or "").strip()
+    existing_last = str(merged.get("LAST_NAME", "") or "").strip()
+    if existing_first or existing_last:
+        return merged
+    first_name, last_name = split_display_name(display_name)
+    if first_name:
+        merged["FIRST_NAME"] = first_name
+    if last_name:
+        merged["LAST_NAME"] = last_name
+    return merged
 
 
 def contact_label_for_email(email: str, profiles: Dict[str, Dict[str, str]]) -> str:

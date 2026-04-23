@@ -919,6 +919,44 @@
         line-height: 1.5;
       }
 
+      .howto-popup {
+        display: grid;
+        gap: 12px;
+      }
+
+      .howto-popup .howto-card {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 14px;
+        align-items: start;
+        padding: 14px 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .howto-popup .howto-step {
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #111111;
+        color: #ffffff;
+        font-weight: 700;
+      }
+
+      .howto-popup .howto-copy strong {
+        display: block;
+        color: #111111;
+        margin-bottom: 4px;
+      }
+
+      .howto-popup .howto-copy p {
+        margin: 0;
+        color: var(--muted);
+      }
+
       .modal-textarea {
         min-height: 120px;
       }
@@ -2546,6 +2584,7 @@
       function openAppModal({
         title,
         message,
+        messageHtml = "",
         confirmLabel = "Yes",
         cancelLabel = "No",
         altLabel = "",
@@ -2554,7 +2593,11 @@
         inputPlaceholder = "",
       }) {
         appModalTitle.textContent = title || "Confirm";
-        appModalMessage.textContent = message || "";
+        if (messageHtml) {
+          appModalMessage.innerHTML = messageHtml;
+        } else {
+          appModalMessage.textContent = message || "";
+        }
         appModalConfirmButton.textContent = confirmLabel;
         appModalCancelButton.textContent = cancelLabel;
         appModalAltButton.hidden = !altLabel;
@@ -2592,6 +2635,83 @@
             appModalConfirmButton.focus();
           }
         });
+      }
+
+      async function markHowToSeen() {
+        if (!currentProfile?.user_id) return;
+        try {
+          const response = await fetch(`/profile/how-to-seen?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "POST",
+          });
+          const data = await response.json();
+          if (response.ok && data.profile) {
+            currentProfile = data.profile;
+            applyProfileToForm(data.profile);
+          }
+        } catch (error) {
+          return;
+        }
+      }
+
+      function buildHowToModalHtml() {
+        return `
+          <div class="howto-popup">
+            <div class="howto-card">
+              <div class="howto-step">1</div>
+              <div class="howto-copy">
+                <strong>Sign in the right way</strong>
+                <p>Log in via Gmail/Outlook, or create an account.</p>
+              </div>
+            </div>
+            <div class="howto-card">
+              <div class="howto-step">2</div>
+              <div class="howto-copy">
+                <strong>Set mailbox access if needed</strong>
+                <p>If your email is not Gmail or Outlook, open Mailbox Connection in Settings and enter your real email login details there.</p>
+              </div>
+            </div>
+            <div class="howto-card">
+              <div class="howto-step">3</div>
+              <div class="howto-copy">
+                <strong>Add contacts</strong>
+                <p>Add the people you want to track in Contacts. You can add them one by one or review the saved list in the popup.</p>
+              </div>
+            </div>
+            <div class="howto-card">
+              <div class="howto-step">4</div>
+              <div class="howto-copy">
+                <strong>Run the summarizer</strong>
+                <p>Click Run Summarizer to check recent emails from those contacts. New summaries will appear on the left side of the dashboard.</p>
+              </div>
+            </div>
+            <div class="howto-card">
+              <div class="howto-step">5</div>
+              <div class="howto-copy">
+                <strong>Read and combine</strong>
+                <p>Click a summary to open it. Check more than one summary if you want the right side to combine them automatically.</p>
+              </div>
+            </div>
+            <div class="howto-card">
+              <div class="howto-step">6</div>
+              <div class="howto-copy">
+                <strong>Ask AI questions</strong>
+                <p>Use AI Assistant to ask about deadlines, people, attachments, or other details across your summaries and threads.</p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      async function showHowToIfNeeded(force = false) {
+        if (!currentProfile?.user_id) return;
+        if (!force && Boolean(currentProfile?.settings?.how_to_seen)) return;
+        await openAppModal({
+          title: "How To",
+          messageHtml: buildHowToModalHtml(),
+          confirmLabel: "Got it",
+          cancelLabel: "Close",
+        });
+        await markHowToSeen();
       }
 
       function getSavedSummaryPreferences() {
@@ -2871,6 +2991,7 @@
         const data = await response.json();
         if (data.authenticated && data.profile) {
           applyProfileToForm(data.profile);
+          await showHowToIfNeeded();
           await promptForProfileNameIfNeeded();
           await fetchContacts();
           await loadSummaries();
@@ -4114,9 +4235,7 @@
       settingsMenuButton.addEventListener("click", () => {
         window.location.href = "/settings";
       });
-      settingsHelpButton.addEventListener("click", () => {
-        window.location.href = "/settings#how-to";
-      });
+      settingsHelpButton.addEventListener("click", () => showHowToIfNeeded(true));
       toggleContactsButton.addEventListener("click", async () => {
         const willOpen = contactsBody.classList.contains("collapsed");
         togglePanel(contactsBody, toggleContactsButton);
