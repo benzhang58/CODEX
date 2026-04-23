@@ -921,15 +921,16 @@
 
       .howto-popup {
         display: grid;
-        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 12px;
       }
 
       .howto-popup .howto-card {
         display: grid;
         grid-template-columns: 36px 1fr;
-        gap: 14px;
+        gap: 12px;
         align-items: start;
-        padding: 14px 16px;
+        padding: 12px 14px;
         border: 1px solid var(--border);
         border-radius: 18px;
         background: rgba(255, 255, 255, 0.72);
@@ -955,6 +956,13 @@
       .howto-popup .howto-copy p {
         margin: 0;
         color: var(--muted);
+        line-height: 1.45;
+      }
+
+      @media (max-width: 900px) {
+        .howto-popup {
+          grid-template-columns: 1fr;
+        }
       }
 
       .modal-textarea {
@@ -984,6 +992,46 @@
         gap: 14px;
       }
 
+      .schedule-form-shell {
+        display: grid;
+        gap: 16px;
+      }
+
+      .schedule-section {
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,242,236,0.88));
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .schedule-section-header {
+        display: grid;
+        gap: 4px;
+      }
+
+      .schedule-section-label {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .schedule-section-title {
+        font-size: 20px;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+        font-weight: 720;
+      }
+
+      .schedule-section-note {
+        color: var(--muted);
+        line-height: 1.5;
+        font-size: 14px;
+      }
+
       .schedule-grid .field,
       .schedule-grid .field-wide {
         margin-bottom: 0;
@@ -1007,6 +1055,12 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 10px;
+      }
+
+      .schedule-modal-card .field label {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       .toggle-row {
@@ -1045,6 +1099,7 @@
         min-height: 22px;
         font-size: 13px;
         color: var(--muted);
+        padding: 0 4px;
       }
 
       .schedule-list {
@@ -1134,6 +1189,10 @@
         flex: 1 1 0;
         min-width: 0;
         width: 0;
+      }
+
+      .schedule-footer-actions {
+        padding-top: 2px;
       }
 
       .schedule-toggle-control {
@@ -1363,20 +1422,34 @@
 
       .hero-actions {
         display: grid;
-        grid-template-columns: minmax(0, 1.5fr) 86px 86px 58px;
+        grid-template-columns: 118px 170px 86px 86px 58px;
         gap: 12px;
         align-items: stretch;
         width: 100%;
       }
 
       .input-chip {
-        min-width: 188px;
+        min-width: 0;
         padding: 12px 14px;
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.92);
         border: 1px solid var(--border);
         display: grid;
         gap: 4px;
+      }
+
+      .time-chip-value {
+        font-size: 24px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        font-weight: 720;
+        white-space: nowrap;
+      }
+
+      .time-chip-zone {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
       }
 
       .input-chip-label {
@@ -1676,6 +1749,11 @@
               <div class="input-chip-label">Days back</div>
               <input id="daysBackInput" type="number" min="1" value="7" />
             </div>
+            <div class="input-chip">
+              <div class="input-chip-label">Current time</div>
+              <div id="currentTimeValue" class="time-chip-value">--:-- --</div>
+              <div id="currentTimeZoneLabel" class="time-chip-zone">Pacific Time</div>
+            </div>
             <span class="tooltip-wrap" data-tooltip="Run Summarizer">
               <button id="runButton" class="hero-run-button" type="button" aria-label="Run Summarizer">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1723,7 +1801,7 @@
           <div id="pulseCard" class="pulse-card">
             <div class="pulse-row">
               <div>
-                <div class="stat-label">Current focus</div>
+                <div class="stat-label">Status</div>
                 <div id="pulseTitle" class="pulse-title">Ready</div>
               </div>
               <div id="pulseBadge" class="pulse-badge" hidden>30-60s</div>
@@ -1781,7 +1859,7 @@
               <input
                 id="chatInput"
                 style="flex: 1; min-width: 280px"
-                placeholder="Ask something like: What deadlines have been mentioned recently?"
+                placeholder="Ask me about your emails!"
               />
               <button id="chatSendButton">Send</button>
             </div>
@@ -1923,67 +2001,94 @@
         </div>
         <div class="modal-copy">Create recurring email/phone summary reports</div>
 
-        <div class="schedule-grid">
-          <div class="field">
-            <label for="scheduleNameInput">Schedule Name</label>
-            <input id="scheduleNameInput" type="text" placeholder="Weekly Monday Report" />
-          </div>
-          <div class="field">
-            <label for="scheduleChannelInput">Delivery Method</label>
-            <select id="scheduleChannelInput">
-              <option value="email">Email</option>
-              <option value="sms">Phone</option>
-            </select>
-          </div>
-          <div id="scheduleEmailField" class="field">
-            <label for="scheduleEmailInput">Recipient Email</label>
-            <input id="scheduleEmailInput" type="email" placeholder="you@example.com" />
-          </div>
-          <div id="schedulePhoneField" class="field" hidden>
-            <label for="schedulePhoneInput">Phone Number</label>
-            <input id="schedulePhoneInput" type="tel" placeholder="+14155550123" />
-          </div>
-          <div class="field">
-            <label>Repeat Every</label>
-            <div class="schedule-inline">
-              <input id="scheduleIntervalValueInput" type="number" min="1" value="1" />
-              <select id="scheduleIntervalUnitInput">
-                <option value="hours">Hours</option>
-                <option value="days" selected>Days</option>
-                <option value="weeks">Weeks</option>
-              </select>
+        <div class="schedule-form-shell">
+          <section class="schedule-section">
+            <div class="schedule-section-header">
+              <div class="schedule-section-label">Identity</div>
+              <div class="schedule-section-title">Name this report</div>
+              <div class="schedule-section-note">Give the schedule a label that will still make sense later when you review saved schedules.</div>
             </div>
-          </div>
-          <div class="field">
-            <label>Send Time</label>
-            <input id="scheduleTimeInput" type="time" value="08:00" />
-          </div>
-          <div class="field">
-            <label for="scheduleDaysBackInput">Days Back</label>
-            <input id="scheduleDaysBackInput" type="number" min="1" value="7" />
-          </div>
-          <div class="field">
-            <label for="scheduleTimezoneInput">Timezone</label>
-            <select id="scheduleTimezoneInput">
-              <option value="America/Los_Angeles">Pacific Time</option>
-              <option value="America/Denver">Mountain Time</option>
-              <option value="America/Chicago">Central Time</option>
-              <option value="America/New_York">Eastern Time</option>
-              <option value="Europe/London">London</option>
-              <option value="Europe/Paris">Paris</option>
-              <option value="Asia/Shanghai">Shanghai</option>
-              <option value="Asia/Hong_Kong">Hong Kong</option>
-              <option value="Asia/Tokyo">Tokyo</option>
-            </select>
-          </div>
-        </div>
+            <div class="field">
+              <label for="scheduleNameInput">Schedule Name</label>
+              <input id="scheduleNameInput" type="text" placeholder="Weekly Monday Report" />
+            </div>
+          </section>
 
-        <div id="scheduleStatus" class="schedule-status"></div>
+          <section class="schedule-section">
+            <div class="schedule-section-header">
+              <div class="schedule-section-label">Delivery</div>
+              <div class="schedule-section-title">Choose where the report goes</div>
+              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then sends the resulting full report to the destination you choose.</div>
+            </div>
+            <div class="schedule-grid">
+              <div class="field">
+                <label for="scheduleChannelInput">Delivery Method</label>
+                <select id="scheduleChannelInput">
+                  <option value="email">Email</option>
+                  <option value="sms">Phone</option>
+                </select>
+              </div>
+              <div id="scheduleEmailField" class="field">
+                <label for="scheduleEmailInput">Recipient Email</label>
+                <input id="scheduleEmailInput" type="email" placeholder="you@example.com" />
+              </div>
+              <div id="schedulePhoneField" class="field" hidden>
+                <label for="schedulePhoneInput">Phone Number</label>
+                <input id="schedulePhoneInput" type="tel" placeholder="+14155550123" />
+              </div>
+            </div>
+          </section>
 
-        <div class="controls modal-actions schedule-primary-actions">
-          <button id="scheduleViewSavedButton" class="secondary-button" type="button">View Saved Schedules</button>
-          <button id="scheduleResetButton" class="secondary-button" type="button" hidden>Create Different Schedule</button>
-          <button id="scheduleSaveButton" type="button">Create Schedule</button>
+          <section class="schedule-section">
+            <div class="schedule-section-header">
+              <div class="schedule-section-label">Timing</div>
+              <div class="schedule-section-title">Set the cadence</div>
+              <div class="schedule-section-note">Choose how often the app should run and which timezone should control the send time.</div>
+            </div>
+            <div class="schedule-grid">
+              <div class="field">
+                <label>Repeat Every</label>
+                <div class="schedule-inline">
+                  <input id="scheduleIntervalValueInput" type="number" min="1" value="1" />
+                  <select id="scheduleIntervalUnitInput">
+                    <option value="hours">Hours</option>
+                    <option value="days" selected>Days</option>
+                    <option value="weeks">Weeks</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label>Send Time</label>
+                <input id="scheduleTimeInput" type="time" value="08:00" />
+              </div>
+              <div class="field">
+                <label for="scheduleDaysBackInput">Days Back</label>
+                <input id="scheduleDaysBackInput" type="number" min="1" value="7" />
+              </div>
+              <div class="field">
+                <label for="scheduleTimezoneInput">Timezone</label>
+                <select id="scheduleTimezoneInput">
+                  <option value="America/Los_Angeles">Pacific Time</option>
+                  <option value="America/Denver">Mountain Time</option>
+                  <option value="America/Chicago">Central Time</option>
+                  <option value="America/New_York">Eastern Time</option>
+                  <option value="Europe/London">London</option>
+                  <option value="Europe/Paris">Paris</option>
+                  <option value="Asia/Shanghai">Shanghai</option>
+                  <option value="Asia/Hong_Kong">Hong Kong</option>
+                  <option value="Asia/Tokyo">Tokyo</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <div id="scheduleStatus" class="schedule-status"></div>
+
+          <div class="controls modal-actions schedule-primary-actions schedule-footer-actions">
+            <button id="scheduleViewSavedButton" class="secondary-button" type="button">View Saved Schedules</button>
+            <button id="scheduleResetButton" class="secondary-button" type="button" hidden>Create Different Schedule</button>
+            <button id="scheduleSaveButton" type="button">Create Schedule</button>
+          </div>
         </div>
 
         <div class="controls modal-actions">
@@ -2022,6 +2127,8 @@
       const runButton = document.getElementById("runButton");
       const scheduleButton = document.getElementById("scheduleButton");
       const daysBackInput = document.getElementById("daysBackInput");
+      const currentTimeValue = document.getElementById("currentTimeValue");
+      const currentTimeZoneLabel = document.getElementById("currentTimeZoneLabel");
       const loadWhitelistButton = document.getElementById("loadWhitelistButton");
       const saveWhitelistButton = document.getElementById("saveWhitelistButton");
       const toggleContactsButton = document.getElementById("toggleContactsButton");
@@ -2112,6 +2219,7 @@
       let scheduleItems = [];
       let editingScheduleId = "";
       let editingScheduleActive = true;
+      let currentTimeTimer = null;
       const SCHEDULE_TIMEZONE_LABELS = {
         "America/Los_Angeles": "Pacific Time",
         "America/Denver": "Mountain Time",
@@ -2348,6 +2456,38 @@
         return SCHEDULE_TIMEZONE_LABELS[timezone] || timezone;
       }
 
+      function getPreferredDashboardTimezone() {
+        const selected = String(scheduleTimezoneInput?.value || "").trim();
+        if (selected) return selected;
+        const remembered = String(localStorage.getItem("schedulePreferredTimezone") || "").trim();
+        return remembered || getLocalTimezone();
+      }
+
+      function refreshCurrentTime() {
+        const timezone = getPreferredDashboardTimezone();
+        currentTimeZoneLabel.textContent = getTimezoneLabel(timezone);
+        try {
+          currentTimeValue.textContent = new Intl.DateTimeFormat(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+            timeZone: timezone,
+          }).format(new Date());
+        } catch {
+          currentTimeValue.textContent = new Intl.DateTimeFormat(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          }).format(new Date());
+        }
+      }
+
+      function ensureCurrentTimeTicker() {
+        refreshCurrentTime();
+        if (currentTimeTimer) return;
+        currentTimeTimer = window.setInterval(refreshCurrentTime, 1000);
+      }
+
       function ensureScheduleTimezoneOption(timezone) {
         const value = String(timezone || "").trim();
         if (!value) return "America/Los_Angeles";
@@ -2362,6 +2502,8 @@
 
       function setScheduleTimezoneValue(timezone) {
         scheduleTimezoneInput.value = ensureScheduleTimezoneOption(timezone);
+        localStorage.setItem("schedulePreferredTimezone", scheduleTimezoneInput.value);
+        refreshCurrentTime();
       }
 
       function formatScheduleNextRun(schedule) {
@@ -2395,7 +2537,7 @@
         scheduleIntervalUnitInput.value = "days";
         scheduleTimeInput.value = "08:00";
         scheduleDaysBackInput.value = daysBackInput.value || "7";
-        setScheduleTimezoneValue(getLocalTimezone());
+        setScheduleTimezoneValue(getPreferredDashboardTimezone());
         scheduleStatus.textContent = "Create a new schedule.";
         savedSchedulesStatus.textContent = "";
         scheduleSaveButton.textContent = "Create Schedule";
@@ -2569,6 +2711,8 @@
             savedSchedulesStatus.textContent = data.detail || "Failed to save schedule.";
             return false;
           }
+          localStorage.setItem("schedulePreferredTimezone", String(data.schedule?.timezone || body.timezone || getLocalTimezone()));
+          refreshCurrentTime();
           scheduleStatus.textContent = editingScheduleId && !silentReload ? "Schedule updated." : "Schedule created.";
           await loadSchedules();
           if (!silentReload) {
@@ -3557,6 +3701,7 @@
         if (!requireSignedIn() || !contact) return;
         try {
           await persistContacts(currentContacts.filter((item) => item !== contact), "Contact removed.");
+          await fetchContacts(true);
           renderContactsModal();
         } catch (error) {
           setRunStatus(error.message);
@@ -4284,6 +4429,10 @@
       savedSchedulesCloseButton.addEventListener("click", closeSavedSchedulesModal);
       savedSchedulesCloseTopButton.addEventListener("click", closeSavedSchedulesModal);
       scheduleChannelInput.addEventListener("change", updateScheduleChannelFields);
+      scheduleTimezoneInput.addEventListener("change", () => {
+        localStorage.setItem("schedulePreferredTimezone", scheduleTimezoneInput.value || getLocalTimezone());
+        refreshCurrentTime();
+      });
       scheduleViewSavedButton.addEventListener("click", openSavedSchedulesModal);
       scheduleResetButton.addEventListener("click", resetScheduleForm);
       scheduleSaveButton.addEventListener("click", () => saveSchedule());
@@ -4339,6 +4488,7 @@
       resetScheduleForm();
       syncDoneViewControls();
       applyTheme(currentTheme);
+      ensureCurrentTimeTicker();
       loadCurrentSession();
     </script>
   </body>

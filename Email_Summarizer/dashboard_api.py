@@ -2051,7 +2051,7 @@ def update_whitelist(payload: WhitelistUpdateRequest, request: Request) -> Dict[
         for item in get_settings_for_user(resolved_user_id).get("WHITELIST_SENDERS", "").split(",")
         if item.strip()
     )
-    cleaned_contacts = [contact.strip() for contact in payload.contacts if contact.strip()]
+    cleaned_contacts = [contact.strip().lower() for contact in payload.contacts if contact.strip()]
     invalid_contacts = [contact for contact in cleaned_contacts if not is_valid_email(contact)]
     if invalid_contacts:
         raise HTTPException(status_code=400, detail="Incorrect email.")
@@ -2066,7 +2066,7 @@ def update_whitelist(payload: WhitelistUpdateRequest, request: Request) -> Dict[
         )
     return {
         "user_id": resolved_user_id,
-        "contacts": [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()],
+        "contacts": cleaned_contacts,
         "contact_profiles": build_contact_profile_items(settings),
         "success": True,
     }
