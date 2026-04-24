@@ -692,7 +692,7 @@
               <summary>How long is source email data kept?</summary>
               <div class="faq-answer">
                 <p>Once a summary has been read, the app keeps the processed email ID so it does not summarize the same email again by accident.</p>
-                <p>After 7 days, the stored source thread body and saved attachments for that read summary are purged automatically for safety, unless you delete the summary manually first.</p>
+                <p>After 20 days, the stored source thread body and saved attachments for a read or done summary are purged automatically for safety, unless you delete the summary manually first.</p>
               </div>
             </details>
 
@@ -1275,12 +1275,16 @@
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
       attachmentAiOffButton.addEventListener("click", () => {
+        if (!attachmentAiEnabled) return;
         attachmentAiEnabled = false;
         syncAttachmentAiToggle();
+        saveAttachmentAiSetting();
       });
       attachmentAiOnButton.addEventListener("click", () => {
+        if (attachmentAiEnabled) return;
         attachmentAiEnabled = true;
         syncAttachmentAiToggle();
+        saveAttachmentAiSetting();
       });
       saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
       submitBugReportButton.addEventListener("click", submitBugReport);

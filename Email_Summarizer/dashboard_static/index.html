@@ -646,7 +646,7 @@
       }
 
       .markdown-box {
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 246, 241, 0.96) 100%);
+        background: #ffffff;
         border: 1px solid var(--border);
         border-radius: 20px;
         padding: 18px 20px;
@@ -993,6 +993,22 @@
         width: min(560px, 100%);
       }
 
+      .chat-modal-card {
+        width: min(860px, 100%);
+      }
+
+      .chat-modal-shell {
+        display: grid;
+        gap: 14px;
+      }
+
+      .chat-modal-footer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+      }
+
       .schedule-modal-card {
         width: min(760px, 100%);
         max-height: min(88vh, 920px);
@@ -1002,7 +1018,8 @@
       .schedule-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
+        gap: 18px 16px;
+        align-items: start;
       }
 
       .schedule-form-shell {
@@ -1013,10 +1030,10 @@
       .schedule-section {
         border: 1px solid var(--border);
         border-radius: 22px;
-        background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,242,236,0.88));
-        padding: 18px;
+        background: #ffffff;
+        padding: 20px;
         display: grid;
-        gap: 14px;
+        gap: 16px;
       }
 
       .schedule-section-header {
@@ -1048,26 +1065,35 @@
       .schedule-grid .field,
       .schedule-grid .field-wide {
         margin-bottom: 0;
+        align-content: start;
       }
 
       .schedule-grid .field-wide {
         grid-column: 1 / -1;
       }
 
+      .schedule-modal-card .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .schedule-modal-card .field input,
       .schedule-grid select,
       .schedule-grid input[type="time"] {
         width: 100%;
-        padding: 13px 16px;
+        min-height: 64px;
+        padding: 13px 18px;
         border-radius: 16px;
         border: 1px solid var(--border);
-        background: var(--panel-strong);
+        background: #ffffff;
         color: var(--text);
+        box-shadow: none;
       }
 
       .schedule-inline {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        gap: 10px;
+        gap: 12px;
       }
 
       .schedule-modal-card .field label {
@@ -1401,7 +1427,7 @@
       .hero-copy {
         max-width: 780px;
         display: grid;
-        gap: 6px;
+        gap: 12px;
       }
 
       .hero-welcome {
@@ -1534,7 +1560,7 @@
 
       .stat-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 14px;
       }
 
@@ -1543,8 +1569,57 @@
         background: rgba(255, 255, 255, 0.72);
         border: 1px solid rgba(18, 18, 18, 0.07);
         border-radius: 22px;
-        padding: 18px 18px 16px;
+        padding: 16px 16px 14px;
         box-shadow: 0 18px 48px rgba(15, 15, 15, 0.07);
+      }
+
+      .stat-card {
+        min-height: 132px;
+        display: grid;
+        grid-template-rows: 24px 1fr 24px;
+        align-content: stretch;
+        gap: 10px;
+      }
+
+      .stat-card-button {
+        width: 100%;
+        text-align: left;
+        color: var(--text);
+        cursor: pointer;
+        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+      }
+
+      .stat-card-button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(18, 18, 18, 0.14);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 22px 44px rgba(15, 15, 15, 0.09);
+      }
+
+      .stat-card-button:focus-visible {
+        outline: 2px solid rgba(18, 18, 18, 0.4);
+        outline-offset: 2px;
+      }
+
+      .stat-card-button-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .stat-card-arrow {
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        border: 1px solid rgba(18, 18, 18, 0.08);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.86);
+        font-size: 14px;
+        line-height: 1;
       }
 
       .stat-label {
@@ -1553,20 +1628,54 @@
         text-transform: uppercase;
         color: var(--muted);
         font-weight: 700;
-        margin-bottom: 10px;
+        margin: 0;
+        align-self: start;
       }
 
       .stat-value {
-        font-size: 30px;
+        font-size: 28px;
         line-height: 1;
         letter-spacing: -0.05em;
         font-weight: 760;
+        align-self: center;
       }
 
       .stat-note {
-        margin-top: 8px;
+        margin: 0;
         font-size: 13px;
         color: var(--muted);
+        align-self: end;
+      }
+
+      .stat-action-card {
+        width: 100%;
+        text-align: left;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .stat-action-card svg {
+        width: 20px;
+        height: 20px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .stat-action-title {
+        font-size: 20px;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+        font-weight: 760;
+        align-self: center;
+      }
+
+      .stat-action-note {
+        font-size: 13px;
+        color: var(--muted);
+        align-self: end;
       }
 
       .pulse-card {
@@ -1683,7 +1792,7 @@
       }
 
       .markdown-box {
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(240, 237, 230, 0.66));
+        background: #ffffff;
       }
 
       @media (max-width: 900px) {
@@ -1764,13 +1873,7 @@
             <span class="tooltip-wrap" data-tooltip="Run Summarizer">
               <button id="runButton" class="hero-run-button" type="button" aria-label="Run Summarizer">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="16.5" cy="5.5" r="1.9"></circle>
-                  <path d="M10.5 8.5l3.2 1.4 2.2 2.6"></path>
-                  <path d="M11.4 10.2l-2.7 3.4"></path>
-                  <path d="M13.8 10.2l-1.1 4.5"></path>
-                  <path d="M12.8 14.7l4.4 1.5"></path>
-                  <path d="M8.5 14l-3 3.8"></path>
-                  <path d="M12.4 14.6l-2.2 4"></path>
+                  <path d="M8 6.8v10.4l8.6-5.2z" fill="currentColor" stroke="none"></path>
                 </svg>
               </button>
             </span>
@@ -1793,16 +1896,19 @@
               <div id="statNewCount" class="stat-value">0</div>
               <div class="stat-note">Unread Summaries</div>
             </div>
-            <div class="stat-card">
-              <div class="stat-label">Contacts</div>
+            <button id="openContactsButton" class="stat-card stat-card-button" type="button" aria-label="Open contacts">
+              <div class="stat-card-button-header">
+                <div class="stat-label">Contacts</div>
+                <span class="stat-card-arrow" aria-hidden="true">↗</span>
+              </div>
               <div id="statContactCount" class="stat-value">0</div>
-              <div class="stat-note">Total Contacts</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Selected now</div>
-              <div id="statSelectedCount" class="stat-value">0</div>
-              <div class="stat-note">Currently Selected</div>
-            </div>
+              <div class="stat-note">Click to open contacts</div>
+            </button>
+            <button id="openAiButton" class="stat-card stat-action-card" type="button" aria-label="Open AI Assistant">
+              <div class="stat-label">AI Assistant</div>
+              <div class="stat-action-title">Ask questions</div>
+              <div class="stat-action-note">Open the chat popup</div>
+            </button>
           </div>
 
           <div id="pulseCard" class="pulse-card">
@@ -1820,59 +1926,6 @@
           </div>
         </div>
       </section>
-
-      <div class="upper-grid">
-        <section class="panel settings-panel is-collapsed">
-          <div class="panel-header">
-            <h2>Contacts</h2>
-            <button id="toggleContactsButton" class="panel-toggle" type="button" aria-label="Expand contacts">+</button>
-          </div>
-          <div id="contactsBody" class="panel-body collapsed">
-            <div class="controls">
-              <button id="loadWhitelistButton" class="contacts-book-button" type="button" aria-label="Current Contacts" title="Current Contacts">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 4h10a2 2 0 0 1 2 2v12a1 1 0 0 1-1.5.86L14 17.5l-2.5 1.36L9 17.5l-2.5 1.36A1 1 0 0 1 5 18V6a2 2 0 0 1 1-2Z"></path>
-                  <path d="M12 12.1a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z"></path>
-                  <path d="M8.6 16.2c.8-1.5 2-2.2 3.4-2.2s2.6.7 3.4 2.2"></path>
-                  <path d="M5 7.5h-1.2"></path>
-                  <path d="M5 11.5h-1.2"></path>
-                  <path d="M5 15.5h-1.2"></path>
-                </svg>
-              </button>
-              <button id="saveWhitelistButton" aria-label="Add Contact">+</button>
-            </div>
-            <input
-              id="whitelistTextarea"
-              type="email"
-              placeholder="Enter contact email"
-            />
-            <div class="hint">
-              Add contacts one at a time.
-            </div>
-          </div>
-        </section>
-
-        <section class="panel chat-panel is-collapsed">
-          <div class="panel-header">
-            <h2>AI Assistant</h2>
-            <button id="toggleChatButton" class="panel-toggle" type="button" aria-label="Expand AI Assistant">+</button>
-          </div>
-          <div id="chatBody" class="panel-body collapsed">
-            <div id="chatStatus" class="status">
-              Ask a question about any of your emails.
-            </div>
-            <div id="chatLog" class="chat-log"></div>
-            <div class="controls">
-              <input
-                id="chatInput"
-                style="flex: 1; min-width: 280px"
-                placeholder="Ask me about your emails!"
-              />
-              <button id="chatSendButton">Send</button>
-            </div>
-          </div>
-        </section>
-      </div>
 
       <div class="layout">
         <section class="panel summary-list-panel">
@@ -1996,6 +2049,29 @@
         <div id="contactsModalList" class="contacts-modal-list"></div>
         <div class="controls modal-actions">
           <button id="contactsModalCloseButton" class="secondary-button" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="chatModal" class="modal-overlay" hidden>
+      <div class="modal-card chat-modal-card">
+        <div class="contacts-modal-header">
+          <h3>AI Assistant</h3>
+        </div>
+        <div class="chat-modal-shell">
+          <div id="chatStatus" class="status">Ask a question about any of your emails.</div>
+          <div id="chatLog" class="chat-log"></div>
+          <div class="chat-modal-footer">
+            <input
+              id="chatInput"
+              style="width: 100%; min-width: 0"
+              placeholder="Ask me about your emails!"
+            />
+            <div class="controls modal-actions">
+              <button id="chatModalCloseButton" class="secondary-button" type="button">Close</button>
+              <button id="chatSendButton" type="button">Send</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2136,13 +2212,8 @@
       const daysBackInput = document.getElementById("daysBackInput");
       const currentTimeValue = document.getElementById("currentTimeValue");
       const currentTimeZoneLabel = document.getElementById("currentTimeZoneLabel");
-      const loadWhitelistButton = document.getElementById("loadWhitelistButton");
-      const saveWhitelistButton = document.getElementById("saveWhitelistButton");
-      const toggleContactsButton = document.getElementById("toggleContactsButton");
-      const toggleChatButton = document.getElementById("toggleChatButton");
-      const contactsBody = document.getElementById("contactsBody");
-      const chatBody = document.getElementById("chatBody");
-      const whitelistTextarea = document.getElementById("whitelistTextarea");
+      const openContactsButton = document.getElementById("openContactsButton");
+      const openAiButton = document.getElementById("openAiButton");
       const chatStatus = document.getElementById("chatStatus");
       const chatLog = document.getElementById("chatLog");
       const chatInput = document.getElementById("chatInput");
@@ -2161,7 +2232,6 @@
       const summaryDetail = document.getElementById("summaryDetail");
       const statNewCount = document.getElementById("statNewCount");
       const statContactCount = document.getElementById("statContactCount");
-      const statSelectedCount = document.getElementById("statSelectedCount");
       const pulseTitle = document.getElementById("pulseTitle");
       const pulseBadge = document.getElementById("pulseBadge");
       const pulseNote = document.getElementById("pulseNote");
@@ -2180,6 +2250,8 @@
       const contactsModalList = document.getElementById("contactsModalList");
       const contactsModalAddButton = document.getElementById("contactsModalAddButton");
       const contactsModalCloseButton = document.getElementById("contactsModalCloseButton");
+      const chatModal = document.getElementById("chatModal");
+      const chatModalCloseButton = document.getElementById("chatModalCloseButton");
       const scheduleModal = document.getElementById("scheduleModal");
       const scheduleModalCloseButton = document.getElementById("scheduleModalCloseButton");
       const scheduleModalCloseTopButton = document.getElementById("scheduleModalCloseTopButton");
@@ -2228,6 +2300,7 @@
       let editingScheduleId = "";
       let editingScheduleActive = true;
       let currentTimeTimer = null;
+      let chatConversation = [];
       const SCHEDULE_TIMEZONE_LABELS = {
         "America/Los_Angeles": "Pacific Time",
         "America/Denver": "Mountain Time",
@@ -2248,30 +2321,16 @@
         sessionStorage.setItem("oauth:lastEmail", String(profile.email || "").trim().toLowerCase());
       }
 
-      function getReadSummaryIds(userId) {
-        try {
-          const raw = localStorage.getItem(`readSummaries:${userId}`);
-          return new Set(raw ? JSON.parse(raw) : []);
-        } catch {
-          return new Set();
-        }
+      function isSummaryRead(summary) {
+        return Boolean(String(summary?.read_at || "").trim());
       }
 
-      function saveReadSummaryIds(userId, readIds) {
-        localStorage.setItem(`readSummaries:${userId}`, JSON.stringify(Array.from(readIds)));
+      function isSummaryDone(summary) {
+        return Boolean(String(summary?.done_at || "").trim());
       }
 
-      function getDoneSummaryIds(userId) {
-        try {
-          const raw = localStorage.getItem(`doneSummaries:${userId}`);
-          return new Set(raw ? JSON.parse(raw) : []);
-        } catch {
-          return new Set();
-        }
-      }
-
-      function saveDoneSummaryIds(userId, doneIds) {
-        localStorage.setItem(`doneSummaries:${userId}`, JSON.stringify(Array.from(doneIds)));
+      function getUnreadSummaryCount() {
+        return allSummaries.filter((summary) => !isSummaryRead(summary) && !isSummaryDone(summary)).length;
       }
 
       function updateSummariesHeading(unreadCount) {
@@ -2429,13 +2488,10 @@
         if (!currentUserId) {
           statNewCount.textContent = "0";
           statContactCount.textContent = "0";
-          statSelectedCount.textContent = "0";
           return;
         }
-        const unreadCount = allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length;
-        statNewCount.textContent = String(unreadCount);
+        statNewCount.textContent = String(getUnreadSummaryCount());
         statContactCount.textContent = String(currentContacts.length);
-        statSelectedCount.textContent = String(selectedSummaryIds.length);
       }
 
       function closeAppModal(result = null) {
@@ -2447,6 +2503,16 @@
 
       function closeContactsModal() {
         contactsModal.hidden = true;
+      }
+
+      function openChatModal() {
+        renderChatConversation();
+        chatModal.hidden = false;
+        setTimeout(() => chatInput.focus(), 0);
+      }
+
+      function closeChatModal() {
+        chatModal.hidden = true;
       }
 
       function closeScheduleModal() {
@@ -2860,42 +2926,42 @@
               <div class="howto-step">1</div>
               <div class="howto-copy">
                 <strong>Sign in the right way</strong>
-                <p>Log in via Gmail/Outlook, or create an account.</p>
+                <p>Use Gmail or Outlook login. Otherwise, create an account.</p>
               </div>
             </div>
             <div class="howto-card">
               <div class="howto-step">2</div>
               <div class="howto-copy">
                 <strong>Set mailbox access if needed</strong>
-                <p>If your email is not Gmail or Outlook, open Mailbox Connection in Settings and enter your real email login details there.</p>
+                <p>If it is not Gmail or Outlook, add your mailbox login in Settings.</p>
               </div>
             </div>
             <div class="howto-card">
               <div class="howto-step">3</div>
               <div class="howto-copy">
                 <strong>Add contacts</strong>
-                <p>Add the people you want to track in Contacts. You can add them one by one or review the saved list in the popup.</p>
+                <p>Add the people you want to track in Contacts.</p>
               </div>
             </div>
             <div class="howto-card">
               <div class="howto-step">4</div>
               <div class="howto-copy">
                 <strong>Run the summarizer</strong>
-                <p>Click Run Summarizer to check recent emails from those contacts. New summaries will appear on the left side of the dashboard.</p>
+                <p>Run Summarizer to check recent emails from those contacts.</p>
               </div>
             </div>
             <div class="howto-card">
               <div class="howto-step">5</div>
               <div class="howto-copy">
                 <strong>Read and combine</strong>
-                <p>Click a summary to open it. Check more than one summary if you want the right side to combine them automatically.</p>
+                <p>Open a summary to read it. Select more than one to combine them.</p>
               </div>
             </div>
             <div class="howto-card">
               <div class="howto-step">6</div>
               <div class="howto-copy">
                 <strong>Ask AI questions</strong>
-                <p>Use AI Assistant to ask about deadlines, people, attachments, or other details across your summaries and threads.</p>
+                <p>Use AI Assistant to ask about your emails.</p>
               </div>
             </div>
           </div>
@@ -3076,9 +3142,8 @@
           sendSummaryEmailButton.hidden = true;
           viewThreadButton.hidden = true;
           detailStatus.textContent = "Select a summary to view it.";
-          chatLog.innerHTML = "";
-          chatComposer.value = "";
-          whitelistTextarea.value = "";
+          clearChatConversation();
+          chatInput.value = "";
         }
         currentProfile = profile;
         currentUserId = profile.user_id;
@@ -3121,11 +3186,11 @@
         heroLabel.textContent = "Email Dashboard";
         heroWelcome.textContent = "Welcome";
         userIdInput.value = "";
-        whitelistTextarea.value = "";
         summaryList.innerHTML = "";
         summaryDetail.innerHTML = "No summary selected yet.";
         sendSummaryEmailButton.hidden = true;
-        chatLog.innerHTML = "";
+        clearChatConversation();
+        chatInput.value = "";
         listStatus.textContent = "Log in to view saved summaries.";
         detailStatus.textContent = "Log in to view a summary.";
         updateSummariesHeading(0);
@@ -3238,32 +3303,49 @@
         window.location.href = "/login";
       }
 
-      function appendChatMessage(role, text, attachments = []) {
-        const message = document.createElement("div");
-        message.className = `chat-message ${role}`;
-        const attachmentHtml =
-          attachments.length && role === "assistant"
-            ? `
-              <div class="attachment-links">
-                <strong>Matching attachments</strong>
-                ${attachments
-                  .map(
-                    (attachment) =>
-                      `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(
-                        attachment.filename
-                      )}</a>`
-                  )
-                  .join("")}
-              </div>
-            `
-            : "";
-        message.innerHTML = `
-          <div class="chat-role">${escapeHtml(role)}</div>
-          <div class="chat-text">${escapeHtml(text)}</div>
-          ${attachmentHtml}
-        `;
-        chatLog.appendChild(message);
+      function renderChatConversation() {
+        chatLog.innerHTML = "";
+        for (const entry of chatConversation) {
+          const message = document.createElement("div");
+          message.className = `chat-message ${entry.role}`;
+          const attachmentHtml =
+            entry.attachments.length && entry.role === "assistant"
+              ? `
+                <div class="attachment-links">
+                  <strong>Matching attachments</strong>
+                  ${entry.attachments
+                    .map(
+                      (attachment) =>
+                        `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(
+                          attachment.filename
+                        )}</a>`
+                    )
+                    .join("")}
+                </div>
+              `
+              : "";
+          message.innerHTML = `
+            <div class="chat-role">${escapeHtml(entry.role)}</div>
+            <div class="chat-text">${escapeHtml(entry.text)}</div>
+            ${attachmentHtml}
+          `;
+          chatLog.appendChild(message);
+        }
         chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      function appendChatMessage(role, text, attachments = []) {
+        chatConversation.push({
+          role: String(role || "assistant"),
+          text: String(text || ""),
+          attachments: Array.isArray(attachments) ? attachments : [],
+        });
+        renderChatConversation();
+      }
+
+      function clearChatConversation() {
+        chatConversation = [];
+        chatLog.innerHTML = "";
       }
 
       function formatDate(timestamp) {
@@ -3412,9 +3494,8 @@
       }
 
       function getVisibleSummaries() {
-        const doneIds = getDoneSummaryIds(currentUserId);
         return allSummaries.filter((summary) =>
-          showingDoneSummaries ? doneIds.has(summary.summary_id) : !doneIds.has(summary.summary_id)
+          showingDoneSummaries ? isSummaryDone(summary) : !isSummaryDone(summary)
         );
       }
 
@@ -3429,29 +3510,28 @@
       }
 
       function markSummaryAsRead(summaryId) {
-        if (!currentUserId || !summaryId || showingDoneSummaries) return false;
-        const readSummaryIds = getReadSummaryIds(currentUserId);
-        if (readSummaryIds.has(summaryId)) {
+        if (!currentUserId || !summaryId) return false;
+        const summary = allSummaries.find((item) => item.summary_id === summaryId);
+        if (!summary || isSummaryRead(summary)) {
           return false;
         }
-        readSummaryIds.add(summaryId);
-        saveReadSummaryIds(currentUserId, readSummaryIds);
+        summary.read_at = new Date().toISOString();
         fetch(`/summaries/${encodeURIComponent(summaryId)}/mark-read?user_id=${encodeURIComponent(currentUserId)}`, {
           method: "POST",
           keepalive: true,
         }).catch(() => {});
-        updateSummariesHeading(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
-        updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
+        updateSummariesHeading(getUnreadSummaryCount());
+        updateListStatusText(getUnreadSummaryCount());
         updateHeroStats();
         return true;
       }
 
-      function renderSummaryList(readSummaryIds) {
+      function renderSummaryList() {
         currentSummaries = getVisibleSummaries();
         summaryList.innerHTML = "";
 
         currentSummaries.forEach((summary) => {
-          const isUnread = !readSummaryIds.has(summary.summary_id);
+          const isUnread = !isSummaryRead(summary) && !isSummaryDone(summary);
           const card = document.createElement("div");
           card.className = "summary-card";
           card.dataset.summaryId = summary.summary_id;
@@ -3477,7 +3557,7 @@
             } else {
               addSelectedSummary(summary.summary_id);
             }
-            updateListStatusText(allSummaries.filter((item) => !readSummaryIds.has(item.summary_id)).length);
+            updateListStatusText(getUnreadSummaryCount());
             updateHeroStats();
           });
 
@@ -3518,7 +3598,6 @@
         selectedSummaryIds = [];
         currentSummaries = [];
         allSummaries = [];
-        const readSummaryIds = getReadSummaryIds(currentUserId);
         listStatus.textContent = `Loading summaries for ${currentUserId}...`;
         summaryList.innerHTML = "";
         summaryDetail.innerHTML = "No summary selected yet.";
@@ -3536,18 +3615,11 @@
 
         const summaries = data.summaries || [];
         allSummaries = summaries;
-        const summaryIds = new Set(summaries.map((summary) => summary.summary_id));
-        const doneSummaryIds = getDoneSummaryIds(currentUserId);
-        const reconciledDoneIds = new Set([...doneSummaryIds].filter((summaryId) => summaryIds.has(summaryId)));
-        if (reconciledDoneIds.size !== doneSummaryIds.size) {
-          saveDoneSummaryIds(currentUserId, reconciledDoneIds);
-        }
-
-        const unreadCount = summaries.filter((summary) => !readSummaryIds.has(summary.summary_id)).length;
+        const unreadCount = getUnreadSummaryCount();
         updateSummariesHeading(unreadCount);
         syncDoneViewControls();
         updateListStatusText(unreadCount);
-        renderSummaryList(readSummaryIds);
+        renderSummaryList();
         updateHeroStats();
 
         if (!currentSummaries.length) {
@@ -3774,6 +3846,15 @@
 
       async function runSummarizer() {
         if (!requireSignedIn()) return;
+        if (!Array.isArray(currentContacts) || currentContacts.length === 0) {
+          await openAppModal({
+            title: "Add Contacts First",
+            message: "Add contacts first.",
+            confirmLabel: "OK",
+            cancelLabel: "Close",
+          });
+          return;
+        }
         const requiresMailboxConnection = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
         const mailboxConnected = Boolean(currentProfile?.settings?.mailbox_connected);
         if (requiresMailboxConnection && !mailboxConnected) {
@@ -3911,7 +3992,6 @@
 
         let removedCount = 0;
         try {
-          const doneIds = getDoneSummaryIds(currentUserId);
           const results = await Promise.all(
             summaryIds.map(async (summaryId) => {
               const response = await fetch(
@@ -3922,8 +4002,6 @@
             })
           );
           removedCount = results.filter((result) => result.ok).length;
-          results.filter((result) => result.ok).forEach((result) => doneIds.delete(result.summaryId));
-          saveDoneSummaryIds(currentUserId, doneIds);
           if (results.some((result) => result.summaryId === currentSummaryId && result.ok)) {
             currentSummaryId = null;
             summaryDetail.innerHTML = "No summary selected yet.";
@@ -4339,7 +4417,7 @@
             ? "Deselected all summary items."
             : `Selected ${allSummaryIds.length} summary item(s).`
         );
-        updateListStatusText(currentSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        updateListStatusText(getUnreadSummaryCount());
         updateHeroStats();
       }
 
@@ -4348,33 +4426,60 @@
         showingDoneSummaries = !showingDoneSummaries;
         selectedSummaryIds = [];
         syncDoneViewControls();
-        renderSummaryList(getReadSummaryIds(currentUserId));
-        updateSummariesHeading(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
-        updateListStatusText(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        renderSummaryList();
+        updateSummariesHeading(getUnreadSummaryCount());
+        updateListStatusText(getUnreadSummaryCount());
         renderEmptySummaryState();
         updateHeroStats();
       }
 
-      function toggleDoneForSelectedSummaries() {
+      async function toggleDoneForSelectedSummaries() {
         if (!requireSignedIn()) return;
         if (!selectedSummaryIds.length) {
           setRunStatus(showingDoneSummaries ? "Select at least one done summary first." : "Select at least one summary first.");
           return;
         }
 
-        const doneIds = getDoneSummaryIds(currentUserId);
-        if (showingDoneSummaries) {
-          selectedSummaryIds.forEach((summaryId) => doneIds.delete(summaryId));
-          setRunStatus(`Moved ${selectedSummaryIds.length} summary item(s) back to active.`);
-        } else {
-          selectedSummaryIds.forEach((summaryId) => doneIds.add(summaryId));
-          setRunStatus(`Marked ${selectedSummaryIds.length} summary item(s) as done.`);
+        const targetDoneState = !showingDoneSummaries;
+        const actionLabel = targetDoneState ? "Marking summaries as done..." : "Moving done summaries back to active...";
+        setRunStatus(actionLabel, true);
+        try {
+          const results = await Promise.all(
+            selectedSummaryIds.map(async (summaryId) => {
+              const response = await fetch(`/summaries/${encodeURIComponent(summaryId)}/mark-done`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  user_id: currentUserId,
+                  done: targetDoneState,
+                }),
+              });
+              const data = await response.json();
+              if (!response.ok) {
+                throw new Error(data.detail || "Failed to update summary state.");
+              }
+              return { summaryId, done_at: String(data.done_at || "") };
+            })
+          );
+          results.forEach(({ summaryId, done_at }) => {
+            const summary = allSummaries.find((item) => item.summary_id === summaryId);
+            if (summary) {
+              summary.done_at = done_at;
+            }
+          });
+          setRunStatus(
+            targetDoneState
+              ? `Marked ${selectedSummaryIds.length} summary item(s) as done.`
+              : `Moved ${selectedSummaryIds.length} summary item(s) back to active.`
+          );
+        } catch (error) {
+          setRunStatus(error.message || "Failed to update summary state.");
+          return;
         }
-        saveDoneSummaryIds(currentUserId, doneIds);
         selectedSummaryIds = [];
-        renderSummaryList(getReadSummaryIds(currentUserId));
-        updateSummariesHeading(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
-        updateListStatusText(allSummaries.filter((summary) => !getReadSummaryIds(currentUserId).has(summary.summary_id)).length);
+        renderSummaryList();
+        updateSummariesHeading(getUnreadSummaryCount());
+        updateListStatusText(getUnreadSummaryCount());
         renderEmptySummaryState();
         updateHeroStats();
       }
@@ -4425,16 +4530,11 @@
       runButton.addEventListener("click", runSummarizer);
       scheduleButton.addEventListener("click", openScheduleModal);
       logoutButton.addEventListener("click", logout);
-      loadWhitelistButton.addEventListener("click", loadWhitelist);
-      saveWhitelistButton.addEventListener("click", saveWhitelist);
-      whitelistTextarea.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          saveWhitelist();
-        }
-      });
+      openContactsButton.addEventListener("click", loadWhitelist);
+      openAiButton.addEventListener("click", openChatModal);
       contactsModalAddButton.addEventListener("click", addContactFromModal);
       contactsModalCloseButton.addEventListener("click", closeContactsModal);
+      chatModalCloseButton.addEventListener("click", closeChatModal);
       scheduleModalCloseButton.addEventListener("click", closeScheduleModal);
       scheduleModalCloseTopButton.addEventListener("click", closeScheduleModal);
       savedSchedulesCloseButton.addEventListener("click", closeSavedSchedulesModal);
@@ -4451,17 +4551,9 @@
         window.location.href = "/settings";
       });
       settingsHelpButton.addEventListener("click", () => showHowToIfNeeded(true));
-      toggleContactsButton.addEventListener("click", async () => {
-        const willOpen = contactsBody.classList.contains("collapsed");
-        togglePanel(contactsBody, toggleContactsButton);
-        if (willOpen) {
-          await fetchContacts();
-        }
-      });
       togglePulseButton.addEventListener("click", () => {
         setPulseCollapsed(!heroShell.classList.contains("is-collapsed"));
       });
-      toggleChatButton.addEventListener("click", () => togglePanel(chatBody, toggleChatButton));
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
       combinedReportButton.addEventListener("click", () => generateCombinedSummary());
       doneToggleButton.addEventListener("click", toggleDoneForSelectedSummaries);
@@ -4483,6 +4575,11 @@
           closeContactsModal();
         }
       });
+      chatModal.addEventListener("click", (event) => {
+        if (event.target === chatModal) {
+          closeChatModal();
+        }
+      });
       scheduleModal.addEventListener("click", (event) => {
         if (event.target === scheduleModal) {
           closeScheduleModal();
@@ -4493,8 +4590,6 @@
           closeSavedSchedulesModal();
         }
       });
-      setPanelCollapsed(contactsBody, toggleContactsButton, true);
-      setPanelCollapsed(chatBody, toggleChatButton, true);
       setPulseCollapsed(false);
       resetScheduleForm();
       syncDoneViewControls();

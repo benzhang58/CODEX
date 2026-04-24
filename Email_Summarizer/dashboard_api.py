@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from dotenv import dotenv_values
 from pydantic import BaseModel
@@ -80,7 +81,7 @@ APP_DATA_DIR = APP_STORAGE_DIR / "app"
 DB_PATH = APP_DATA_DIR / "app.db"
 PUBLIC_REPORTS_DIR = APP_STORAGE_DIR / "public_reports"
 SESSION_COOKIE_NAME = "email_dashboard_session"
-READ_RETENTION_DAYS = 7
+READ_RETENTION_DAYS = 20
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
 GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
@@ -89,7 +90,10 @@ GOOGLE_OAUTH_SCOPES = [
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
+REQUIRED_GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+REQUIRED_GOOGLE_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 MICROSOFT_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 MICROSOFT_OAUTH_STATE_COOKIE = "email_dashboard_microsoft_state"
 MICROSOFT_OAUTH_NEXT_COOKIE = "email_dashboard_microsoft_next"
@@ -101,6 +105,8 @@ MICROSOFT_OAUTH_SCOPES = [
     "User.Read",
     "https://outlook.office.com/IMAP.AccessAsUser.All",
 ]
+
+app.mount("/dashboard_static", StaticFiles(directory=STATIC_DIR), name="dashboard_static")
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -249,6 +255,11 @@ class RunSummarizerRequest(BaseModel):
     days_back: int = 7
 
 
+class SummaryDoneRequest(BaseModel):
+    user_id: Optional[str] = None
+    done: bool = True
+
+
 class WhitelistUpdateRequest(BaseModel):
     user_id: Optional[str] = None
     contacts: List[str]
@@ -355,8 +366,8 @@ class CombinedSummaryTextRequest(BaseModel):
 
 
 @app.get("/")
-def home() -> RedirectResponse:
-    return RedirectResponse("/login")
+def home() -> FileResponse:
+    return FileResponse(STATIC_DIR / "home.html")
 
 
 @app.get("/health")
@@ -413,6 +424,16 @@ def settings_page() -> FileResponse:
 @app.get("/signup")
 def signup_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "signup.html")
+
+
+@app.get("/privacy")
+def privacy_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "privacy.html")
+
+
+@app.get("/terms")
+def terms_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "terms.html")
 
 
 @app.post("/auth/signup")
@@ -1375,6 +1396,69 @@ def get_json_with_bearer(url: str, access_token: str, error_prefix: str = "OAuth
         raise HTTPException(status_code=500, detail=f"{error_prefix}: {payload}") from exc
 
 
+def post_json_with_bearer(url: str, access_token: str, payload: Dict[str, Any], error_prefix: str) -> Dict[str, Any]:
+    request = UrlRequest(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=500, detail=f"{error_prefix}: {body}") from exc
+
+
+def refresh_google_access_token(profile: Dict[str, Any]) -> str:
+    google_oauth = profile.get("google_oauth") or {}
+    refresh_token = str(google_oauth.get("refresh_token", "")).strip()
+    access_token = str(google_oauth.get("access_token", "")).strip()
+    if access_token and not refresh_token:
+        return access_token
+    if not refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Google email sending needs a refreshed Google sign-in for this account.",
+        )
+
+    config = get_google_oauth_config()
+    token_payload = post_form_json(
+        "https://oauth2.googleapis.com/token",
+        {
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+        error_prefix="Google token refresh failed",
+    )
+    new_access_token = str(token_payload.get("access_token", "")).strip()
+    if not new_access_token:
+        raise HTTPException(status_code=500, detail="Google token refresh did not return an access token.")
+
+    google_oauth["access_token"] = new_access_token
+    google_oauth["updated_at"] = datetime.now().isoformat()
+    profile["google_oauth"] = google_oauth
+    save_profile(profile)
+    return new_access_token
+
+
+def parse_oauth_scope_text(scope_value: Any) -> set[str]:
+    return {part.strip() for part in str(scope_value or "").split() if part.strip()}
+
+
+def google_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> bool:
+    google_oauth = profile.get("google_oauth") or {}
+    scopes = parse_oauth_scope_text(google_oauth.get("scope", ""))
+    return required_scope in scopes
+
+
 def decode_jwt_payload(token: str) -> Dict[str, Any]:
     token_text = str(token or "").strip()
     if not token_text or token_text.count(".") < 2:
@@ -2199,6 +2283,8 @@ def load_summary_json(summary_path: Path) -> Dict[str, Any]:
     payload.setdefault("filename", summary_path.name)
     payload.setdefault("preview", payload.get("executive_summary") or payload.get("bottom_line") or "")
     payload.setdefault("updated_at", payload.get("created_at") or stat.st_mtime)
+    payload.setdefault("read_at", "")
+    payload.setdefault("done_at", "")
     return payload
 
 
@@ -2260,6 +2346,8 @@ def load_summary_json_preview(summary_path: Path) -> Dict[str, Any]:
         "title": payload.get("title", summary_path.stem),
         "preview": payload.get("preview", ""),
         "updated_at": payload.get("updated_at"),
+        "read_at": payload.get("read_at", ""),
+        "done_at": payload.get("done_at", ""),
     }
 
 
@@ -2310,7 +2398,11 @@ def purge_old_read_source_data(user_id: str) -> None:
         except Exception:
             continue
         read_at = parse_iso_timestamp(payload.get("read_at"))
-        eligible = bool(read_at and read_at <= cutoff)
+        done_at = parse_iso_timestamp(payload.get("done_at"))
+        eligible = bool(
+            (read_at and read_at <= cutoff)
+            or (done_at and done_at <= cutoff)
+        )
         for email_id in payload.get("source_email_file_ids", []) or []:
             email_text = str(email_id).strip()
             if email_text:
@@ -2352,7 +2444,9 @@ def purge_old_read_source_data(user_id: str) -> None:
             message["attachments"] = []
         email_payload["raw_path"] = ""
         email_payload["content_purged_at"] = datetime.now().isoformat()
-        email_payload["content_retention_policy"] = f"Source bodies and attachments purged {READ_RETENTION_DAYS} days after read."
+        email_payload["content_retention_policy"] = (
+            f"Source bodies and attachments purged {READ_RETENTION_DAYS} days after read or done."
+        )
         email_path.write_text(json.dumps(email_payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
@@ -2697,6 +2791,7 @@ def render_summary_email_html(summary: Dict[str, Any]) -> str:
 def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
+    google_oauth = profile.get("google_oauth") or {}
     smtp_host = settings.get("SMTP_HOST", "")
     smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
     smtp_user = settings.get("SMTP_USER", "")
@@ -2734,6 +2829,24 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
         text_parts.append("")
     msg.attach(MIMEText(_to_ascii_safe("\n".join(text_parts).strip()), "plain", "utf-8"))
     msg.attach(MIMEText(render_summary_email_html(summary), "html", "utf-8"))
+
+    if str(google_oauth.get("provider", "")).strip().lower() == "google":
+        if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
+            raise HTTPException(
+                status_code=400,
+                detail="Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
+            )
+        if not is_valid_email(recipient):
+            raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
+        access_token = refresh_google_access_token(profile)
+        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        post_json_with_bearer(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            access_token,
+            {"raw": raw_message},
+            error_prefix="Failed to send Gmail message",
+        )
+        return {"recipient": recipient, "subject": msg["Subject"]}
 
     try:
         if smtp_port == 587:
@@ -2945,6 +3058,7 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
 def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recipient_override: Optional[str] = None) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
+    google_oauth = profile.get("google_oauth") or {}
     smtp_host = settings.get("SMTP_HOST", "")
     smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
     smtp_user = settings.get("SMTP_USER", "")
@@ -2962,6 +3076,27 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recip
     msg["To"] = recipient
     msg.attach(MIMEText(render_markdown_report_text(title, markdown, max_chars=20000), "plain", "utf-8"))
     msg.attach(MIMEText(render_markdown_report_email_html(title, markdown), "html", "utf-8"))
+
+    if str(google_oauth.get("provider", "")).strip().lower() == "google":
+        if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
+            raise HTTPException(
+                status_code=400,
+                detail="Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
+            )
+        access_token = refresh_google_access_token(profile)
+        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        post_json_with_bearer(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            access_token,
+            {"raw": raw_message},
+            error_prefix="Failed to send Gmail message",
+        )
+        track_analytics_event(
+            user_id,
+            "report_delivered",
+            {"delivery_channel": "email", "recipient": recipient, "title": title},
+        )
+        return {"recipient": recipient, "subject": msg["Subject"]}
 
     try:
         if smtp_port == 587:
@@ -3669,6 +3804,13 @@ def get_active_run_summarizer_job(request: Request, user_id: Optional[str] = Que
 @app.post("/run-summarizer")
 def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    if google_connected and not google_oauth_has_scope(profile, REQUIRED_GOOGLE_READ_SCOPE):
+        raise HTTPException(
+            status_code=400,
+            detail="Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
+        )
     return launch_summarizer_job(resolved_user_id, payload.days_back)
 
 
@@ -3787,6 +3929,26 @@ def mark_summary_read(summary_id: str, request: Request, user_id: Optional[str] 
         "user_id": user_id,
         "summary_id": summary_id,
         "read_at": payload.get("read_at", ""),
+    }
+
+
+@app.post("/summaries/{summary_id}/mark-done")
+def mark_summary_done(summary_id: str, payload: SummaryDoneRequest, request: Request) -> Dict[str, Any]:
+    user_id = resolve_user_id(request, payload.user_id)
+    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    if not summary_path.exists():
+        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+
+    summary_payload = load_summary_json(summary_path)
+    is_done = bool(payload.done)
+    summary_payload["done_at"] = datetime.now().isoformat() if is_done else ""
+    save_summary_json(summary_path, summary_payload)
+    purge_old_read_source_data(user_id)
+    return {
+        "success": True,
+        "user_id": user_id,
+        "summary_id": summary_id,
+        "done_at": summary_payload.get("done_at", ""),
     }
 
 
