@@ -884,7 +884,7 @@
       }
 
       #appModal {
-        z-index: 1100;
+        z-index: 1300;
       }
 
       #contactsModal {
@@ -1146,6 +1146,21 @@
         gap: 12px;
       }
 
+      .saved-schedules-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .saved-schedules-add-button {
+        min-width: 54px;
+        min-height: 54px;
+        padding: 0;
+        border-radius: 18px;
+        font-size: 30px;
+        line-height: 1;
+      }
+
       .saved-schedules-modal {
         z-index: 1200;
       }
@@ -1228,6 +1243,10 @@
         flex: 1 1 0;
         min-width: 0;
         width: 0;
+        min-height: 74px;
+        padding-left: 18px;
+        padding-right: 18px;
+        text-align: center;
       }
 
       .schedule-footer-actions {
@@ -2158,7 +2177,7 @@
 
           <div class="controls modal-actions schedule-primary-actions schedule-footer-actions">
             <button id="scheduleViewSavedButton" class="secondary-button" type="button">View Saved Schedules</button>
-            <button id="scheduleResetButton" class="secondary-button" type="button" hidden>Create Different Schedule</button>
+            <button id="scheduleResetButton" class="secondary-button" type="button" hidden>New Schedule</button>
             <button id="scheduleSaveButton" type="button">Create Schedule</button>
           </div>
         </div>
@@ -2173,7 +2192,10 @@
       <div class="modal-card schedule-modal-card">
         <div class="contacts-modal-header">
           <h3>Saved Schedules</h3>
-          <button id="savedSchedulesCloseTopButton" class="secondary-button" type="button">Close</button>
+          <div class="saved-schedules-header-actions">
+            <button id="savedSchedulesAddButton" class="secondary-button saved-schedules-add-button" type="button" aria-label="Add another schedule">+</button>
+            <button id="savedSchedulesCloseTopButton" class="secondary-button" type="button">Close</button>
+          </div>
         </div>
         <div class="modal-copy">Review saved schedules, turn them on or off, edit them, or remove them.</div>
         <div id="savedSchedulesStatus" class="schedule-status"></div>
@@ -2247,6 +2269,7 @@
       const savedSchedulesModal = document.getElementById("savedSchedulesModal");
       const savedSchedulesCloseButton = document.getElementById("savedSchedulesCloseButton");
       const savedSchedulesCloseTopButton = document.getElementById("savedSchedulesCloseTopButton");
+      const savedSchedulesAddButton = document.getElementById("savedSchedulesAddButton");
       const scheduleNameInput = document.getElementById("scheduleNameInput");
       const scheduleEmailInput = document.getElementById("scheduleEmailInput");
       const scheduleIntervalValueInput = document.getElementById("scheduleIntervalValueInput");
@@ -2508,6 +2531,12 @@
         savedSchedulesModal.hidden = true;
       }
 
+      function openCreateScheduleFromSaved() {
+        closeSavedSchedulesModal();
+        scheduleModal.hidden = false;
+        resetScheduleForm();
+      }
+
       function getLocalTimezone() {
         return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
       }
@@ -2665,6 +2694,7 @@
             if (schedule) {
               applyScheduleToForm(schedule);
               closeSavedSchedulesModal();
+              scheduleModal.hidden = false;
             }
           });
         });
@@ -2729,6 +2759,7 @@
 
       async function saveSchedule(payload = null, silentReload = false) {
         if (!requireSignedIn()) return false;
+        const wasEditing = Boolean(editingScheduleId && !payload);
         scheduleSaveButton.disabled = true;
         scheduleStatus.textContent = editingScheduleId && !silentReload ? "Saving changes..." : "Creating schedule...";
         try {
@@ -2761,6 +2792,9 @@
           if (!silentReload) {
             applyScheduleToForm(data.schedule);
             savedSchedulesStatus.textContent = "Saved schedules updated.";
+            closeScheduleModal();
+            savedSchedulesModal.hidden = false;
+            savedSchedulesStatus.textContent = wasEditing ? "Schedule updated." : "Schedule created.";
           }
           return true;
         } catch (error) {
@@ -4581,6 +4615,7 @@
       scheduleModalCloseTopButton.addEventListener("click", closeScheduleModal);
       savedSchedulesCloseButton.addEventListener("click", closeSavedSchedulesModal);
       savedSchedulesCloseTopButton.addEventListener("click", closeSavedSchedulesModal);
+      savedSchedulesAddButton.addEventListener("click", openCreateScheduleFromSaved);
       scheduleTimezoneInput.addEventListener("change", () => {
         localStorage.setItem("schedulePreferredTimezone", scheduleTimezoneInput.value || getLocalTimezone());
         refreshCurrentTime();

@@ -362,6 +362,7 @@ class EmailSummarizer:
             for e in os.getenv("WHITELIST_SENDERS", "").split(",")
             if e.strip()
         ]
+        self.whitelist_set: Set[str] = set(self.whitelist)
         self.contact_profiles = parse_contact_profiles(os.getenv("CONTACT_PROFILES", ""))
         if not self.whitelist:
             logger.warning("No WHITELIST_SENDERS defined!")
@@ -381,6 +382,14 @@ class EmailSummarizer:
         self.attachment_retention_days = int(os.getenv("EMAIL_SUMMARIZER_ATTACHMENT_RETENTION_DAYS", "30") or "30")
         self.source_email_retention_days = int(os.getenv("EMAIL_SUMMARIZER_SOURCE_EMAIL_RETENTION_DAYS", "0") or "0")
         self._apply_retention_policy()
+
+    def _message_sender(self, msg: Message) -> str:
+        return email.utils.parseaddr(msg.get("From", ""))[1].strip().lower()
+
+    def _is_tracked_sender(self, sender: str) -> bool:
+        if not self.whitelist:
+            return True
+        return str(sender or "").strip().lower() in self.whitelist_set
 
     @staticmethod
     def _contact_profile_display_name(profile: Dict[str, str]) -> str:
@@ -1070,6 +1079,7 @@ class EmailSummarizer:
 
         msgs = []
         skipped_processed = 0
+        skipped_untracked_sender = 0
         for uid in uid_list:
             if self._uid_token(uid) in processed_uids:
                 logger.info(f"  Skipping UID {uid} (already processed)")
@@ -1077,13 +1087,18 @@ class EmailSummarizer:
                 continue
             msg = self._fetch_raw(mail, uid)
             if msg:
-                sender = email.utils.parseaddr(msg.get("From", ""))[1].lower()
+                sender = self._message_sender(msg)
+                if not self._is_tracked_sender(sender):
+                    skipped_untracked_sender += 1
+                    logger.info(f"  Skipping UID {uid} because actual From is not tracked: {sender or '(empty)'}")
+                    continue
                 msgs.append(msg)
 
         logger.info(f"Found {len(msgs)} new trigger email(s)")
         return msgs, {
             "candidate_trigger_count": len(uid_list),
             "already_processed_count": skipped_processed,
+            "untracked_sender_count": skipped_untracked_sender,
             "new_trigger_count": len(msgs),
         }
 
@@ -1110,13 +1125,20 @@ class EmailSummarizer:
         logger.info(f"Gmail API returned {len(candidate_ids)} candidate message(s)")
         msgs: List[Message] = []
         skipped_processed = 0
+        skipped_untracked_sender = 0
         for gmail_message_id in candidate_ids:
             numeric_uid = self._gmail_numeric_uid(gmail_message_id)
             if self._uid_token(numeric_uid) in processed_uids:
                 skipped_processed += 1
                 continue
             try:
-                msgs.append(self._gmail_api_raw_message(gmail_message_id))
+                msg = self._gmail_api_raw_message(gmail_message_id)
+                sender = self._message_sender(msg)
+                if not self._is_tracked_sender(sender):
+                    skipped_untracked_sender += 1
+                    logger.info(f"Skipping Gmail candidate {gmail_message_id} because actual From is not tracked: {sender or '(empty)'}")
+                    continue
+                msgs.append(msg)
             except Exception as exc:
                 logger.warning(f"Failed to fetch Gmail message {gmail_message_id}: {exc}")
 
@@ -1124,6 +1146,7 @@ class EmailSummarizer:
         return msgs, {
             "candidate_trigger_count": len(candidate_ids),
             "already_processed_count": skipped_processed,
+            "untracked_sender_count": skipped_untracked_sender,
             "new_trigger_count": len(msgs),
         }
 
@@ -1484,7 +1507,10 @@ class EmailSummarizer:
             message_id = msg.get("Message-ID", "")
             from_parts   = email.utils.parseaddr(msg.get("From", ""))
             display_name = self._decode_subject(from_parts[0].strip()) or from_parts[1].split("@")[0]
-            sender       = from_parts[1].lower()
+            sender       = self._message_sender(msg)
+            if not self._is_tracked_sender(sender):
+                logger.info(f"Skipping parsed email because actual From is not tracked: {sender or '(empty)'}")
+                return None
             subject      = self._decode_subject(msg.get("Subject", "(no subject)"))
             date_str   = msg.get("Date", "")
             try:

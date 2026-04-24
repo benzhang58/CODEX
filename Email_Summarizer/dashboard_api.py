@@ -2348,19 +2348,32 @@ def save_summary_json(summary_path: Path, payload: Dict[str, Any]) -> None:
 
 
 def load_all_current_summaries_for_user(user_id: str) -> List[Dict[str, Any]]:
+    tracked_contacts = {contact.strip().lower() for contact in get_contacts_for_user(user_id) if contact.strip()}
+
+    def is_tracked_summary(summary: Dict[str, Any]) -> bool:
+        sender = str(summary.get("sender", "") or "").strip().lower()
+        return bool(sender and sender in tracked_contacts)
+
     json_summaries_dir = get_user_json_summaries_dir(user_id)
     if json_summaries_dir.exists():
         summary_files = sorted(json_summaries_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
         return [
-            load_summary_json(path)
+            summary
             for path in summary_files
             if not path.stem.startswith("overall_master_")
+            for summary in [load_summary_json(path)]
+            if is_tracked_summary(summary)
         ]
 
     summaries_dir = get_user_summaries_dir(user_id)
     if summaries_dir.exists():
         summary_files = sorted(summaries_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
-        return [load_summary_file(path) for path in summary_files]
+        return [
+            summary
+            for path in summary_files
+            for summary in [load_summary_file(path)]
+            if is_tracked_summary(summary)
+        ]
 
     return []
 
@@ -3874,14 +3887,22 @@ def list_summaries(request: Request, user_id: Optional[str] = Query(None, descri
     user_id = resolve_user_id(request, user_id)
     purge_old_read_source_data(user_id)
     contact_profiles = parse_contact_profiles(get_settings_for_user(user_id))
+    tracked_contacts = {contact.strip().lower() for contact in get_contacts_for_user(user_id) if contact.strip()}
+
+    def is_tracked_summary(summary: Dict[str, Any]) -> bool:
+        sender = str(summary.get("sender", "") or "").strip().lower()
+        return bool(sender and sender in tracked_contacts)
+
     json_summaries_dir = get_user_json_summaries_dir(user_id)
     summaries_dir = get_user_summaries_dir(user_id)
     if json_summaries_dir.exists():
         summary_files = sorted(json_summaries_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
         summaries = [
-            apply_contact_profile_to_summary(load_summary_json_preview(path), contact_profiles)
+            apply_contact_profile_to_summary(summary, contact_profiles)
             for path in summary_files
             if not path.stem.startswith("overall_master_")
+            for summary in [load_summary_json_preview(path)]
+            if is_tracked_summary(summary)
         ]
         return {"user_id": user_id, "count": len(summaries), "summaries": summaries, "source": "json"}
 
@@ -3889,7 +3910,12 @@ def list_summaries(request: Request, user_id: Optional[str] = Query(None, descri
         return {"user_id": user_id, "summaries": [], "message": "No current summaries."}
 
     summary_files = sorted(summaries_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
-    summaries = [load_summary_file(path) for path in summary_files]
+    summaries = [
+        summary
+        for path in summary_files
+        for summary in [load_summary_file(path)]
+        if is_tracked_summary(summary)
+    ]
 
     for summary in summaries:
         summary.pop("content_markdown", None)
