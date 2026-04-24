@@ -104,10 +104,28 @@ The deployment/readiness endpoints should confirm:
 - OpenAI key present
 - encrypted profile storage key present
 - secure production cookies enabled
+- security headers enabled
+- production CORS origins are HTTPS-only and do not use `*`
 - Google/Microsoft OAuth config present if using OAuth sign-in
 - storage/output paths mounted
 - database reachable
 - rate limiting enabled
+
+## Public launch checklist
+
+Before sending real users to the app:
+
+1. Set `EMAIL_SUMMARIZER_PUBLIC_BASE_URL=https://discere-ai.com` in Render.
+2. Set a long random `EMAIL_SUMMARIZER_ENCRYPTION_KEY` in Render and do not change it after users exist.
+3. Set `EMAIL_SUMMARIZER_COOKIE_SECURE=true`.
+4. Set `EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED=true`.
+5. Set either `EMAIL_SUMMARIZER_ADMIN_EMAILS` or `EMAIL_SUMMARIZER_ADMIN_KEY`.
+6. Set `OPENAI_API_KEY` and `OPENAI_MODEL=gpt-5.1`.
+7. Add `https://discere-ai.com/auth/google/callback` in Google OAuth credentials.
+8. Add `https://discere-ai.com/auth/microsoft/callback` in Azure app registration.
+9. Confirm `/health/readiness` returns `status: ready` or only expected OAuth warnings.
+10. Run the security regression tests below before pushing launch changes.
+11. Confirm account isolation manually with two real accounts before broad rollout.
 
 Security regression tests:
 

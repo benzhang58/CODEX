@@ -45,7 +45,7 @@ a {
 .site-brand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 6px;
   font-weight: 800;
   font-size: 1.1rem;
   letter-spacing: 0.04em;

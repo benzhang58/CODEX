@@ -127,9 +127,19 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         self.assertIn("checks", payload)
+        self.assertTrue(payload["checks"]["security_headers_enabled"])
+        self.assertTrue(payload["checks"]["cors_origins_production_safe"])
         serialized = json.dumps(payload)
         self.assertNotIn("test-openai-key", serialized)
         self.assertNotIn("test-only-encryption-key", serialized)
+
+    def test_security_headers_are_applied(self) -> None:
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers.get("x-frame-options"), "DENY")
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertIn("frame-ancestors 'none'", response.headers.get("content-security-policy", ""))
+        self.assertIn("max-age=31536000", response.headers.get("strict-transport-security", ""))
 
     def test_rate_limit_blocks_repeated_login_attempts_when_enabled(self) -> None:
         original = os.environ.get("EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED", "")
@@ -150,6 +160,37 @@ class SecurityRegressionTests(unittest.TestCase):
         finally:
             dashboard_api.RATE_LIMIT_BUCKETS.clear()
             os.environ["EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED"] = original
+
+    def test_request_and_input_size_limits(self) -> None:
+        client = self.signup("limits@example.com")
+
+        response = client.post(
+            "/bug-reports",
+            json={"user_id": "limits_example_com", "title": "Bug", "description": "x" * (dashboard_api.MAX_BUG_DESCRIPTION_CHARS + 1)},
+        )
+        self.assertEqual(response.status_code, 413, response.text)
+
+        response = client.post(
+            "/summaries/combined",
+            json={
+                "user_id": "limits_example_com",
+                "summary_ids": [f"summary-{index}" for index in range(dashboard_api.MAX_SUMMARY_IDS_PER_REQUEST + 1)],
+            },
+        )
+        self.assertEqual(response.status_code, 413, response.text)
+
+        original = os.environ.get("EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES", "")
+        try:
+            dashboard_api.MAX_REQUEST_BODY_BYTES = 10
+            response = client.post(
+                "/bug-reports",
+                json={"user_id": "limits_example_com", "title": "Bug", "description": "Details"},
+            )
+            self.assertEqual(response.status_code, 413, response.text)
+        finally:
+            dashboard_api.MAX_REQUEST_BODY_BYTES = int(os.getenv("EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES", str(1024 * 1024)))
+            if original:
+                os.environ["EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES"] = original
 
 
 if __name__ == "__main__":

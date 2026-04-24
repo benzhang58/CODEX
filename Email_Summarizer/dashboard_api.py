@@ -82,6 +82,30 @@ RATE_LIMIT_RULES = [
     ("POST", "/summaries/combined/send-text", 10, 3600),
     ("POST", "/bug-reports", 8, 3600),
 ]
+MAX_REQUEST_BODY_BYTES = int(os.getenv("EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES", str(1024 * 1024)))
+MAX_CHAT_QUESTION_CHARS = 1200
+MAX_REFINE_MARKDOWN_CHARS = 50000
+MAX_REFINE_INSTRUCTIONS_CHARS = 2000
+MAX_BUG_TITLE_CHARS = 160
+MAX_BUG_DESCRIPTION_CHARS = 5000
+MAX_SUMMARY_IDS_PER_REQUEST = 50
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+}
 
 app = FastAPI(title="Email Summarizer Dashboard API")
 
@@ -98,6 +122,16 @@ def is_production_environment() -> bool:
     if PUBLIC_BASE_URL.startswith("https://"):
         return True
     return str(APP_ENVIRONMENT or "").lower() in {"1", "true", "production", "prod"} or bool(os.getenv("RENDER"))
+
+
+def cors_origins_are_production_safe() -> bool:
+    if not is_production_environment():
+        return True
+    allowed_local = {"http://127.0.0.1:8000", "http://localhost:8000"}
+    non_local_origins = [origin for origin in APP_CORS_ORIGINS if origin not in allowed_local]
+    if not non_local_origins:
+        return False
+    return "*" not in APP_CORS_ORIGINS and all(origin.startswith("https://") for origin in non_local_origins)
 
 
 def get_client_ip(request: Request) -> str:
@@ -122,14 +156,37 @@ def is_rate_limit_enabled() -> bool:
     return os.getenv("EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED", "true").lower() != "false"
 
 
+def add_security_headers(response: Response) -> None:
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    if is_production_environment():
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
+async def security_and_limits_middleware(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                response = JSONResponse({"detail": "Request is too large."}, status_code=413)
+                add_security_headers(response)
+                return response
+        except ValueError:
+            response = JSONResponse({"detail": "Invalid Content-Length header."}, status_code=400)
+            add_security_headers(response)
+            return response
+
     if not is_rate_limit_enabled():
-        return await call_next(request)
+        response = await call_next(request)
+        add_security_headers(response)
+        return response
 
     rule = find_rate_limit_rule(request.method, request.url.path)
     if not rule:
-        return await call_next(request)
+        response = await call_next(request)
+        add_security_headers(response)
+        return response
 
     _, rule_path, max_requests, window_seconds = rule
     now = time.time()
@@ -143,10 +200,14 @@ async def rate_limit_middleware(request: Request, call_next):
                 status_code=429,
                 headers={"Retry-After": str(retry_after)},
             )
+            add_security_headers(response)
+            return response
         recent.append(now)
         RATE_LIMIT_BUCKETS[bucket_key] = recent
 
-    return await call_next(request)
+    response = await call_next(request)
+    add_security_headers(response)
+    return response
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "dashboard_static"
@@ -366,6 +427,32 @@ def validate_startup_configuration() -> None:
         raise RuntimeError("Production readiness checks failed: " + "; ".join(readiness["errors"]))
 
 
+def enforce_text_limit(value: str, label: str, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if len(text) > max_chars:
+        raise HTTPException(status_code=413, detail=f"{label} is too long. Limit: {max_chars} characters.")
+    return text
+
+
+def enforce_summary_id_limit(summary_ids: List[str]) -> None:
+    if len(summary_ids) > MAX_SUMMARY_IDS_PER_REQUEST:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many summaries selected. Limit: {MAX_SUMMARY_IDS_PER_REQUEST}.",
+        )
+
+
+def reconnect_error(provider: str, purpose: str, detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail=detail,
+        headers={
+            "X-Discere-Reconnect-Provider": provider,
+            "X-Discere-Reconnect-Purpose": purpose,
+        },
+    )
+
+
 class RunSummarizerRequest(BaseModel):
     user_id: Optional[str] = None
     days_back: int = 7
@@ -527,6 +614,9 @@ def build_deploy_readiness() -> Dict[str, Any]:
         "microsoft_redirect_configured_or_derivable": bool(get_app_config_value("MICROSOFT_REDIRECT_URI") or PUBLIC_BASE_URL),
         "smtp_host_configured": bool(get_app_config_value("SMTP_HOST")),
         "rate_limit_enabled": is_rate_limit_enabled(),
+        "cors_origins_production_safe": cors_origins_are_production_safe(),
+        "security_headers_enabled": True,
+        "request_size_limit_bytes": MAX_REQUEST_BODY_BYTES,
     }
     try:
         with get_db_connection() as connection:
@@ -548,6 +638,8 @@ def build_deploy_readiness() -> Dict[str, Any]:
             errors.append("Production session cookies must use Secure=true.")
         if PUBLIC_BASE_URL and not checks["public_base_url_https"]:
             errors.append("Production public base URL should use HTTPS.")
+        if not checks["cors_origins_production_safe"]:
+            errors.append("Production CORS origins must include at least one HTTPS public origin and cannot include '*'.")
 
     if not checks["storage_dir_writable"]:
         errors.append("Storage directory is not writable.")
@@ -1766,9 +1858,10 @@ def refresh_google_access_token(profile: Dict[str, Any]) -> str:
     if access_token and not refresh_token:
         return access_token
     if not refresh_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Google email sending needs a refreshed Google sign-in for this account.",
+        raise reconnect_error(
+            "google",
+            "refresh_token",
+            "Google access needs a refreshed Google sign-in for this account.",
         )
 
     config = get_google_oauth_config()
@@ -1816,9 +1909,10 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
     if access_token and not refresh_token:
         return access_token
     if not refresh_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Microsoft email sending needs a refreshed Microsoft sign-in for this account.",
+        raise reconnect_error(
+            "microsoft",
+            "refresh_token",
+            "Microsoft access needs a refreshed Microsoft sign-in for this account.",
         )
 
     config = get_microsoft_oauth_config()
@@ -3270,9 +3364,10 @@ def default_sender_email(profile: Dict[str, Any], settings: Dict[str, str]) -> s
 
 def send_microsoft_graph_email(profile: Dict[str, Any], recipient: str, subject: str, html_body: str) -> None:
     if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_SEND_SCOPE):
-        raise HTTPException(
-            status_code=400,
-            detail="Microsoft email sending needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant send permissions.",
+        raise reconnect_error(
+            "microsoft",
+            "send_email",
+            "Microsoft email sending needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant send permissions.",
         )
     access_token = refresh_microsoft_access_token(profile)
     post_json_with_bearer(
@@ -3344,9 +3439,10 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
 
     if str(google_oauth.get("provider", "")).strip().lower() == "google":
         if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
-            raise HTTPException(
-                status_code=400,
-                detail="Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
+            raise reconnect_error(
+                "google",
+                "send_email",
+                "Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
             )
         if not is_valid_email(recipient):
             raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
@@ -3598,9 +3694,10 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recip
 
     if str(google_oauth.get("provider", "")).strip().lower() == "google":
         if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
-            raise HTTPException(
-                status_code=400,
-                detail="Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
+            raise reconnect_error(
+                "google",
+                "send_email",
+                "Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
             )
         access_token = refresh_google_access_token(profile)
         raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
@@ -3938,7 +4035,7 @@ threading.Thread(target=schedule_runner_loop, daemon=True).start()
 @app.post("/chat")
 def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
-    question = payload.question.strip()
+    question = enforce_text_limit(payload.question, "Question", MAX_CHAT_QUESTION_CHARS)
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
@@ -4005,12 +4102,14 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
 @app.post("/summaries/combined")
 def combined_summary(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_summary_id_limit(payload.summary_ids)
     return generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
 
 
 @app.post("/summaries/combined/send-email")
 def send_combined_summary_email(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_summary_id_limit(payload.summary_ids)
     combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
     delivery = send_combined_report_via_smtp(
         resolved_user_id,
@@ -4029,6 +4128,7 @@ def send_combined_summary_email(payload: CombinedSummaryRequest, request: Reques
 @app.post("/summaries/combined/send-text")
 def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_summary_id_limit(payload.summary_ids)
     combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
     phone_number = str(payload.phone_number or "").strip()
     if not phone_number:
@@ -4059,8 +4159,8 @@ def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Req
 @app.post("/summaries/refine")
 def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
-    markdown = str(payload.markdown or "").strip()
-    instructions = str(payload.instructions or "").strip()
+    markdown = enforce_text_limit(payload.markdown, "Summary content", MAX_REFINE_MARKDOWN_CHARS)
+    instructions = enforce_text_limit(payload.instructions, "Refinement instructions", MAX_REFINE_INSTRUCTIONS_CHARS)
     title = str(payload.title or "Refined Summary").strip()
 
     if not markdown:
@@ -4155,8 +4255,8 @@ def delete_summary_style_preference(payload: SummaryStylePreferenceRequest, requ
 def create_bug_report(payload: BugReportRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
     profile = load_profile_or_404(resolved_user_id)
-    title = str(payload.title or "").strip()
-    description = str(payload.description or "").strip()
+    title = enforce_text_limit(payload.title, "Bug title", MAX_BUG_TITLE_CHARS)
+    description = enforce_text_limit(payload.description, "Bug description", MAX_BUG_DESCRIPTION_CHARS)
     if not title:
         raise HTTPException(status_code=400, detail="Bug title cannot be empty.")
     if not description:
@@ -4338,9 +4438,10 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
     profile = load_profile_or_404(resolved_user_id)
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     if google_connected and not google_oauth_has_scope(profile, REQUIRED_GOOGLE_READ_SCOPE):
-        raise HTTPException(
-            status_code=400,
-            detail="Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
+        raise reconnect_error(
+            "google",
+            "read_mailbox",
+            "Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
         )
     return launch_summarizer_job(resolved_user_id, payload.days_back)
 
