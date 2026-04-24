@@ -55,7 +55,10 @@ Recommended environment variables:
 - `EMAIL_SUMMARIZER_STORAGE_DIR`
 - `EMAIL_SUMMARIZER_OUTPUT_DIR`
 - `EMAIL_SUMMARIZER_PUBLIC_BASE_URL`
+- `EMAIL_SUMMARIZER_ENCRYPTION_KEY`
+- `EMAIL_SUMMARIZER_ADMIN_EMAILS` or `EMAIL_SUMMARIZER_ADMIN_KEY` if using admin views
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` if enabling Google sign-in
+- `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` if enabling Microsoft sign-in
 
 ## Persistence
 
@@ -93,13 +96,32 @@ After deploy, verify:
 
 - [https://your-domain.example.com/health](https://your-domain.example.com/health)
 - [https://your-domain.example.com/health/deployment](https://your-domain.example.com/health/deployment)
+- [https://your-domain.example.com/health/readiness](https://your-domain.example.com/health/readiness)
 
-The deployment health endpoint should confirm:
+The deployment/readiness endpoints should confirm:
 
 - public base URL configured
 - OpenAI key present
-- Google OAuth config present if using Google sign-in
+- encrypted profile storage key present
+- secure production cookies enabled
+- Google/Microsoft OAuth config present if using OAuth sign-in
 - storage/output paths mounted
+- database reachable
+- rate limiting enabled
+
+Security regression tests:
+
+```bash
+cd /Users/benzhang/Desktop/API
+/Users/benzhang/fsl/bin/python3 -m unittest discover -s Email_Summarizer/tests
+```
+
+Admin inspection endpoints:
+
+- `/admin/analytics`
+- `/admin/bug-reports`
+
+Set `EMAIL_SUMMARIZER_ADMIN_EMAILS` to comma-separated admin login emails, or use `EMAIL_SUMMARIZER_ADMIN_KEY` and send it as the `x-discere-admin-key` header.
 
 ## Current limitations
 

@@ -543,10 +543,16 @@
               <strong>Sign-In</strong>
               <span id="settingsLoginMethod">Loading...</span>
             </div>
+            <p class="inline-note">Export gives you a JSON copy of your account data. It excludes passwords, OAuth tokens, mailbox passwords, and API keys.</p>
+            <div class="row">
+              <span></span>
+              <button id="exportDataButton" type="button" class="secondary">Export My Data</button>
+            </div>
             <div class="row">
               <span></span>
               <button id="deleteAccountButton" type="button" class="secondary">Delete Account</button>
             </div>
+            <p class="inline-note">Delete Account permanently removes your account, saved contacts, summaries, source email records, attachments, schedules, analytics rows, and bug reports.</p>
           </div>
         </div>
       </section>
@@ -851,6 +857,7 @@
       const submitBugReportButton = document.getElementById("submitBugReportButton");
       const bugReportStatus = document.getElementById("bugReportStatus");
       const logoutButton = document.getElementById("logoutButton");
+      const exportDataButton = document.getElementById("exportDataButton");
       const deleteAccountButton = document.getElementById("deleteAccountButton");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let attachmentAiEnabled = false;
@@ -1324,6 +1331,9 @@
           sessionStorage.removeItem("oauth:attemptEmail");
           window.location.href = "/login";
         }
+      });
+      exportDataButton.addEventListener("click", () => {
+        window.location.href = "/auth/account/export";
       });
       deleteAccountButton.addEventListener("click", async () => {
         if (!currentProfile) return;

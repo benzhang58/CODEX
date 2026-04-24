@@ -15,6 +15,14 @@ services:
         value: "true"
       - key: EMAIL_SUMMARIZER_PUBLIC_BASE_URL
         sync: false
+      - key: EMAIL_SUMMARIZER_ENCRYPTION_KEY
+        sync: false
+      - key: EMAIL_SUMMARIZER_ADMIN_EMAILS
+        sync: false
+      - key: EMAIL_SUMMARIZER_ADMIN_KEY
+        sync: false
+      - key: EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED
+        value: "true"
       - key: EMAIL_SUMMARIZER_CORS_ORIGINS
         sync: false
       - key: EMAIL_SUMMARIZER_COOKIE_DOMAIN
@@ -22,7 +30,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
-        value: gpt-4o
+        value: gpt-5.1
       - key: IMAP_SERVER
         value: imap.gmail.com
       - key: IMAP_PORT
@@ -38,6 +46,14 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        value: common
+      - key: MICROSOFT_REDIRECT_URI
         sync: false
       - key: SMTP_USER
         sync: false

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import smtplib
 import sqlite3
 import subprocess
 import threading
+import time
 import unicodedata
 import base64
 from functools import lru_cache
@@ -26,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from dotenv import dotenv_values
@@ -40,6 +42,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, ListFlowabl
 
 from security_utils import decrypt_json_payload, encrypt_json_payload, maybe_encrypt_legacy_json
 
+logger = logging.getLogger("discere.dashboard")
 PUBLIC_BASE_URL = os.getenv("EMAIL_SUMMARIZER_PUBLIC_BASE_URL", "").strip().rstrip("/")
 
 
@@ -55,12 +58,30 @@ APP_CORS_ORIGINS = [
     for origin in os.getenv("EMAIL_SUMMARIZER_CORS_ORIGINS", default_cors_origins()).split(",")
     if origin.strip()
 ]
-SESSION_COOKIE_SECURE = os.getenv("EMAIL_SUMMARIZER_COOKIE_SECURE", "false").lower() == "true"
+APP_ENVIRONMENT = os.getenv("RENDER_SERVICE_NAME") or os.getenv("RENDER") or os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or ""
+_cookie_secure_env = os.getenv("EMAIL_SUMMARIZER_COOKIE_SECURE")
+SESSION_COOKIE_SECURE = (
+    _cookie_secure_env.lower() == "true"
+    if _cookie_secure_env is not None
+    else PUBLIC_BASE_URL.startswith("https://") or bool(os.getenv("RENDER"))
+)
 SESSION_COOKIE_DOMAIN = os.getenv("EMAIL_SUMMARIZER_COOKIE_DOMAIN", "").strip() or None
 RUN_JOB_LOCK = threading.Lock()
 RUN_JOBS: Dict[str, Dict[str, Any]] = {}
 SCHEDULE_RUNNER_LOCK = threading.Lock()
 ACTIVE_SCHEDULE_RUNS: set[str] = set()
+RATE_LIMIT_BUCKETS: Dict[str, List[float]] = {}
+RATE_LIMIT_LOCK = threading.Lock()
+RATE_LIMIT_RULES = [
+    ("POST", "/auth/login", 20, 300),
+    ("POST", "/auth/signup", 10, 3600),
+    ("POST", "/run-summarizer", 12, 3600),
+    ("POST", "/chat", 30, 3600),
+    ("POST", "/summaries/refine", 20, 3600),
+    ("POST", "/summaries/combined/send-email", 20, 3600),
+    ("POST", "/summaries/combined/send-text", 10, 3600),
+    ("POST", "/bug-reports", 8, 3600),
+]
 
 app = FastAPI(title="Email Summarizer Dashboard API")
 
@@ -71,6 +92,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def is_production_environment() -> bool:
+    if PUBLIC_BASE_URL.startswith("https://"):
+        return True
+    return str(APP_ENVIRONMENT or "").lower() in {"1", "true", "production", "prod"} or bool(os.getenv("RENDER"))
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def find_rate_limit_rule(method: str, path: str) -> Optional[tuple[str, str, int, int]]:
+    for rule_method, rule_path, max_requests, window_seconds in RATE_LIMIT_RULES:
+        if method.upper() != rule_method:
+            continue
+        if path == rule_path or path.startswith(f"{rule_path}/"):
+            return (rule_method, rule_path, max_requests, window_seconds)
+    if method.upper() == "POST" and path.endswith("/send-email"):
+        return ("POST", "*/send-email", 20, 3600)
+    return None
+
+
+def is_rate_limit_enabled() -> bool:
+    return os.getenv("EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED", "true").lower() != "false"
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if not is_rate_limit_enabled():
+        return await call_next(request)
+
+    rule = find_rate_limit_rule(request.method, request.url.path)
+    if not rule:
+        return await call_next(request)
+
+    _, rule_path, max_requests, window_seconds = rule
+    now = time.time()
+    bucket_key = f"{get_client_ip(request)}:{request.method.upper()}:{rule_path}"
+    with RATE_LIMIT_LOCK:
+        recent = [timestamp for timestamp in RATE_LIMIT_BUCKETS.get(bucket_key, []) if now - timestamp < window_seconds]
+        if len(recent) >= max_requests:
+            retry_after = max(1, int(window_seconds - (now - recent[0])))
+            return JSONResponse(
+                {"detail": "Too many requests. Please wait and try again."},
+                status_code=429,
+                headers={"Retry-After": str(retry_after)},
+            )
+        recent.append(now)
+        RATE_LIMIT_BUCKETS[bucket_key] = recent
+
+    return await call_next(request)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "dashboard_static"
@@ -110,6 +186,31 @@ MICROSOFT_OAUTH_SCOPES = [
     "https://outlook.office.com/IMAP.AccessAsUser.All",
 ]
 REQUIRED_MICROSOFT_SEND_SCOPE = "Mail.Send"
+REQUIRED_PRODUCTION_ENV_VARS = [
+    "EMAIL_SUMMARIZER_PUBLIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "EMAIL_SUMMARIZER_ENCRYPTION_KEY",
+]
+RECOMMENDED_PRODUCTION_ENV_VARS = [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+]
+ACCOUNT_SCOPED_SETTING_KEYS = {
+    "WHITELIST_SENDERS",
+    "CONTACT_PROFILES",
+    "IMAP_USER",
+    "IMAP_PASSWORD",
+    "SMTP_USER",
+    "SMTP_PASSWORD",
+    "SUMMARY_RECIPIENT",
+    "MAILBOX_CONNECTION_CONFIRMED",
+    "FIRST_NAME",
+    "LAST_NAME",
+    "BIRTHDAY",
+    "GENDER",
+}
 
 app.mount("/dashboard_static", StaticFiles(directory=STATIC_DIR), name="dashboard_static")
 
@@ -119,6 +220,7 @@ def get_db_connection() -> sqlite3.Connection:
     PUBLIC_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
@@ -255,6 +357,15 @@ def initialize_database() -> None:
 initialize_database()
 
 
+def validate_startup_configuration() -> None:
+    readiness = build_deploy_readiness()
+    messages = readiness.get("errors", []) + readiness.get("warnings", [])
+    for message in messages:
+        logger.warning("Deploy readiness: %s", message)
+    if readiness.get("errors") and os.getenv("EMAIL_SUMMARIZER_STRICT_STARTUP_VALIDATION", "false").lower() == "true":
+        raise RuntimeError("Production readiness checks failed: " + "; ".join(readiness["errors"]))
+
+
 class RunSummarizerRequest(BaseModel):
     user_id: Optional[str] = None
     days_back: int = 7
@@ -388,20 +499,144 @@ def health_check() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/health/deployment")
-def deployment_health() -> Dict[str, Any]:
-    return {
-        "status": "ok",
+def check_path_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        check_file = path / ".write-check"
+        check_file.write_text(datetime.now().isoformat(), encoding="utf-8")
+        check_file.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def build_deploy_readiness() -> Dict[str, Any]:
+    checks = {
+        "production_environment": is_production_environment(),
         "public_base_url_configured": bool(PUBLIC_BASE_URL),
+        "public_base_url_https": PUBLIC_BASE_URL.startswith("https://"),
         "cookie_secure": SESSION_COOKIE_SECURE,
-        "cors_origins": APP_CORS_ORIGINS,
-        "storage_dir": str(APP_STORAGE_DIR),
-        "output_dir": str(OUTPUT_ROOT_DIR),
+        "storage_dir_writable": check_path_writable(APP_STORAGE_DIR),
+        "output_dir_writable": check_path_writable(OUTPUT_ROOT_DIR),
+        "database_reachable": False,
         "openai_api_key_configured": bool(get_app_config_value("OPENAI_API_KEY")),
+        "encryption_key_configured": bool(get_app_config_value("EMAIL_SUMMARIZER_ENCRYPTION_KEY")),
         "google_oauth_configured": bool(get_app_config_value("GOOGLE_CLIENT_ID") and get_app_config_value("GOOGLE_CLIENT_SECRET")),
         "microsoft_oauth_configured": bool(get_app_config_value("MICROSOFT_CLIENT_ID") and get_app_config_value("MICROSOFT_CLIENT_SECRET")),
+        "google_redirect_configured_or_derivable": bool(get_app_config_value("GOOGLE_REDIRECT_URI") or PUBLIC_BASE_URL),
+        "microsoft_redirect_configured_or_derivable": bool(get_app_config_value("MICROSOFT_REDIRECT_URI") or PUBLIC_BASE_URL),
         "smtp_host_configured": bool(get_app_config_value("SMTP_HOST")),
+        "rate_limit_enabled": is_rate_limit_enabled(),
     }
+    try:
+        with get_db_connection() as connection:
+            connection.execute("SELECT 1").fetchone()
+        checks["database_reachable"] = True
+    except sqlite3.Error:
+        checks["database_reachable"] = False
+
+    errors: List[str] = []
+    warnings: List[str] = []
+    if checks["production_environment"]:
+        for key in REQUIRED_PRODUCTION_ENV_VARS:
+            if not get_app_config_value(key):
+                errors.append(f"Missing required production env var: {key}")
+        for key in RECOMMENDED_PRODUCTION_ENV_VARS:
+            if not get_app_config_value(key):
+                warnings.append(f"Missing recommended OAuth env var: {key}")
+        if not checks["cookie_secure"]:
+            errors.append("Production session cookies must use Secure=true.")
+        if PUBLIC_BASE_URL and not checks["public_base_url_https"]:
+            errors.append("Production public base URL should use HTTPS.")
+
+    if not checks["storage_dir_writable"]:
+        errors.append("Storage directory is not writable.")
+    if not checks["output_dir_writable"]:
+        errors.append("Output directory is not writable.")
+    if not checks["database_reachable"]:
+        errors.append("SQLite database is not reachable.")
+    if not checks["google_redirect_configured_or_derivable"]:
+        warnings.append("Google OAuth redirect URL is not configured or derivable.")
+    if not checks["microsoft_redirect_configured_or_derivable"]:
+        warnings.append("Microsoft OAuth redirect URL is not configured or derivable.")
+
+    return {
+        "status": "ready" if not errors else "needs_attention",
+        "checks": checks,
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+@app.get("/health/deployment")
+def deployment_health() -> Dict[str, Any]:
+    readiness = build_deploy_readiness()
+    return {
+        "status": "ok",
+        **readiness,
+        "storage_dir": str(APP_STORAGE_DIR),
+        "output_dir": str(OUTPUT_ROOT_DIR),
+        "cors_origins": APP_CORS_ORIGINS,
+    }
+
+
+@app.get("/health/readiness")
+def readiness_health() -> Dict[str, Any]:
+    return build_deploy_readiness()
+
+
+@app.get("/admin/analytics")
+def admin_analytics(request: Request, limit: int = Query(100, ge=1, le=1000)) -> Dict[str, Any]:
+    require_admin(request)
+    with get_db_connection() as connection:
+        totals = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT event_name, COUNT(*) AS count
+                FROM analytics_events
+                GROUP BY event_name
+                ORDER BY count DESC, event_name
+                """
+            ).fetchall()
+        ]
+        recent_events = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT event_id, user_id, event_name, created_at, metadata_json
+                FROM analytics_events
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        ]
+    return {"totals": totals, "events": recent_events}
+
+
+@app.get("/admin/bug-reports")
+def admin_bug_reports(request: Request, limit: int = Query(100, ge=1, le=1000)) -> Dict[str, Any]:
+    require_admin(request)
+    with get_db_connection() as connection:
+        reports = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT bug_id, user_id, email, title, description, page_url, user_agent, created_at, metadata_json
+                FROM bug_reports
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        ]
+    return {"count": len(reports), "bug_reports": reports}
+
+
+@app.on_event("startup")
+def startup_configuration_check() -> None:
+    validate_startup_configuration()
 
 
 @app.get("/login")
@@ -530,6 +765,9 @@ def delete_account(request: Request, response: Response) -> Dict[str, Any]:
     profile = load_profile_or_404(user_id)
 
     with get_db_connection() as connection:
+        connection.execute("DELETE FROM report_schedules WHERE user_id = ?", (user_id,))
+        connection.execute("DELETE FROM analytics_events WHERE user_id = ?", (user_id,))
+        connection.execute("DELETE FROM bug_reports WHERE user_id = ?", (user_id,))
         connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         connection.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
 
@@ -542,6 +780,78 @@ def delete_account(request: Request, response: Response) -> Dict[str, Any]:
 
     clear_session(response, request)
     return {"success": True, "user_id": profile["user_id"], "email": profile.get("email", "")}
+
+
+@app.get("/auth/account/export")
+def export_account_data(request: Request) -> JSONResponse:
+    user_id = resolve_user_id(request)
+    profile = load_profile_or_404(user_id)
+    settings = profile.get("settings") or {}
+    redacted_settings = {
+        key: value
+        for key, value in settings.items()
+        if key not in {"IMAP_PASSWORD", "SMTP_PASSWORD", "OPENAI_API_KEY"}
+    }
+
+    with get_db_connection() as connection:
+        schedules = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT * FROM report_schedules WHERE user_id = ? ORDER BY lower(name), created_at",
+                (user_id,),
+            ).fetchall()
+        ]
+        analytics_events = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT event_id, event_name, created_at, metadata_json FROM analytics_events WHERE user_id = ? ORDER BY created_at",
+                (user_id,),
+            ).fetchall()
+        ]
+        bug_reports = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT bug_id, email, title, description, page_url, user_agent, created_at, metadata_json
+                FROM bug_reports
+                WHERE user_id = ?
+                ORDER BY created_at
+                """,
+                (user_id,),
+            ).fetchall()
+        ]
+
+    summaries = []
+    summaries_dir = get_user_json_summaries_dir(user_id)
+    if summaries_dir.exists():
+        for summary_path in sorted(summaries_dir.glob("*.json")):
+            try:
+                summaries.append(json.loads(summary_path.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+    export_payload = {
+        "exported_at": datetime.now().isoformat(),
+        "user": {
+            "user_id": profile.get("user_id", ""),
+            "email": profile.get("email", ""),
+            "created_at": profile.get("created_at", ""),
+            "updated_at": profile.get("updated_at", ""),
+            "google_connected": bool(profile.get("google_oauth")),
+            "microsoft_connected": bool(profile.get("microsoft_oauth")),
+        },
+        "settings": redacted_settings,
+        "contacts": get_contacts_for_user(user_id),
+        "contact_profiles": parse_contact_profiles(get_settings_for_user(user_id)),
+        "schedules": schedules,
+        "summaries": summaries,
+        "analytics_events": analytics_events,
+        "bug_reports": bug_reports,
+        "note": "Export excludes passwords, OAuth tokens, mailbox passwords, and API keys.",
+    }
+    response = JSONResponse(export_payload)
+    response.headers["Content-Disposition"] = f'attachment; filename="discere-data-export-{user_id}.json"'
+    return response
 
 
 @app.get("/auth/google/start")
@@ -1603,19 +1913,21 @@ def default_profile_settings() -> Dict[str, str]:
         "SUMMARY_STYLE_PREFERENCES": "[]",
         "IMAP_SERVER": os.getenv("IMAP_SERVER", ""),
         "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
-        "IMAP_USER": os.getenv("IMAP_USER", ""),
-        "IMAP_PASSWORD": os.getenv("IMAP_PASSWORD", ""),
+        "IMAP_USER": "",
+        "IMAP_PASSWORD": "",
         "IMAP_FOLDER": os.getenv("IMAP_FOLDER", "INBOX"),
         "SMTP_HOST": os.getenv("SMTP_HOST", ""),
         "SMTP_PORT": os.getenv("SMTP_PORT", "465"),
-        "SMTP_USER": os.getenv("SMTP_USER", ""),
-        "SMTP_PASSWORD": os.getenv("SMTP_PASSWORD", ""),
-        "SUMMARY_RECIPIENT": os.getenv("SUMMARY_RECIPIENT", ""),
+        "SMTP_USER": "",
+        "SMTP_PASSWORD": "",
+        "SUMMARY_RECIPIENT": "",
     }
     base_env = BASE_DIR / ".env"
     if base_env.exists():
         env_values = read_env_key_values(base_env)
         for key, value in env_values.items():
+            if key in ACCOUNT_SCOPED_SETTING_KEYS:
+                continue
             if not settings.get(key):
                 settings[key] = value
     return settings
@@ -2155,6 +2467,27 @@ def resolve_user_id(request: Request, explicit_user_id: Optional[str] = None) ->
         return session_user_id
 
     raise HTTPException(status_code=401, detail="Please log in first.")
+
+
+def require_admin(request: Request) -> None:
+    configured_key = os.getenv("EMAIL_SUMMARIZER_ADMIN_KEY", "").strip()
+    provided_key = request.headers.get("x-discere-admin-key", "").strip()
+    if configured_key and hmac.compare_digest(configured_key, provided_key):
+        return
+
+    admin_emails = {
+        email.strip().lower()
+        for email in os.getenv("EMAIL_SUMMARIZER_ADMIN_EMAILS", "").split(",")
+        if email.strip()
+    }
+    session_user_id = get_session_user_id(request)
+    if admin_emails and session_user_id:
+        profile = load_profile(session_user_id)
+        profile_email = str((profile or {}).get("email", "")).strip().lower()
+        if profile_email in admin_emails:
+            return
+
+    raise HTTPException(status_code=403, detail="Admin access is not configured or you are not allowed.")
 
 
 def get_env_path_for_user(user_id: str) -> Path:
