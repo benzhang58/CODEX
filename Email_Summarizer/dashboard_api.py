@@ -106,8 +106,10 @@ MICROSOFT_OAUTH_SCOPES = [
     "profile",
     "offline_access",
     "User.Read",
+    "Mail.Send",
     "https://outlook.office.com/IMAP.AccessAsUser.All",
 ]
+REQUIRED_MICROSOFT_SEND_SCOPE = "Mail.Send"
 
 app.mount("/dashboard_static", StaticFiles(directory=STATIC_DIR), name="dashboard_static")
 
@@ -1491,6 +1493,48 @@ def google_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> bool
     return required_scope in scopes
 
 
+def microsoft_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> bool:
+    microsoft_oauth = profile.get("microsoft_oauth") or {}
+    scopes = {scope.lower() for scope in parse_oauth_scope_text(microsoft_oauth.get("scope", ""))}
+    return required_scope.lower() in scopes
+
+
+def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
+    microsoft_oauth = profile.get("microsoft_oauth") or {}
+    refresh_token = str(microsoft_oauth.get("refresh_token", "")).strip()
+    access_token = str(microsoft_oauth.get("access_token", "")).strip()
+    if access_token and not refresh_token:
+        return access_token
+    if not refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Microsoft email sending needs a refreshed Microsoft sign-in for this account.",
+        )
+
+    config = get_microsoft_oauth_config()
+    token_payload = post_form_json(
+        f"https://login.microsoftonline.com/{config['tenant']}/oauth2/v2.0/token",
+        {
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+            "scope": " ".join(MICROSOFT_OAUTH_SCOPES),
+        },
+        error_prefix="Microsoft token refresh failed",
+    )
+    new_access_token = str(token_payload.get("access_token", "")).strip()
+    if not new_access_token:
+        raise HTTPException(status_code=500, detail="Microsoft token refresh did not return an access token.")
+
+    microsoft_oauth["access_token"] = new_access_token
+    microsoft_oauth["scope"] = token_payload.get("scope", microsoft_oauth.get("scope", ""))
+    microsoft_oauth["updated_at"] = datetime.now().isoformat()
+    profile["microsoft_oauth"] = microsoft_oauth
+    save_profile(profile)
+    return new_access_token
+
+
 def decode_jwt_payload(token: str) -> Dict[str, Any]:
     token_text = str(token or "").strip()
     if not token_text or token_text.count(".") < 2:
@@ -2870,23 +2914,76 @@ def render_summary_email_html(summary: Dict[str, Any]) -> str:
     )
 
 
+def default_report_recipient(profile: Dict[str, Any], settings: Dict[str, str], recipient_override: Optional[str] = None) -> str:
+    return (
+        str(recipient_override or "").strip()
+        or str((profile.get("google_oauth") or {}).get("email") or "").strip()
+        or str((profile.get("microsoft_oauth") or {}).get("email") or "").strip()
+        or str(settings.get("IMAP_USER") or "").strip()
+        or str(profile.get("email") or "").strip()
+        or str(settings.get("SUMMARY_RECIPIENT") or "").strip()
+    )
+
+
+def default_sender_email(profile: Dict[str, Any], settings: Dict[str, str]) -> str:
+    return (
+        str(settings.get("SMTP_USER") or "").strip()
+        or str(settings.get("IMAP_USER") or "").strip()
+        or str((profile.get("google_oauth") or {}).get("email") or "").strip()
+        or str((profile.get("microsoft_oauth") or {}).get("email") or "").strip()
+        or str(profile.get("email") or "").strip()
+    )
+
+
+def send_microsoft_graph_email(profile: Dict[str, Any], recipient: str, subject: str, html_body: str) -> None:
+    if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_SEND_SCOPE):
+        raise HTTPException(
+            status_code=400,
+            detail="Microsoft email sending needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant send permissions.",
+        )
+    access_token = refresh_microsoft_access_token(profile)
+    post_json_with_bearer(
+        "https://graph.microsoft.com/v1.0/me/sendMail",
+        access_token,
+        {
+            "message": {
+                "subject": subject,
+                "body": {
+                    "contentType": "HTML",
+                    "content": html_body,
+                },
+                "toRecipients": [
+                    {
+                        "emailAddress": {
+                            "address": recipient,
+                        }
+                    }
+                ],
+            },
+            "saveToSentItems": True,
+        },
+        error_prefix="Failed to send Microsoft message",
+    )
+
+
 def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
     google_oauth = profile.get("google_oauth") or {}
+    microsoft_oauth = profile.get("microsoft_oauth") or {}
     smtp_host = settings.get("SMTP_HOST", "")
     smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
-    smtp_user = settings.get("SMTP_USER", "")
+    smtp_user = default_sender_email(profile, settings)
     smtp_password = settings.get("SMTP_PASSWORD", "")
-    recipient = settings.get("SUMMARY_RECIPIENT") or settings.get("IMAP_USER") or profile.get("email", "")
+    recipient = default_report_recipient(profile, settings)
 
-    if not all([smtp_host, smtp_user, smtp_password, recipient]):
-        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
 
+    subject = summary.get("title", f"Summary: {summary.get('summary_id', '')}")
+    html_body = render_summary_email_html(summary)
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = summary.get("title", f"Summary: {summary.get('summary_id', '')}")
+    msg["Subject"] = subject
     msg["From"] = smtp_user
     msg["To"] = recipient
     text_parts: List[str] = [
@@ -2910,7 +3007,7 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
         text_parts.append(re.sub(r"\*\*(.+?)\*\*", r"\1", value))
         text_parts.append("")
     msg.attach(MIMEText(_to_ascii_safe("\n".join(text_parts).strip()), "plain", "utf-8"))
-    msg.attach(MIMEText(render_summary_email_html(summary), "html", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     if str(google_oauth.get("provider", "")).strip().lower() == "google":
         if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
@@ -2929,6 +3026,13 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
             error_prefix="Failed to send Gmail message",
         )
         return {"recipient": recipient, "subject": msg["Subject"]}
+
+    if str(microsoft_oauth.get("provider", "")).strip().lower() == "microsoft":
+        send_microsoft_graph_email(profile, recipient, subject, html_body)
+        return {"recipient": recipient, "subject": msg["Subject"]}
+
+    if not all([smtp_host, smtp_user, smtp_password]):
+        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
 
     try:
         if smtp_port == 587:
@@ -3141,23 +3245,23 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recip
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
     google_oauth = profile.get("google_oauth") or {}
+    microsoft_oauth = profile.get("microsoft_oauth") or {}
     smtp_host = settings.get("SMTP_HOST", "")
     smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
-    smtp_user = settings.get("SMTP_USER", "")
+    smtp_user = default_sender_email(profile, settings)
     smtp_password = settings.get("SMTP_PASSWORD", "")
-    recipient = recipient_override or settings.get("SUMMARY_RECIPIENT") or settings.get("IMAP_USER") or profile.get("email", "")
+    recipient = default_report_recipient(profile, settings, recipient_override)
 
-    if not all([smtp_host, smtp_user, smtp_password, recipient]):
-        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
 
+    html_body = render_markdown_report_email_html(title, markdown)
     msg = MIMEMultipart("alternative")
     msg["Subject"] = title
     msg["From"] = smtp_user
     msg["To"] = recipient
     msg.attach(MIMEText(render_markdown_report_text(title, markdown, max_chars=20000), "plain", "utf-8"))
-    msg.attach(MIMEText(render_markdown_report_email_html(title, markdown), "html", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     if str(google_oauth.get("provider", "")).strip().lower() == "google":
         if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
@@ -3179,6 +3283,18 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recip
             {"delivery_channel": "email", "recipient": recipient, "title": title},
         )
         return {"recipient": recipient, "subject": msg["Subject"]}
+
+    if str(microsoft_oauth.get("provider", "")).strip().lower() == "microsoft":
+        send_microsoft_graph_email(profile, recipient, title, html_body)
+        track_analytics_event(
+            user_id,
+            "report_delivered",
+            {"delivery_channel": "email", "recipient": recipient, "title": title},
+        )
+        return {"recipient": recipient, "subject": msg["Subject"]}
+
+    if not all([smtp_host, smtp_user, smtp_password]):
+        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
 
     try:
         if smtp_port == 587:

@@ -252,6 +252,16 @@
         border-color: var(--accent);
       }
 
+      .legal-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .legal-links a {
+        flex: 1 1 180px;
+      }
+
       .howto-grid {
         display: grid;
         gap: 14px;
@@ -719,6 +729,17 @@
                 <p>You can also use <strong>Refine Summary</strong> on individual summaries without changing the underlying source thread.</p>
               </div>
             </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Legal</h2>
+        <div class="card">
+          <p class="inline-note">Review the policies that explain how Discere is used and how data is handled.</p>
+          <div class="legal-links">
+            <a class="button secondary" href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+            <a class="button secondary" href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>
           </div>
         </div>
       </section>

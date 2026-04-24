@@ -2064,7 +2064,7 @@
           <h3>Current Contacts</h3>
           <button id="contactsModalAddButton" class="contacts-plus-button" type="button" aria-label="Add contact">+</button>
         </div>
-        <div class="modal-copy">These are the contacts currently saved for this account.</div>
+        <div id="contactsModalCopy" class="modal-copy">These are the contacts currently saved for this account.</div>
         <div id="contactsModalList" class="contacts-modal-list"></div>
         <div class="controls modal-actions">
           <button id="contactsModalCloseButton" class="secondary-button" type="button">Close</button>
@@ -2258,6 +2258,7 @@
       const appModalCancelButton = document.getElementById("appModalCancelButton");
       const appModalConfirmButton = document.getElementById("appModalConfirmButton");
       const contactsModal = document.getElementById("contactsModal");
+      const contactsModalCopy = document.getElementById("contactsModalCopy");
       const contactsModalList = document.getElementById("contactsModalList");
       const contactsModalAddButton = document.getElementById("contactsModalAddButton");
       const contactsModalCloseButton = document.getElementById("contactsModalCloseButton");
@@ -3073,9 +3074,11 @@
 
       function renderContactsModal() {
         if (!currentContacts.length) {
-          contactsModalList.innerHTML = `<div class="contacts-modal-empty">No contacts saved yet.</div>`;
+          contactsModalCopy.textContent = "";
+          contactsModalList.innerHTML = `<div class="contacts-modal-empty">No current contacts</div>`;
           return;
         }
+        contactsModalCopy.textContent = "These are the contacts currently saved for this account.";
 
         contactsModalList.innerHTML = currentContacts
           .map((contact) => {
