@@ -5,6 +5,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Discere Terms of Service</title>
     <link rel="stylesheet" href="/dashboard_static/public_site.css" />
+    <style>
+      .legal-article {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(18, 18, 18, 0.08);
+        border-radius: 34px;
+        box-shadow: var(--shadow);
+        padding: 40px 44px;
+      }
+
+      .legal-article h1 {
+        margin: 0 0 10px;
+        font-size: clamp(2.5rem, 4vw, 3.5rem);
+        letter-spacing: -0.05em;
+      }
+
+      .legal-meta {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 0.98rem;
+        line-height: 1.6;
+      }
+
+      .legal-article section + section {
+        margin-top: 28px;
+      }
+
+      .legal-article h2 {
+        margin: 0 0 10px;
+        font-size: 1.2rem;
+        letter-spacing: -0.03em;
+      }
+
+      .legal-article p,
+      .legal-article li {
+        color: #3f3b35;
+        line-height: 1.72;
+        font-size: 1rem;
+      }
+
+      .legal-article ul {
+        margin: 10px 0 0;
+        padding-left: 22px;
+      }
+
+      .legal-callout {
+        margin-top: 20px;
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: rgba(18, 18, 18, 0.04);
+        border: 1px solid rgba(18, 18, 18, 0.08);
+      }
+
+      @media (max-width: 720px) {
+        .legal-article {
+          padding: 28px 22px;
+          border-radius: 26px;
+        }
+      }
+    </style>
   </head>
   <body>
     <div class="site-shell">
@@ -19,191 +78,200 @@
         </div>
       </header>
 
-      <main class="legal-list">
-        <section class="content-card">
+      <main>
+        <article class="legal-article">
           <div class="eyebrow">Terms of Service</div>
-          <h1 class="section-head">Terms for using Discere</h1>
-          <p>
-            These Terms of Service govern your access to and use of Discere. By using Discere, you agree to these Terms.
+          <h1>Discere Terms of Service</h1>
+          <p class="legal-meta">
+            Effective date: April 23, 2026<br />
+            Last updated: April 23, 2026
           </p>
-          <p>
-            <strong>Effective date:</strong> April 23, 2026<br />
-            <strong>Last updated:</strong> April 23, 2026
-          </p>
-          <p>
-            Before launch, replace any bracketed placeholders in these Terms with your final business information and legal
-            decisions.
-          </p>
-        </section>
 
-        <section class="content-card">
-          <h2>1. Who is providing the service</h2>
           <p>
-            Discere is provided by <strong>[insert legal entity name]</strong> ("Discere," "we," "us," or "our"). If you are
-            using Discere on behalf of a company or organization, you represent that you have authority to bind that entity to
-            these Terms.
+            These Terms of Service govern your access to and use of Discere. By creating an account, signing in, connecting a
+            mailbox, or otherwise using Discere, you agree to these Terms.
           </p>
-        </section>
 
-        <section class="content-card">
-          <h2>2. Product scope</h2>
-          <p>
-            Discere is an email summarization and reporting product. It allows users to connect supported inboxes, track selected
-            contacts, generate AI-assisted summaries, ask questions about summarized email data, and deliver reports by email or
-            phone where supported.
-          </p>
-        </section>
+          <div class="legal-callout">
+            This is a strong near-launch draft. If you later incorporate, change your business structure, or launch paid plans,
+            update the provider, billing, and dispute sections accordingly and have counsel review the final version.
+          </div>
 
-        <section class="content-card">
-          <h2>3. Account eligibility and responsibility</h2>
-          <ul>
-            <li>You must provide accurate account information and keep your account credentials secure.</li>
-            <li>You are responsible for all activity that occurs under your account.</li>
-            <li>You must have the legal right to connect and process the email accounts and data you submit to Discere.</li>
-            <li>You are responsible for reviewing account access granted through Google, Microsoft, or other providers.</li>
-          </ul>
-        </section>
+          <section>
+            <h2>1. Provider</h2>
+            <p>
+              Discere is the product and service name. The service is operated by <strong>Discere Research</strong>
+              ("Discere," "we," "us," or "our"). If you use Discere on behalf of a company or other organization, you represent
+              that you have authority to bind that entity to these Terms.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>4. Acceptable use</h2>
-          <ul>
-            <li>Do not use Discere in violation of law, regulation, or contractual obligations.</li>
-            <li>Do not use Discere to access, summarize, or transmit data you are not authorized to use.</li>
-            <li>Do not probe, abuse, reverse engineer, disrupt, or interfere with the service or other users.</li>
-            <li>Do not use Discere to send spam, unlawful content, or abusive automated communications.</li>
-          </ul>
-        </section>
+          <section>
+            <h2>2. Service Description</h2>
+            <p>
+              Discere is an email summarization and reporting product. It allows users to connect supported email accounts, track
+              selected contacts, generate AI-assisted summaries, ask questions about summarized content, and send reports by email
+              or other supported delivery channels.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>5. AI-generated output</h2>
-          <p>
-            Discere uses AI-generated output to produce summaries, refinements, and related responses. AI output may be
-            incomplete, inaccurate, or unsuitable for a particular purpose.
-          </p>
-          <p>
-            You are responsible for reviewing and validating outputs before acting on them. Discere is not a substitute for legal,
-            financial, compliance, security, or other professional advice.
-          </p>
-        </section>
+          <section>
+            <h2>3. Eligibility and Account Responsibility</h2>
+            <ul>
+              <li>You must provide accurate account information and keep your credentials secure.</li>
+              <li>You are responsible for activity that occurs under your account.</li>
+              <li>You must have the legal right to connect, access, and process the email accounts and data submitted to Discere.</li>
+              <li>You are responsible for reviewing and managing permissions granted through Google, Microsoft, or other providers.</li>
+            </ul>
+          </section>
 
-        <section class="content-card">
-          <h2>6. Customer data and privacy</h2>
-          <p>
-            Your use of Discere is also governed by the <a href="/privacy"><strong>Privacy Policy</strong></a>, which explains how
-            Discere accesses, processes, stores, shares, and deletes information.
-          </p>
-        </section>
+          <section>
+            <h2>4. Acceptable Use</h2>
+            <ul>
+              <li>Do not use Discere in violation of law, regulation, or contractual obligations.</li>
+              <li>Do not use Discere to access or process information you are not authorized to use.</li>
+              <li>Do not attempt to disrupt, abuse, reverse engineer, or interfere with the service or other users.</li>
+              <li>Do not use Discere to send spam, unlawful content, or abusive automated communications.</li>
+              <li>Nothing in these Terms prohibits honest reviews or other legally protected consumer speech.</li>
+            </ul>
+          </section>
 
-        <section class="content-card">
-          <h2>7. Service changes and availability</h2>
-          <p>
-            Discere may add, change, suspend, or remove features at any time. The service may also experience outages, delays,
-            provider-related interruptions, rate limits, model changes, or delivery failures outside Discere’s direct control.
-          </p>
-        </section>
+          <section>
+            <h2>5. Connected Accounts and Third-Party Services</h2>
+            <p>
+              Discere depends on third-party infrastructure and integrations, including email providers, authentication providers,
+              AI providers, cloud hosting providers, and communications vendors. Your use of Discere may therefore also depend on
+              those third parties remaining available and continuing to support the required integrations.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>8. Paid features, billing, and refunds</h2>
-          <p>
-            If Discere introduces paid plans, subscriptions, usage-based charges, or premium features, those charges and billing
-            terms must be presented clearly at the point of purchase.
-          </p>
-          <p>
-            Before launch, add your final rules for billing cycles, renewal, cancellation, refund policy, and any trial terms to
-            this section or to a separate order form that these Terms incorporate by reference.
-          </p>
-        </section>
+          <section>
+            <h2>6. AI Output</h2>
+            <p>
+              Discere uses AI-generated output to produce summaries, refinements, and related responses. AI output may be
+              incomplete, inaccurate, or unsuitable for a particular purpose. You are responsible for reviewing outputs before
+              acting on them.
+            </p>
+            <p>
+              Discere is not legal advice, financial advice, compliance advice, security advice, or any other professional advice.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>9. Intellectual property</h2>
-          <p>
-            Discere and its related software, branding, design, and product materials are owned by Discere or its licensors and
-            are protected by applicable intellectual property laws. These Terms do not transfer ownership of Discere to you.
-          </p>
-          <p>
-            Subject to these Terms, Discere grants you a limited, non-exclusive, non-transferable, revocable right to access and
-            use the service.
-          </p>
-        </section>
+          <section>
+            <h2>7. Privacy and Data Handling</h2>
+            <p>
+              Your use of Discere is also governed by the <a href="/privacy"><strong>Privacy Policy</strong></a>, which explains
+              how Discere accesses, uses, stores, shares, and deletes user data.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>10. Feedback</h2>
-          <p>
-            If you provide feedback, suggestions, bug reports, or feature ideas, Discere may use them without restriction or
-            compensation to improve the product.
-          </p>
-        </section>
+          <section>
+            <h2>8. Fees, Billing, and Cancellation</h2>
+            <p>
+              If Discere introduces paid plans, subscriptions, usage-based pricing, or premium features, the applicable pricing
+              and billing terms must be presented clearly at the point of purchase.
+            </p>
+            <p>
+              Before launch, add your final rules regarding billing cycles, renewals, cancellation timing, refunds, and any trial
+              terms. If you offer recurring subscriptions, your cancellation flow should be at least as easy to use as your signup
+              flow.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>11. Suspension and termination</h2>
-          <p>
-            Discere may suspend or terminate access where reasonably necessary to protect the product, comply with law, enforce
-            these Terms, or address misuse or security risk.
-          </p>
-          <p>
-            You may stop using the service at any time and may delete your account using the product controls currently available,
-            subject to any applicable retention rules described in the Privacy Policy.
-          </p>
-        </section>
+          <section>
+            <h2>9. Intellectual Property</h2>
+            <p>
+              Discere and its related software, branding, design, and materials are owned by Discere or its licensors and are
+              protected by applicable intellectual property laws. These Terms do not transfer ownership of Discere to you.
+            </p>
+            <p>
+              Subject to these Terms, Discere grants you a limited, non-exclusive, non-transferable, revocable right to access and
+              use the service.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>12. Disclaimers</h2>
-          <p>
-            Discere is provided on an <strong>"as is"</strong> and <strong>"as available"</strong> basis. To the maximum extent
-            permitted by law, Discere disclaims warranties of merchantability, fitness for a particular purpose,
-            non-infringement, and uninterrupted or error-free availability.
-          </p>
-        </section>
+          <section>
+            <h2>10. Feedback</h2>
+            <p>
+              If you provide feedback, suggestions, bug reports, or feature ideas, Discere may use them without restriction or
+              compensation to improve the service.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>13. Limitation of liability</h2>
-          <p>
-            To the maximum extent permitted by law, Discere will not be liable for indirect, incidental, special, consequential,
-            exemplary, or punitive damages, or for loss of profits, revenues, business opportunity, goodwill, or data arising out
-            of or related to the service.
-          </p>
-          <p>
-            Before launch, add your final aggregate liability cap language here if you want a more complete commercial limitation
-            framework.
-          </p>
-        </section>
+          <section>
+            <h2>11. Suspension and Termination</h2>
+            <p>
+              Discere may suspend or terminate access where reasonably necessary to protect the product, comply with law, enforce
+              these Terms, or address misuse, fraud, or security risk.
+            </p>
+            <p>
+              You may stop using the service at any time and may delete your account using the product controls currently made
+              available, subject to any applicable retention rules described in the Privacy Policy.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>14. Indemnity</h2>
-          <p>
-            To the extent permitted by law, you agree to indemnify and hold harmless Discere and its affiliates, officers,
-            employees, and agents from claims, liabilities, damages, and expenses arising from your misuse of the service, your
-            violation of these Terms, or your unauthorized use of connected data.
-          </p>
-        </section>
+          <section>
+            <h2>12. Disclaimers</h2>
+            <p>
+              Discere is provided on an <strong>"as is"</strong> and <strong>"as available"</strong> basis. To the maximum extent
+              permitted by law, Discere disclaims warranties of merchantability, fitness for a particular purpose,
+              non-infringement, and uninterrupted or error-free availability.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>15. Governing law and disputes</h2>
-          <p>
-            These Terms are governed by the laws of <strong>[insert governing law jurisdiction]</strong>, without regard to its
-            conflict-of-law rules.
-          </p>
-          <p>
-            Any dispute arising out of or relating to these Terms or the service will be resolved in the courts located in
-            <strong>[insert venue]</strong>, unless applicable law requires otherwise.
-          </p>
-        </section>
+          <section>
+            <h2>13. Limitation of Liability</h2>
+            <p>
+              To the maximum extent permitted by law, Discere will not be liable for indirect, incidental, special, consequential,
+              exemplary, or punitive damages, or for loss of profits, revenue, business opportunity, goodwill, or data arising out
+              of or related to the service.
+            </p>
+            <p>
+              Before launch, decide whether you want a stated aggregate liability cap and add that language here.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>16. Changes to these Terms</h2>
-          <p>
-            Discere may update these Terms from time to time. If Discere makes a material change, the updated Terms should be
-            posted here with a revised effective or last-updated date.
-          </p>
-        </section>
+          <section>
+            <h2>14. Indemnity</h2>
+            <p>
+              To the extent permitted by law, you agree to indemnify and hold harmless Discere and its affiliates, officers,
+              employees, and agents from claims, liabilities, damages, and expenses arising from your misuse of the service, your
+              violation of these Terms, or your unauthorized use of connected data.
+            </p>
+          </section>
 
-        <section class="content-card">
-          <h2>17. Contact</h2>
-          <p>
-            For legal notices, support questions, or account issues, contact <strong>[support@discere-ai.com]</strong> or replace
-            that address with your final support or legal contact before launch.
-          </p>
-        </section>
+          <section>
+            <h2>15. Governing Law and Venue</h2>
+            <p>
+              These Terms are governed by the laws of the <strong>State of California</strong>, without regard to its
+              conflict-of-law rules.
+            </p>
+            <p>
+              Any dispute arising out of or relating to these Terms or the service will be resolved in the state or federal courts
+              located in <strong>California</strong>, unless applicable law requires otherwise.
+            </p>
+          </section>
+
+          <section>
+            <h2>16. Changes to These Terms</h2>
+            <p>
+              Discere may update these Terms from time to time. If Discere makes a material change, the updated Terms should be
+              posted here with a revised effective or last-updated date.
+            </p>
+            <p>
+              If Discere changes its privacy practices or contractual terms in a way that materially expands data use or otherwise
+              changes the agreement in a significant way, users should be given clear notice rather than being expected to discover
+              the change silently.
+            </p>
+          </section>
+
+          <section>
+            <h2>17. Contact</h2>
+            <p>
+              For legal notices, support questions, or account issues, contact <strong>discereresearch@gmail.com</strong>.
+            </p>
+          </section>
+        </article>
       </main>
 
       <footer class="site-footer">

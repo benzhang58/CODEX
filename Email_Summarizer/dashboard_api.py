@@ -94,6 +94,8 @@ GOOGLE_OAUTH_SCOPES = [
 ]
 REQUIRED_GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 REQUIRED_GOOGLE_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+TERMS_VERSION = "2026-04-23"
+PRIVACY_VERSION = "2026-04-23"
 MICROSOFT_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 MICROSOFT_OAUTH_STATE_COOKIE = "email_dashboard_microsoft_state"
 MICROSOFT_OAUTH_NEXT_COOKIE = "email_dashboard_microsoft_next"
@@ -310,6 +312,8 @@ class SignupRequest(BaseModel):
     password: str
     birthday: str = ""
     gender: str = ""
+    accept_terms: bool = False
+    accept_privacy: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -363,6 +367,12 @@ class CombinedSummaryTextRequest(BaseModel):
     user_id: Optional[str] = None
     summary_ids: List[str]
     phone_number: str = ""
+
+
+class LegalAcceptanceRequest(BaseModel):
+    user_id: Optional[str] = None
+    accept_terms: bool = True
+    accept_privacy: bool = True
 
 
 @app.get("/")
@@ -446,6 +456,8 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
     user_id = _slugify_user_id(request.user_id) if request.user_id and request.user_id.strip() else user_id_from_email(email)
     if len(request.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    if not request.accept_terms or not request.accept_privacy:
+        raise HTTPException(status_code=400, detail="You must accept the Terms of Service and Privacy Policy.")
     if load_profile(user_id):
         raise HTTPException(status_code=409, detail=f"An account for '{user_id}' already exists.")
     if find_profile_by_email(email):
@@ -465,6 +477,7 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
     settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
     settings["BIRTHDAY"] = str(request.birthday or "").strip()
     settings["GENDER"] = str(request.gender or "").strip()
+    mark_legal_acceptance(settings)
 
     password_hash, password_salt = _hash_password(request.password)
     now = datetime.now().isoformat()
@@ -897,6 +910,21 @@ def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Opt
 def mark_how_to_seen(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
     profile = mark_profile_how_to_seen(resolved_user_id)
+    return {"success": True, "profile": profile_response(profile)}
+
+
+@app.post("/profile/legal-acceptance")
+def accept_legal_terms(
+    request: Request,
+    payload: LegalAcceptanceRequest,
+) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    if not payload.accept_terms or not payload.accept_privacy:
+        raise HTTPException(status_code=400, detail="Both the Terms of Service and Privacy Policy must be accepted.")
+    profile = load_profile_or_404(resolved_user_id)
+    settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"] = mark_legal_acceptance(settings)
+    save_profile(profile)
     return {"success": True, "profile": profile_response(profile)}
 
 
@@ -1514,6 +1542,10 @@ def default_profile_settings() -> Dict[str, str]:
         "BIRTHDAY": "",
         "GENDER": "",
         "HOW_TO_SEEN": "false",
+        "TERMS_ACCEPTED_AT": "",
+        "PRIVACY_ACCEPTED_AT": "",
+        "TERMS_VERSION_ACCEPTED": "",
+        "PRIVACY_VERSION_ACCEPTED": "",
         "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM": "false",
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
         "OPENAI_MODEL": "gpt-5.1",
@@ -1717,6 +1749,12 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "birthday": settings.get("BIRTHDAY", ""),
         "gender": settings.get("GENDER", ""),
         "how_to_seen": str(settings.get("HOW_TO_SEEN", "false")).lower() == "true",
+        "terms_accepted": bool(str(settings.get("TERMS_ACCEPTED_AT", "")).strip()),
+        "privacy_accepted": bool(str(settings.get("PRIVACY_ACCEPTED_AT", "")).strip()),
+        "terms_accepted_at": settings.get("TERMS_ACCEPTED_AT", ""),
+        "privacy_accepted_at": settings.get("PRIVACY_ACCEPTED_AT", ""),
+        "terms_version": settings.get("TERMS_VERSION_ACCEPTED", "") or TERMS_VERSION,
+        "privacy_version": settings.get("PRIVACY_VERSION_ACCEPTED", "") or PRIVACY_VERSION,
         "attachment_ai_enabled": str(settings.get("EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM", "false")).lower() == "true",
         "openai_model": normalize_openai_model(settings.get("OPENAI_MODEL", "gpt-5.1")),
         "summary_style_preferences": parse_summary_style_preferences(settings),
@@ -1780,6 +1818,23 @@ def profile_requires_how_to_onboarding(profile: Dict[str, Any]) -> bool:
     microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
     how_to_seen = str(settings.get("HOW_TO_SEEN", "false")).lower() == "true"
     return (google_connected or microsoft_connected) and not how_to_seen
+
+
+def profile_requires_legal_acceptance(profile: Dict[str, Any]) -> bool:
+    settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
+    return not (
+        str(settings.get("TERMS_ACCEPTED_AT", "")).strip()
+        and str(settings.get("PRIVACY_ACCEPTED_AT", "")).strip()
+    )
+
+
+def mark_legal_acceptance(settings: Dict[str, str]) -> Dict[str, str]:
+    accepted_at = datetime.now().isoformat()
+    settings["TERMS_ACCEPTED_AT"] = accepted_at
+    settings["PRIVACY_ACCEPTED_AT"] = accepted_at
+    settings["TERMS_VERSION_ACCEPTED"] = TERMS_VERSION
+    settings["PRIVACY_VERSION_ACCEPTED"] = PRIVACY_VERSION
+    return settings
 
 
 def mark_profile_how_to_seen(user_id: str) -> Dict[str, Any]:

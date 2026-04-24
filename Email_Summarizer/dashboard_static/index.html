@@ -2082,7 +2082,7 @@
           <h3>Scheduled Reports</h3>
           <button id="scheduleModalCloseTopButton" class="secondary-button" type="button">Close</button>
         </div>
-        <div class="modal-copy">Create recurring email/phone summary reports</div>
+        <div class="modal-copy">Create recurring email summary reports</div>
 
         <div class="schedule-form-shell">
           <section class="schedule-section">
@@ -2101,23 +2101,12 @@
             <div class="schedule-section-header">
               <div class="schedule-section-label">Delivery</div>
               <div class="schedule-section-title">Choose where the report goes</div>
-              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then sends the resulting full report to the destination you choose.</div>
+              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then sends the resulting full report to the email address you choose.</div>
             </div>
             <div class="schedule-grid">
               <div class="field">
-                <label for="scheduleChannelInput">Delivery Method</label>
-                <select id="scheduleChannelInput">
-                  <option value="email">Email</option>
-                  <option value="sms">Phone</option>
-                </select>
-              </div>
-              <div id="scheduleEmailField" class="field">
                 <label for="scheduleEmailInput">Recipient Email</label>
                 <input id="scheduleEmailInput" type="email" placeholder="you@example.com" />
-              </div>
-              <div id="schedulePhoneField" class="field" hidden>
-                <label for="schedulePhoneInput">Phone Number</label>
-                <input id="schedulePhoneInput" type="tel" placeholder="+14155550123" />
               </div>
             </div>
           </section>
@@ -2259,11 +2248,7 @@
       const savedSchedulesCloseButton = document.getElementById("savedSchedulesCloseButton");
       const savedSchedulesCloseTopButton = document.getElementById("savedSchedulesCloseTopButton");
       const scheduleNameInput = document.getElementById("scheduleNameInput");
-      const scheduleChannelInput = document.getElementById("scheduleChannelInput");
-      const scheduleEmailField = document.getElementById("scheduleEmailField");
-      const schedulePhoneField = document.getElementById("schedulePhoneField");
       const scheduleEmailInput = document.getElementById("scheduleEmailInput");
-      const schedulePhoneInput = document.getElementById("schedulePhoneInput");
       const scheduleIntervalValueInput = document.getElementById("scheduleIntervalValueInput");
       const scheduleIntervalUnitInput = document.getElementById("scheduleIntervalUnitInput");
       const scheduleTimeInput = document.getElementById("scheduleTimeInput");
@@ -2594,20 +2579,11 @@
         }
       }
 
-      function updateScheduleChannelFields() {
-        const channel = scheduleChannelInput.value;
-        const showSms = channel === "sms";
-        scheduleEmailField.hidden = showSms;
-        schedulePhoneField.hidden = !showSms;
-      }
-
       function resetScheduleForm() {
         editingScheduleId = "";
         editingScheduleActive = true;
         scheduleNameInput.value = "";
-        scheduleChannelInput.value = "email";
         scheduleEmailInput.value = currentProfile?.email || "";
-        schedulePhoneInput.value = "";
         scheduleIntervalValueInput.value = "1";
         scheduleIntervalUnitInput.value = "days";
         scheduleTimeInput.value = "08:00";
@@ -2617,16 +2593,13 @@
         savedSchedulesStatus.textContent = "";
         scheduleSaveButton.textContent = "Create Schedule";
         scheduleResetButton.hidden = true;
-        updateScheduleChannelFields();
       }
 
       function applyScheduleToForm(schedule) {
         editingScheduleId = schedule.schedule_id || "";
         editingScheduleActive = Boolean(schedule.active);
         scheduleNameInput.value = schedule.name || "";
-        scheduleChannelInput.value = schedule.delivery_channel || "email";
         scheduleEmailInput.value = schedule.recipient_email || currentProfile?.email || "";
-        schedulePhoneInput.value = schedule.recipient_phone || "";
         scheduleIntervalValueInput.value = String(schedule.interval_value || 1);
         scheduleIntervalUnitInput.value = schedule.interval_unit || "days";
         scheduleTimeInput.value = `${String(schedule.preferred_hour || 0).padStart(2, "0")}:${String(schedule.preferred_minute || 0).padStart(2, "0")}`;
@@ -2635,7 +2608,6 @@
         scheduleSaveButton.textContent = "Save Changes";
         scheduleResetButton.hidden = false;
         scheduleStatus.textContent = `Editing "${schedule.name || "Scheduled Report"}".`;
-        updateScheduleChannelFields();
       }
 
       function formatScheduleTime(schedule) {
@@ -2744,8 +2716,8 @@
           interval_unit: scheduleIntervalUnitInput.value,
           days_back: Number(scheduleDaysBackInput.value || 7),
           recipient_email: scheduleEmailInput.value.trim(),
-          recipient_phone: schedulePhoneInput.value.trim(),
-          delivery_channel: scheduleChannelInput.value,
+          recipient_phone: "",
+          delivery_channel: "email",
           run_summarizer_first: true,
           send_combined_report: true,
           preferred_hour: Number(hourText || 8),
@@ -2761,12 +2733,8 @@
         scheduleStatus.textContent = editingScheduleId && !silentReload ? "Saving changes..." : "Creating schedule...";
         try {
           const body = payload || buildSchedulePayload();
-          if (body.delivery_channel === "email" && !body.recipient_email) {
+          if (!body.recipient_email) {
             scheduleStatus.textContent = "Enter a recipient email first.";
-            return false;
-          }
-          if (body.delivery_channel === "sms" && !body.recipient_phone) {
-            scheduleStatus.textContent = "Enter a phone number first.";
             return false;
           }
           const url = editingScheduleId && !payload
@@ -2917,6 +2885,77 @@
         } catch (error) {
           return;
         }
+      }
+
+      function buildLegalAcceptanceHtml() {
+        return `
+          <div class="modal-copy" style="display:grid; gap:14px;">
+            <p style="margin:0;">Before using Discere, you need to accept the Terms of Service and Privacy Policy.</p>
+            <p style="margin:0;">
+              <a href="/terms" target="_blank" rel="noopener noreferrer"><strong>Read Terms of Service</strong></a><br />
+              <a href="/privacy" target="_blank" rel="noopener noreferrer"><strong>Read Privacy Policy</strong></a>
+            </p>
+            <label style="display:flex; gap:10px; align-items:flex-start; color:var(--muted); line-height:1.5;">
+              <input id="legalAcceptanceCheckbox" type="checkbox" style="margin-top:3px;" />
+              <span>I agree to the Terms of Service and Privacy Policy.</span>
+            </label>
+          </div>
+        `;
+      }
+
+      async function markLegalAcceptance() {
+        if (!currentProfile?.user_id) return false;
+        try {
+          const response = await fetch("/profile/legal-acceptance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentProfile.user_id,
+              accept_terms: true,
+              accept_privacy: true,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.profile) {
+            setRunStatus(data.detail || "Failed to record legal acceptance.");
+            return false;
+          }
+          currentProfile = data.profile;
+          applyProfileToForm(data.profile);
+          return true;
+        } catch (error) {
+          setRunStatus(`Failed to record legal acceptance: ${error.message}`);
+          return false;
+        }
+      }
+
+      async function showLegalAcceptanceIfNeeded() {
+        if (!currentProfile?.user_id) return true;
+        if (currentProfile?.settings?.terms_accepted && currentProfile?.settings?.privacy_accepted) {
+          return true;
+        }
+
+        const modalPromise = openAppModal({
+          title: "Terms and Privacy",
+          messageHtml: buildLegalAcceptanceHtml(),
+          confirmLabel: "Agree",
+          cancelLabel: "Log Out",
+        });
+        appModalConfirmButton.disabled = true;
+        const checkbox = document.getElementById("legalAcceptanceCheckbox");
+        if (checkbox) {
+          checkbox.addEventListener("change", () => {
+            appModalConfirmButton.disabled = !checkbox.checked;
+          });
+        }
+
+        const accepted = await modalPromise;
+        appModalConfirmButton.disabled = false;
+        if (!accepted) {
+          await logout();
+          return false;
+        }
+        return await markLegalAcceptance();
       }
 
       function buildHowToModalHtml() {
@@ -3262,6 +3301,9 @@
         const data = await response.json();
         if (data.authenticated && data.profile) {
           applyProfileToForm(data.profile);
+          if (!(await showLegalAcceptanceIfNeeded())) {
+            return false;
+          }
           await showHowToIfNeeded();
           await promptForProfileNameIfNeeded();
           await fetchContacts();
@@ -4539,7 +4581,6 @@
       scheduleModalCloseTopButton.addEventListener("click", closeScheduleModal);
       savedSchedulesCloseButton.addEventListener("click", closeSavedSchedulesModal);
       savedSchedulesCloseTopButton.addEventListener("click", closeSavedSchedulesModal);
-      scheduleChannelInput.addEventListener("change", updateScheduleChannelFields);
       scheduleTimezoneInput.addEventListener("change", () => {
         localStorage.setItem("schedulePreferredTimezone", scheduleTimezoneInput.value || getLocalTimezone());
         refreshCurrentTime();

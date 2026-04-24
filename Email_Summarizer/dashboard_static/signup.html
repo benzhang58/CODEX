@@ -95,6 +95,31 @@
         margin-top: 18px;
       }
 
+      .consent-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        margin-top: 8px;
+      }
+
+      .consent-row input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin-top: 2px;
+      }
+
+      .consent-copy {
+        margin: 0;
+        font-size: 14px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .consent-copy a {
+        color: var(--text);
+        text-decoration: underline;
+      }
+
       button {
         padding: 12px 16px;
         border-radius: 14px;
@@ -161,6 +186,14 @@
         </select>
       </div>
 
+      <label class="consent-row" for="acceptTermsInput">
+        <input id="acceptTermsInput" type="checkbox" />
+        <p class="consent-copy">
+          I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> and
+          <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+        </p>
+      </label>
+
       <div class="actions">
         <button id="createButton" type="button">Create Account</button>
         <a class="secondary-button" href="/login">Back to Login</a>
@@ -174,6 +207,7 @@
       const passwordInput = document.getElementById("passwordInput");
       const birthdayInput = document.getElementById("birthdayInput");
       const genderInput = document.getElementById("genderInput");
+      const acceptTermsInput = document.getElementById("acceptTermsInput");
       const createButton = document.getElementById("createButton");
       const status = document.getElementById("status");
 
@@ -186,9 +220,14 @@
         const password = passwordInput.value;
         const birthday = birthdayInput.value.trim();
         const gender = genderInput.value.trim();
+        const accepted = acceptTermsInput.checked;
 
         if (!email || !password || !birthday || !gender) {
           status.textContent = "Complete all fields first.";
+          return;
+        }
+        if (!accepted) {
+          status.textContent = "Accept the Terms of Service and Privacy Policy first.";
           return;
         }
         if (!looksLikeEmail(email)) {
@@ -203,7 +242,7 @@
           const response = await fetch("/auth/signup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password, birthday, gender }),
+            body: JSON.stringify({ email, password, birthday, gender, accept_terms: true, accept_privacy: true }),
           });
           const data = await response.json();
 
