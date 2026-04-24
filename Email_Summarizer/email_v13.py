@@ -387,8 +387,6 @@ class EmailSummarizer:
         return email.utils.parseaddr(msg.get("From", ""))[1].strip().lower()
 
     def _is_tracked_sender(self, sender: str) -> bool:
-        if not self.whitelist:
-            return True
         return str(sender or "").strip().lower() in self.whitelist_set
 
     @staticmethod
@@ -1060,19 +1058,25 @@ class EmailSummarizer:
             recent_uids = set(self._parse_uids(data))
 
         # Step 2: get UIDs from each whitelisted sender, intersect with recent
-        all_uids: Set[int] = set()
         if not self.whitelist:
-            all_uids = recent_uids
-        else:
-            for sender in self.whitelist:
-                try:
-                    _, data = mail.uid('SEARCH', None, f'FROM "{sender}"')
-                    sender_uids = set(self._parse_uids(data))
-                    matched = sender_uids & recent_uids  # intersection
-                    logger.info(f"Matched {len(matched)} recent email(s) for one tracked sender.")
-                    all_uids.update(matched)
-                except Exception as e:
-                    logger.warning(f"  FROM search failed for '{sender}': {e}")
+            logger.info("No tracked senders configured; skipping trigger search.")
+            return [], {
+                "candidate_trigger_count": 0,
+                "already_processed_count": 0,
+                "untracked_sender_count": 0,
+                "new_trigger_count": 0,
+            }
+
+        all_uids: Set[int] = set()
+        for sender in self.whitelist:
+            try:
+                _, data = mail.uid('SEARCH', None, f'FROM "{sender}"')
+                sender_uids = set(self._parse_uids(data))
+                matched = sender_uids & recent_uids  # intersection
+                logger.info(f"Matched {len(matched)} recent email(s) for one tracked sender.")
+                all_uids.update(matched)
+            except Exception as e:
+                logger.warning(f"  FROM search failed for '{sender}': {e}")
 
         uid_list = sorted(all_uids)
         logger.info(f"Combined search: {len(uid_list)} candidate email(s) to process.")
@@ -1103,24 +1107,35 @@ class EmailSummarizer:
         }
 
     def fetch_trigger_emails_gmail_api(self, days_back: int, processed_uids: Set[str]) -> Tuple[List[Message], Dict[str, int]]:
-        query_parts = [f"newer_than:{max(1, days_back)}d", "-in:trash", "-in:spam"]
-        if self.whitelist:
-            sender_query = " OR ".join(f"from:{sender}" for sender in self.whitelist)
-            query_parts.append(f"({sender_query})")
-        query = " ".join(query_parts)
+        if not self.whitelist:
+            logger.info("No tracked senders configured; skipping Gmail trigger search.")
+            return [], {
+                "candidate_trigger_count": 0,
+                "already_processed_count": 0,
+                "untracked_sender_count": 0,
+                "new_trigger_count": 0,
+            }
+
         logger.info("Running Gmail API search for tracked senders.")
 
         candidate_ids: List[str] = []
-        next_page_token: Optional[str] = None
-        while True:
-            params = {"q": query, "maxResults": "100"}
-            if next_page_token:
-                params["pageToken"] = next_page_token
-            payload = self._gmail_api_json("messages", params)
-            candidate_ids.extend([msg.get("id", "") for msg in payload.get("messages", []) if msg.get("id")])
-            next_page_token = payload.get("nextPageToken")
-            if not next_page_token:
-                break
+        seen_candidate_ids: Set[str] = set()
+        for tracked_sender in self.whitelist:
+            query = " ".join([f"newer_than:{max(1, days_back)}d", "-in:trash", "-in:spam", f"from:{tracked_sender}"])
+            next_page_token: Optional[str] = None
+            while True:
+                params = {"q": query, "maxResults": "100"}
+                if next_page_token:
+                    params["pageToken"] = next_page_token
+                payload = self._gmail_api_json("messages", params)
+                for msg in payload.get("messages", []):
+                    gmail_id = msg.get("id", "")
+                    if gmail_id and gmail_id not in seen_candidate_ids:
+                        seen_candidate_ids.add(gmail_id)
+                        candidate_ids.append(gmail_id)
+                next_page_token = payload.get("nextPageToken")
+                if not next_page_token:
+                    break
 
         logger.info(f"Gmail API returned {len(candidate_ids)} candidate message(s)")
         msgs: List[Message] = []

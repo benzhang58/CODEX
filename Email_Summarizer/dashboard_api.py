@@ -81,6 +81,7 @@ APP_DATA_DIR = APP_STORAGE_DIR / "app"
 DB_PATH = APP_DATA_DIR / "app.db"
 PUBLIC_REPORTS_DIR = APP_STORAGE_DIR / "public_reports"
 SESSION_COOKIE_NAME = "email_dashboard_session"
+SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 READ_RETENTION_DAYS = 20
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
@@ -402,7 +403,9 @@ def deployment_health() -> Dict[str, Any]:
 
 
 @app.get("/login")
-def login_page() -> FileResponse:
+def login_page(request: Request) -> Response:
+    if get_session_user_id(request):
+        return RedirectResponse("/dashboard")
     return FileResponse(STATIC_DIR / "login.html")
 
 
@@ -877,7 +880,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
 
 
 @app.get("/auth/me")
-def auth_me(request: Request) -> Dict[str, Any]:
+def auth_me(request: Request, response: Response) -> Dict[str, Any]:
     user_id = get_session_user_id(request)
     if not user_id:
         return {"authenticated": False}
@@ -886,6 +889,7 @@ def auth_me(request: Request) -> Dict[str, Any]:
     if not profile:
         return {"authenticated": False}
 
+    refresh_session_cookie(response, request)
     return {"authenticated": True, "profile": profile_response(profile)}
 
 
@@ -2045,6 +2049,18 @@ def _verify_password(password: str, password_hash: str, salt: str) -> bool:
     return hmac.compare_digest(computed_hash, password_hash)
 
 
+def set_session_cookie(response: Response, session_token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_token,
+        httponly=True,
+        samesite="lax",
+        max_age=SESSION_COOKIE_MAX_AGE_SECONDS,
+        secure=SESSION_COOKIE_SECURE,
+        domain=SESSION_COOKIE_DOMAIN,
+    )
+
+
 def create_session(response: Response, user_id: str) -> str:
     session_token = secrets.token_urlsafe(32)
     with get_db_connection() as connection:
@@ -2052,16 +2068,14 @@ def create_session(response: Response, user_id: str) -> str:
             "INSERT INTO sessions (session_token, user_id, created_at) VALUES (?, ?, ?)",
             (session_token, user_id, datetime.now().isoformat()),
         )
-    response.set_cookie(
-        SESSION_COOKIE_NAME,
-        session_token,
-        httponly=True,
-        samesite="lax",
-        max_age=60 * 60 * 24 * 30,
-        secure=SESSION_COOKIE_SECURE,
-        domain=SESSION_COOKIE_DOMAIN,
-    )
+    set_session_cookie(response, session_token)
     return session_token
+
+
+def refresh_session_cookie(response: Response, request: Request) -> None:
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_token:
+        set_session_cookie(response, session_token)
 
 
 def clear_session(response: Response, request: Request) -> None:

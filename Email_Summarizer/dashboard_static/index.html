@@ -2836,6 +2836,14 @@
 
       async function openScheduleModal() {
         if (!requireSignedIn()) return;
+        await loadSchedules();
+        if (scheduleItems.length) {
+          scheduleModal.hidden = true;
+          savedSchedulesModal.hidden = false;
+          savedSchedulesStatus.textContent = "";
+          return;
+        }
+        savedSchedulesModal.hidden = true;
         scheduleModal.hidden = false;
         resetScheduleForm();
       }
