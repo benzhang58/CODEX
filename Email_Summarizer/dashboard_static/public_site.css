@@ -52,9 +52,9 @@ a {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
   background: #121212;
   color: #fff;
   display: grid;
