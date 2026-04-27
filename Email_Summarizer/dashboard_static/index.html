@@ -1078,6 +1078,11 @@
         margin-bottom: 0;
       }
 
+      .modal-actions > button,
+      .modal-actions > .secondary-button {
+        min-width: 118px;
+      }
+
       .contacts-modal-card {
         width: min(560px, 100%);
       }
@@ -1123,6 +1128,7 @@
         padding: 20px;
         display: grid;
         gap: 16px;
+        align-content: start;
       }
 
       .schedule-section-header {
@@ -1257,7 +1263,7 @@
       .schedule-item {
         border: 1px solid var(--border);
         border-radius: 20px;
-        background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(245,243,237,0.96));
+        background: #ffffff;
         padding: 16px 18px;
         display: grid;
         gap: 12px;
@@ -1326,6 +1332,8 @@
 
       .schedule-item-actions button {
         min-height: 40px;
+        min-width: 108px;
+        justify-content: center;
       }
 
       .schedule-primary-actions > button {
@@ -1340,6 +1348,8 @@
 
       .schedule-footer-actions {
         padding-top: 2px;
+        display: flex;
+        width: 100%;
       }
 
       .schedule-toggle-control {
@@ -1571,6 +1581,7 @@
 
       .input-chip {
         min-width: 0;
+        min-height: 86px;
         padding: 12px 14px;
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.92);
@@ -1615,7 +1626,7 @@
 
       .hero-run-button,
       .hero-schedule-button {
-        min-height: 54px;
+        min-height: 86px;
         width: 86px;
         min-width: 86px;
         padding: 0;
@@ -1648,7 +1659,7 @@
       }
 
       .hero-minimize-button {
-        min-height: 54px;
+        min-height: 86px;
         width: 58px;
         min-width: 58px;
         padding: 0;
@@ -1773,7 +1784,7 @@
       }
 
       .stat-action-title {
-        font-size: 20px;
+        font-size: 22px;
         line-height: 1.05;
         letter-spacing: -0.04em;
         font-weight: 760;
@@ -1789,6 +1800,11 @@
       .pulse-card {
         display: grid;
         gap: 14px;
+      }
+
+      .pulse-card.is-warning {
+        border-color: rgba(146, 94, 28, 0.28);
+        background: rgba(255, 250, 239, 0.92);
       }
 
       .pulse-card.is-collapsed {
@@ -1928,6 +1944,13 @@
         .stat-grid {
           grid-template-columns: 1fr;
           display: grid;
+        }
+
+        .hero-run-button,
+        .hero-schedule-button,
+        .hero-minimize-button {
+          width: 100%;
+          min-width: 0;
         }
       }
     </style>
@@ -2570,7 +2593,19 @@
           return;
         }
         const visibleMessage = String(message || "").trim();
-        pulseTitle.textContent = loading ? "Checking emails" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
+        const lowerMessage = visibleMessage.toLowerCase();
+        const needsAttention = Boolean(
+          !loading &&
+          visibleMessage &&
+          (
+            lowerMessage.includes("permission") ||
+            lowerMessage.includes("limit reached") ||
+            lowerMessage.includes("not configured") ||
+            lowerMessage.includes("failed")
+          )
+        );
+        pulseCard.classList.toggle("is-warning", needsAttention);
+        pulseTitle.textContent = loading ? "Checking emails" : needsAttention ? "Action needed" : selectedSummaryIds.length ? "Reviewing selected summaries" : "Ready";
         pulseNote.textContent = visibleMessage || "Select summaries, ask questions, or run a new check.";
         pulseBadge.hidden = !loading;
         pulseFill.style.width = loading ? "58%" : "0%";
@@ -2580,6 +2615,45 @@
         } else {
           pulseBadge.textContent = "";
         }
+      }
+
+      function friendlyApiMessage(rawMessage) {
+        const message = String(rawMessage || "").trim();
+        const lower = message.toLowerCase();
+        if (!message) return "Something went wrong. Please try again.";
+        if (
+          lower.includes("access_token_scope_insufficient") ||
+          lower.includes("insufficient authentication scopes") ||
+          lower.includes("insufficient permission") ||
+          lower.includes("grant gmail permissions") ||
+          lower.includes("grant send permissions") ||
+          lower.includes("missing_read_scope") ||
+          lower.includes("missing_send_scope")
+        ) {
+          const provider = lower.includes("microsoft") ? "Microsoft" : "Google";
+          const purpose = lower.includes("send") ? "send reports" : "read your mailbox";
+          return `${provider} needs permission to ${purpose}. Log out, then log back in with ${provider} and approve the requested permissions.`;
+        }
+        if (lower.includes("daily usage limit reached") || lower.includes("usage_limit_hit")) {
+          const clean = message.replace(/^run failed\.?\s*/i, "").trim();
+          return `${clean || "Daily usage limit reached."} This protects the account from runaway AI/API cost. Try again tomorrow or raise the account limit in the server environment settings.`;
+        }
+        if (lower.includes("request is too large") || lower.includes("too long") || lower.includes("too many summaries selected")) {
+          return `${message} Try selecting fewer summaries or shortening the request.`;
+        }
+        if (lower.includes("email sending is not configured")) {
+          return "Email sending is not configured for this account yet. Gmail/Microsoft users should reconnect with send permission; standard mailbox users need SMTP settings configured.";
+        }
+        return message;
+      }
+
+      function extractApiError(data, fallback = "Request failed.") {
+        const detail = data?.detail ?? data;
+        if (typeof detail === "string") return friendlyApiMessage(detail || fallback);
+        if (detail && typeof detail === "object") {
+          return friendlyApiMessage(detail.stderr || detail.stdout || detail.message || JSON.stringify(detail) || fallback);
+        }
+        return friendlyApiMessage(fallback);
       }
 
       function updateHeroStats() {
@@ -4091,8 +4165,7 @@
 
           const data = await response.json();
           if (!response.ok) {
-            const detail = data.detail || data;
-            setRunStatus(`Run failed. ${detail.stderr || "No error details returned."}`);
+            setRunStatus(`Run failed. ${extractApiError(data, "No error details returned.")}`);
             runButton.disabled = false;
             return;
           }
@@ -4100,7 +4173,7 @@
           saveActiveRunJob(currentUserId, currentRunJobId);
           await pollRunJob(currentRunJobId);
         } catch (error) {
-          setRunStatus(`Run failed: ${error.message}`);
+          setRunStatus(`Run failed: ${friendlyApiMessage(error.message)}`);
           runButton.disabled = false;
         }
       }
@@ -4117,7 +4190,7 @@
             saveActiveRunJob(currentUserId, "");
             currentRunJobId = "";
             runButton.disabled = false;
-            setRunStatus(data.detail || "Failed to load run status.");
+            setRunStatus(extractApiError(data, "Failed to load run status."));
             return;
           }
 
@@ -4142,11 +4215,11 @@
             return;
           }
 
-          const detail = data.stderr || data.stdout || "No error details returned.";
+          const detail = extractApiError(data, "No error details returned.");
           setRunStatus(`Run failed. ${detail}`);
         } catch (error) {
           runButton.disabled = false;
-          setRunStatus(`Run failed: ${error.message}`);
+          setRunStatus(`Run failed: ${friendlyApiMessage(error.message)}`);
         }
       }
 
@@ -4276,7 +4349,7 @@
             });
             const data = await response.json();
             if (!response.ok) {
-              setRunStatus(data.detail || "Failed to send text report.");
+              setRunStatus(extractApiError(data, "Failed to send text report."));
               return;
             }
             setRunStatus(`Sent text report to ${data.to}.`);
@@ -4294,12 +4367,12 @@
           });
           const data = await response.json();
           if (!response.ok) {
-            setRunStatus(data.detail || "Failed to send email report.");
+            setRunStatus(extractApiError(data, "Failed to send email report."));
             return;
           }
           setRunStatus(`Sent email report to ${data.recipient}.`);
         } catch (error) {
-          setRunStatus(`Failed to send report: ${error.message}`);
+          setRunStatus(`Failed to send report: ${friendlyApiMessage(error.message)}`);
         } finally {
           emailReportButton.disabled = false;
         }
@@ -4327,7 +4400,7 @@
           const data = await response.json();
 
           if (!response.ok) {
-            appendChatMessage("assistant", data.detail || "Chat request failed.");
+            appendChatMessage("assistant", extractApiError(data, "Chat request failed."));
             chatStatus.textContent = "Chat request failed.";
             return;
           }
@@ -4339,7 +4412,7 @@
               : "";
           chatStatus.textContent = `Answer generated from ${data.summary_count} saved summaries and ${data.email_count || 0} emails.${attachmentNote}`;
         } catch (error) {
-          appendChatMessage("assistant", `Chat request failed: ${error.message}`);
+          appendChatMessage("assistant", `Chat request failed: ${friendlyApiMessage(error.message)}`);
           chatStatus.textContent = "Chat request failed.";
         } finally {
           chatSendButton.disabled = false;
@@ -4428,8 +4501,8 @@
           }
           if (!response.ok) {
             detailStatus.textContent = "Failed to build combined summary.";
-            summaryDetail.textContent = data.detail || "Unknown error.";
-            setRunStatus(data.detail || "Failed to build combined summary.");
+            summaryDetail.textContent = extractApiError(data, "Unknown error.");
+            setRunStatus(extractApiError(data, "Failed to build combined summary."));
             summaryDetail.removeAttribute("aria-busy");
             return;
           }
@@ -4453,8 +4526,8 @@
             return;
           }
           detailStatus.textContent = "Failed to build combined summary.";
-          summaryDetail.textContent = error.message;
-          setRunStatus(`Failed to build combined summary: ${error.message}`);
+          summaryDetail.textContent = friendlyApiMessage(error.message);
+          setRunStatus(`Failed to build combined summary: ${friendlyApiMessage(error.message)}`);
           summaryDetail.removeAttribute("aria-busy");
         } finally {
         }
@@ -4512,8 +4585,8 @@
           const data = await response.json();
           if (!response.ok) {
             detailStatus.textContent = "Failed to refine summary.";
-            summaryDetail.textContent = data.detail || "Unknown error.";
-            setRunStatus(data.detail || "Failed to refine summary.");
+            summaryDetail.textContent = extractApiError(data, "Unknown error.");
+            setRunStatus(extractApiError(data, "Failed to refine summary."));
             summaryDetail.removeAttribute("aria-busy");
             return;
           }
@@ -4537,8 +4610,8 @@
           setRunStatus("Refined summary ready.");
         } catch (error) {
           detailStatus.textContent = "Failed to refine summary.";
-          summaryDetail.textContent = error.message;
-          setRunStatus(`Failed to refine summary: ${error.message}`);
+          summaryDetail.textContent = friendlyApiMessage(error.message);
+          setRunStatus(`Failed to refine summary: ${friendlyApiMessage(error.message)}`);
           summaryDetail.removeAttribute("aria-busy");
         } finally {
           refineSummaryButton.disabled = false;
@@ -4712,12 +4785,12 @@
           );
           const data = await response.json();
           if (!response.ok) {
-            setRunStatus(data.detail || "Failed to send summary email.");
+            setRunStatus(extractApiError(data, "Failed to send summary email."));
             return;
           }
           setRunStatus(`Sent summary to ${data.recipient}.`);
         } catch (error) {
-          setRunStatus(`Failed to send summary email: ${error.message}`);
+          setRunStatus(`Failed to send summary email: ${friendlyApiMessage(error.message)}`);
         } finally {
           sendSummaryEmailButton.disabled = false;
         }

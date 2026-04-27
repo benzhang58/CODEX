@@ -199,6 +199,28 @@
         sessionStorage.removeItem("oauth:attemptEmail");
       }
 
+      function friendlyOauthError(provider, errorCode) {
+        const label = provider === "google" ? "Google" : "Microsoft";
+        const code = String(errorCode || "").trim();
+        const lower = code.toLowerCase();
+        if (lower === "not_configured") {
+          return `${label} sign-in is not configured yet. Add the ${label} OAuth client ID and secret first.`;
+        }
+        if (lower === "invalid_callback") {
+          return `${label} sign-in failed because the callback did not match this browser session. Try again from this login page. If it keeps happening, confirm the production callback URL is configured in ${label}.`;
+        }
+        if (lower === "token_exchange_failed") {
+          return `${label} sign-in failed while exchanging the login code. Confirm the OAuth secret and redirect URL are correct, then try again.`;
+        }
+        if (lower.includes("access_denied") || lower.includes("consent") || lower.includes("permission")) {
+          return `${label} sign-in needs the requested permissions to continue. Try again and approve the permissions shown on the ${label} consent screen.`;
+        }
+        if (lower.includes("scope")) {
+          return `${label} sign-in is missing a required permission scope. Reconnect with ${label} and approve mailbox/profile permissions.`;
+        }
+        return `${label} sign-in failed: ${code.replaceAll("_", " ")}`;
+      }
+
       function startOauth(provider, mode = "interactive") {
         const remembered = getRememberedOauth();
         const rememberedEmail = remembered.provider === provider ? remembered.email : "";
@@ -303,19 +325,13 @@
 
         if (googleError) {
           clearOauthAttempt();
-          status.textContent =
-            googleError === "not_configured"
-              ? "Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first."
-              : `Google sign-in failed: ${googleError.replaceAll("_", " ")}`;
+          status.textContent = friendlyOauthError("google", googleError);
           return;
         }
 
         if (microsoftError) {
           clearOauthAttempt();
-          status.textContent =
-            microsoftError === "not_configured"
-              ? "Microsoft sign-in is not configured yet. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET first."
-              : `Microsoft sign-in failed: ${microsoftError.replaceAll("_", " ")}`;
+          status.textContent = friendlyOauthError("microsoft", microsoftError);
         }
       }
 

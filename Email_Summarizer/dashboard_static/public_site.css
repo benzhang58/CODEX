@@ -45,7 +45,7 @@ a {
 .site-brand {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 1px;
   font-weight: 800;
   font-size: 1.1rem;
   letter-spacing: 0.04em;
@@ -67,6 +67,7 @@ a {
   overflow: hidden;
   background: transparent;
   color: inherit;
+  margin-right: -7px;
 }
 
 .brand-mark.logo-mark img {
@@ -107,9 +108,12 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 54px;
+  min-width: 170px;
   padding: 15px 22px;
   font-size: 1rem;
   font-weight: 700;
+  text-align: center;
 }
 
 .button {
@@ -225,6 +229,9 @@ a {
 
 .feature-card {
   padding: 28px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
 }
 
 .feature-card h3 {
@@ -350,6 +357,7 @@ a {
 
 .site-footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   flex-wrap: wrap;
@@ -417,5 +425,6 @@ a {
   .hero-actions .button,
   .hero-actions .button-secondary {
     flex: 1 1 180px;
+    min-width: 0;
   }
 }
