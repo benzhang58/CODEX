@@ -17,6 +17,8 @@ os.environ["IMAP_PASSWORD"] = "global-imap-password"
 os.environ["SMTP_USER"] = "global-smtp@example.com"
 os.environ["SMTP_PASSWORD"] = "global-smtp-password"
 os.environ["SUMMARY_RECIPIENT"] = "global-recipient@example.com"
+os.environ["EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY"] = "100"
+os.environ["EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY"] = "10"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -115,7 +117,7 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertFalse(user_dir.exists())
 
         with dashboard_api.get_db_connection() as connection:
-            for table in ["users", "sessions", "report_schedules", "analytics_events", "bug_reports"]:
+            for table in ["users", "sessions", "report_schedules", "analytics_events", "bug_reports", "usage_counters"]:
                 count = connection.execute(
                     f"SELECT COUNT(*) AS count FROM {table} WHERE user_id = ?",
                     (user_id,),
@@ -191,6 +193,89 @@ class SecurityRegressionTests(unittest.TestCase):
             dashboard_api.MAX_REQUEST_BODY_BYTES = int(os.getenv("EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES", str(1024 * 1024)))
             if original:
                 os.environ["EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES"] = original
+
+    def test_admin_page_loads_and_admin_endpoints_require_access(self) -> None:
+        page_response = self.client.get("/admin")
+        self.assertEqual(page_response.status_code, 200, page_response.text)
+        self.assertIn("Discere Admin", page_response.text)
+
+        blocked_response = self.client.get("/admin/analytics")
+        self.assertEqual(blocked_response.status_code, 403, blocked_response.text)
+
+        original_key = os.environ.get("EMAIL_SUMMARIZER_ADMIN_KEY", "")
+        os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = "test-admin-key"
+        try:
+            allowed_response = self.client.get(
+                "/admin/analytics",
+                headers={"x-discere-admin-key": "test-admin-key"},
+            )
+            self.assertEqual(allowed_response.status_code, 200, allowed_response.text)
+            self.assertIn("totals", allowed_response.json())
+
+            monitoring_response = self.client.get(
+                "/admin/monitoring",
+                headers={"x-discere-admin-key": "test-admin-key"},
+            )
+            self.assertEqual(monitoring_response.status_code, 200, monitoring_response.text)
+            self.assertIn("events", monitoring_response.json())
+        finally:
+            if original_key:
+                os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = original_key
+            else:
+                os.environ.pop("EMAIL_SUMMARIZER_ADMIN_KEY", None)
+
+    def test_daily_usage_limits_are_enforced_per_account(self) -> None:
+        client = self.signup("usage@example.com")
+        original_chat_limit = os.environ.get("EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY", "")
+        os.environ["EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY"] = "1"
+        try:
+            first_response = client.post(
+                "/chat",
+                json={"user_id": "usage_example_com", "question": "What happened?"},
+            )
+            self.assertEqual(first_response.status_code, 404, first_response.text)
+
+            usage_response = client.get("/usage")
+            self.assertEqual(usage_response.status_code, 200, usage_response.text)
+            chat_usage = usage_response.json()["usage"]["chat"]
+            self.assertEqual(chat_usage["count"], 1)
+            self.assertEqual(chat_usage["limit"], 1)
+
+            second_response = client.post(
+                "/chat",
+                json={"user_id": "usage_example_com", "question": "What happened again?"},
+            )
+            self.assertEqual(second_response.status_code, 429, second_response.text)
+        finally:
+            os.environ["EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY"] = original_chat_limit or "100"
+
+    def test_monitoring_records_security_events_without_sensitive_metadata(self) -> None:
+        client = self.signup("monitor@example.com")
+        response = client.get("/whitelist", params={"user_id": "other_user"})
+        self.assertEqual(response.status_code, 403, response.text)
+
+        dashboard_api.write_monitoring_event(
+            "security",
+            "manual_secret_test",
+            "warning",
+            user_id="monitor_example_com",
+            metadata={"api_key": "should-redact", "safe": "visible"},
+        )
+
+        with dashboard_api.get_db_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT category, event_name, severity, user_id, metadata_json
+                FROM monitoring_events
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+
+        serialized = json.dumps([dict(row) for row in rows])
+        self.assertIn("cross_account_user_id_override", serialized)
+        self.assertIn("manual_secret_test", serialized)
+        self.assertIn("[redacted]", serialized)
+        self.assertNotIn("should-redact", serialized)
 
 
 if __name__ == "__main__":

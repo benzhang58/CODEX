@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Discere Admin</title>
+    <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
+    <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
+    <style>
+      :root {
+        --bg: #f3f3f0;
+        --panel: rgba(255, 255, 255, 0.9);
+        --panel-strong: #fff;
+        --border: rgba(17, 17, 17, 0.1);
+        --text: #101010;
+        --muted: #6f6d67;
+        --accent: #111;
+        --green: #205f4f;
+        --green-bg: #dfeee8;
+        --red: #a6342f;
+        --red-bg: #f7dfdd;
+        --yellow: #765a14;
+        --yellow-bg: #f3ead0;
+        --shadow: 0 28px 80px rgba(10, 10, 10, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 26%),
+          radial-gradient(circle at top right, rgba(0, 0, 0, 0.025), transparent 22%),
+          linear-gradient(180deg, #fbfbf9 0%, var(--bg) 100%);
+      }
+
+      .page {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+        display: grid;
+        gap: 22px;
+      }
+
+      .topbar,
+      .panel,
+      .card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .topbar {
+        border-radius: 30px;
+        padding: 18px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+      }
+
+      .brand img {
+        width: 44px;
+        height: 44px;
+        object-fit: contain;
+      }
+
+      h1, h2, h3, p { margin: 0; }
+
+      h1 {
+        font-size: clamp(34px, 5vw, 58px);
+        line-height: 0.95;
+        letter-spacing: -0.065em;
+      }
+
+      h2 {
+        font-size: 14px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      h3 {
+        font-size: 22px;
+        letter-spacing: -0.045em;
+      }
+
+      p,
+      .muted {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      a,
+      button {
+        font: inherit;
+      }
+
+      .button,
+      button {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 12px 15px;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .secondary {
+        background: rgba(255, 255, 255, 0.88);
+        color: var(--text);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .panel {
+        border-radius: 34px;
+        padding: 26px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .key-box {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      label {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 14px 15px;
+        font: inherit;
+        background: #fff;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        gap: 8px;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        background: var(--yellow-bg);
+        color: var(--yellow);
+      }
+
+      .status-pill.ready {
+        background: var(--green-bg);
+        color: var(--green);
+      }
+
+      .status-pill.error {
+        background: var(--red-bg);
+        color: var(--red);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+
+      .card {
+        border-radius: 24px;
+        padding: 20px;
+        display: grid;
+        gap: 10px;
+        background: var(--panel-strong);
+      }
+
+      .metric {
+        font-size: 42px;
+        line-height: 0.9;
+        letter-spacing: -0.06em;
+        font-weight: 850;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 18px;
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .row {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        display: grid;
+        gap: 6px;
+      }
+
+      .row-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .tag {
+        display: inline-flex;
+        width: fit-content;
+        border-radius: 999px;
+        padding: 5px 8px;
+        background: #efeee9;
+        color: #333;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .check {
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: #f2f1ed;
+        color: var(--muted);
+        font-size: 13px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .check.ok {
+        background: var(--green-bg);
+        color: var(--green);
+      }
+
+      .check.bad {
+        background: var(--red-bg);
+        color: var(--red);
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .hero,
+        .split,
+        .grid,
+        .checks {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Discere home">
+          <img src="/dashboard_static/discere-logo.png" alt="" />
+          <span>Discere Admin</span>
+        </a>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+          <a class="button secondary" href="/dashboard">Dashboard</a>
+          <button id="refreshButton" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="panel">
+          <span id="overallStatus" class="status-pill">Checking</span>
+          <h1>Launch health, bugs, and product activity.</h1>
+          <p>Use this page to review deploy readiness, recent analytics events, and submitted bug reports. Admin data requires an admin login email or admin key.</p>
+        </div>
+
+        <div class="panel key-box">
+          <h2>Admin Access</h2>
+          <p>If your logged-in email is listed in <strong>EMAIL_SUMMARIZER_ADMIN_EMAILS</strong>, leave this blank. Otherwise enter the admin key.</p>
+          <label for="adminKeyInput">Admin Key</label>
+          <input id="adminKeyInput" type="password" placeholder="Optional x-discere-admin-key" autocomplete="off" />
+          <button id="saveKeyButton" class="secondary" type="button">Save Key Locally</button>
+          <p id="accessStatus" class="muted">Loading admin data...</p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>Readiness</h2>
+          <div id="readinessMetric" class="metric">-</div>
+          <p id="readinessCopy">Checking deployment status.</p>
+        </div>
+        <div class="card">
+          <h2>Bug Reports</h2>
+          <div id="bugMetric" class="metric">-</div>
+          <p>Most recent submitted reports.</p>
+        </div>
+        <div class="card">
+          <h2>Analytics</h2>
+          <div id="analyticsMetric" class="metric">-</div>
+          <p>Recent product events.</p>
+        </div>
+        <div class="card">
+          <h2>Monitoring</h2>
+          <div id="monitoringMetric" class="metric">-</div>
+          <p>Recent production alerts.</p>
+        </div>
+      </section>
+
+      <section class="split">
+        <div class="panel">
+          <h2>Deploy Readiness</h2>
+          <div id="checksList" class="checks"></div>
+          <div id="readinessMessages" class="list"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Analytics Totals</h2>
+          <div id="analyticsTotals" class="list"></div>
+        </div>
+      </section>
+
+      <section class="split">
+        <div class="panel">
+          <h2>Recent Bug Reports</h2>
+          <div id="bugReports" class="list"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Recent Analytics Events</h2>
+          <div id="analyticsEvents" class="list"></div>
+        </div>
+      </section>
+
+      <section class="split">
+        <div class="panel">
+          <h2>Monitoring Totals</h2>
+          <div id="monitoringTotals" class="list"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Recent Monitoring Events</h2>
+          <div id="monitoringEvents" class="list"></div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const adminKeyInput = document.getElementById("adminKeyInput");
+      const saveKeyButton = document.getElementById("saveKeyButton");
+      const refreshButton = document.getElementById("refreshButton");
+      const accessStatus = document.getElementById("accessStatus");
+      const overallStatus = document.getElementById("overallStatus");
+      const readinessMetric = document.getElementById("readinessMetric");
+      const readinessCopy = document.getElementById("readinessCopy");
+      const bugMetric = document.getElementById("bugMetric");
+      const analyticsMetric = document.getElementById("analyticsMetric");
+      const monitoringMetric = document.getElementById("monitoringMetric");
+      const checksList = document.getElementById("checksList");
+      const readinessMessages = document.getElementById("readinessMessages");
+      const analyticsTotals = document.getElementById("analyticsTotals");
+      const bugReports = document.getElementById("bugReports");
+      const analyticsEvents = document.getElementById("analyticsEvents");
+      const monitoringTotals = document.getElementById("monitoringTotals");
+      const monitoringEvents = document.getElementById("monitoringEvents");
+
+      adminKeyInput.value = localStorage.getItem("discereAdminKey") || "";
+
+      function adminHeaders() {
+        const key = adminKeyInput.value.trim();
+        return key ? { "x-discere-admin-key": key } : {};
+      }
+
+      function formatDate(value) {
+        if (!value) return "";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+      }
+
+      function renderEmpty(target, text) {
+        target.innerHTML = `<p class="muted">${text}</p>`;
+      }
+
+      function renderReadiness(data) {
+        const ready = data.status === "ready";
+        readinessMetric.textContent = ready ? "Ready" : "Check";
+        readinessCopy.textContent = ready ? "No blocking readiness errors." : "Review readiness errors before launch.";
+        overallStatus.textContent = ready ? "Ready" : "Needs Attention";
+        overallStatus.className = `status-pill ${ready ? "ready" : "error"}`;
+
+        const checks = data.checks || {};
+        checksList.innerHTML = Object.entries(checks).map(([key, value]) => `
+          <div class="check ${value === true ? "ok" : value === false ? "bad" : ""}">
+            <span>${key.replaceAll("_", " ")}</span>
+            <strong>${String(value)}</strong>
+          </div>
+        `).join("");
+
+        const messages = [
+          ...(data.errors || []).map((message) => ({ type: "Error", message })),
+          ...(data.warnings || []).map((message) => ({ type: "Warning", message })),
+        ];
+        if (!messages.length) {
+          renderEmpty(readinessMessages, "No readiness errors or warnings.");
+          return;
+        }
+        readinessMessages.innerHTML = messages.map((item) => `
+          <div class="row">
+            <span class="tag">${item.type}</span>
+            <p>${item.message}</p>
+          </div>
+        `).join("");
+      }
+
+      function renderAnalytics(data) {
+        const totals = data.totals || [];
+        const events = data.events || [];
+        analyticsMetric.textContent = String(events.length);
+
+        if (!totals.length) {
+          renderEmpty(analyticsTotals, "No analytics events yet.");
+        } else {
+          analyticsTotals.innerHTML = totals.map((item) => `
+            <div class="row">
+              <div class="row-head">
+                <h3>${item.event_name}</h3>
+                <span class="tag">${item.count}</span>
+              </div>
+            </div>
+          `).join("");
+        }
+
+        if (!events.length) {
+          renderEmpty(analyticsEvents, "No recent analytics events.");
+        } else {
+          analyticsEvents.innerHTML = events.map((event) => `
+            <div class="row">
+              <div class="row-head">
+                <h3>${event.event_name}</h3>
+                <span class="tag">${formatDate(event.created_at)}</span>
+              </div>
+              <p>User: ${event.user_id || "unknown"}</p>
+              <pre>${event.metadata_json || "{}"}</pre>
+            </div>
+          `).join("");
+        }
+      }
+
+      function renderBugReports(data) {
+        const reports = data.bug_reports || [];
+        bugMetric.textContent = String(reports.length);
+        if (!reports.length) {
+          renderEmpty(bugReports, "No bug reports submitted yet.");
+          return;
+        }
+        bugReports.innerHTML = reports.map((report) => `
+          <div class="row">
+            <div class="row-head">
+              <h3>${report.title || "Untitled bug"}</h3>
+              <span class="tag">${formatDate(report.created_at)}</span>
+            </div>
+            <p>${report.description || ""}</p>
+            <p>User: ${report.email || report.user_id || "unknown"}</p>
+            ${report.page_url ? `<p>Page: ${report.page_url}</p>` : ""}
+          </div>
+        `).join("");
+      }
+
+      function renderMonitoring(data) {
+        const totals = data.totals || [];
+        const events = data.events || [];
+        monitoringMetric.textContent = String(events.length);
+
+        if (!totals.length) {
+          renderEmpty(monitoringTotals, "No monitoring alerts in the last 24 hours.");
+        } else {
+          monitoringTotals.innerHTML = totals.map((item) => `
+            <div class="row">
+              <div class="row-head">
+                <h3>${item.category}</h3>
+                <span class="tag">${item.severity}: ${item.count}</span>
+              </div>
+            </div>
+          `).join("");
+        }
+
+        if (!events.length) {
+          renderEmpty(monitoringEvents, "No recent monitoring events.");
+        } else {
+          monitoringEvents.innerHTML = events.map((event) => `
+            <div class="row">
+              <div class="row-head">
+                <h3>${event.event_name}</h3>
+                <span class="tag">${event.severity}</span>
+              </div>
+              <p>${event.category} • ${event.request_method || ""} ${event.request_path || ""} • ${formatDate(event.created_at)}</p>
+              <p>User: ${event.user_id || "unknown"} • IP: ${event.client_ip || "unknown"}</p>
+              <pre>${event.metadata_json || "{}"}</pre>
+            </div>
+          `).join("");
+        }
+      }
+
+      async function loadJson(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.detail || `Request failed: ${response.status}`);
+        }
+        return data;
+      }
+
+      async function refreshAdmin() {
+        accessStatus.textContent = "Loading admin data...";
+        refreshButton.disabled = true;
+        try {
+          const [readiness, analytics, bugs, monitoring] = await Promise.all([
+            loadJson("/health/readiness"),
+            loadJson("/admin/analytics?limit=100", { headers: adminHeaders() }),
+            loadJson("/admin/bug-reports?limit=100", { headers: adminHeaders() }),
+            loadJson("/admin/monitoring?limit=100", { headers: adminHeaders() }),
+          ]);
+          renderReadiness(readiness);
+          renderAnalytics(analytics);
+          renderBugReports(bugs);
+          renderMonitoring(monitoring);
+          accessStatus.textContent = "Admin data loaded.";
+        } catch (error) {
+          accessStatus.textContent = error.message;
+          overallStatus.textContent = "Admin Access Needed";
+          overallStatus.className = "status-pill error";
+        } finally {
+          refreshButton.disabled = false;
+        }
+      }
+
+      saveKeyButton.addEventListener("click", () => {
+        localStorage.setItem("discereAdminKey", adminKeyInput.value.trim());
+        refreshAdmin();
+      });
+      refreshButton.addEventListener("click", refreshAdmin);
+      refreshAdmin();
+    </script>
+  </body>
+</html>

@@ -89,6 +89,17 @@ MAX_REFINE_INSTRUCTIONS_CHARS = 2000
 MAX_BUG_TITLE_CHARS = 160
 MAX_BUG_DESCRIPTION_CHARS = 5000
 MAX_SUMMARY_IDS_PER_REQUEST = 50
+MONITORING_ALERT_SEVERITIES = {"error", "critical"}
+MONITORING_ALERT_CATEGORIES = {
+    "oauth",
+    "summarizer",
+    "data_isolation",
+    "report_delivery",
+    "abuse",
+    "server_error",
+    "security",
+    "retention",
+}
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; "
@@ -141,6 +152,88 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def monitoring_enabled() -> bool:
+    return os.getenv("EMAIL_SUMMARIZER_MONITORING_ENABLED", "true").lower() != "false"
+
+
+def safe_monitoring_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    blocked_terms = ("token", "secret", "password", "authorization", "cookie", "key")
+    safe: Dict[str, Any] = {}
+    for key, value in (metadata or {}).items():
+        key_text = str(key)
+        if any(term in key_text.lower() for term in blocked_terms):
+            safe[key_text] = "[redacted]"
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            text_value = str(value) if isinstance(value, str) else value
+            if isinstance(text_value, str) and len(text_value) > 1200:
+                safe[key_text] = text_value[:1200] + "...[truncated]"
+            else:
+                safe[key_text] = text_value
+        else:
+            serialized = json.dumps(value, ensure_ascii=False, default=str)
+            safe[key_text] = serialized[:1200] + ("...[truncated]" if len(serialized) > 1200 else "")
+    return safe
+
+
+def write_monitoring_event(
+    category: str,
+    event_name: str,
+    severity: str = "warning",
+    request: Optional[Request] = None,
+    user_id: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    if not monitoring_enabled():
+        return
+    try:
+        request_path = request.url.path if request else ""
+        request_method = request.method if request else ""
+        client_ip = get_client_ip(request) if request else ""
+        user_agent = request.headers.get("user-agent", "")[:400] if request else ""
+        safe_metadata = safe_monitoring_metadata(metadata)
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO monitoring_events (
+                    event_id, category, event_name, severity, user_id, request_path,
+                    request_method, client_ip, user_agent, created_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    secrets.token_hex(12),
+                    category,
+                    event_name,
+                    severity,
+                    user_id,
+                    request_path,
+                    request_method,
+                    client_ip,
+                    user_agent,
+                    datetime.now().isoformat(),
+                    json.dumps(safe_metadata, ensure_ascii=False),
+                ),
+            )
+        if severity in MONITORING_ALERT_SEVERITIES or category in MONITORING_ALERT_CATEGORIES:
+            logger.warning("Monitoring event [%s/%s/%s]: %s", severity, category, event_name, safe_metadata)
+    except Exception as exc:
+        logger.warning("Failed to write monitoring event: %s", exc)
+
+
+def classify_error_detail(detail: Any) -> str:
+    text = str(detail or "").lower()
+    if "google" in text or "microsoft" in text or "oauth" in text or "token" in text or "scope" in text:
+        return "oauth"
+    if "openai" in text or "api key" in text:
+        return "server_error"
+    if "twilio" in text or "sms" in text or "email sending" in text or "send" in text:
+        return "report_delivery"
+    if "delete" in text or "export" in text or "purge" in text:
+        return "retention"
+    return "server_error"
+
+
 def find_rate_limit_rule(method: str, path: str) -> Optional[tuple[str, str, int, int]]:
     for rule_method, rule_path, max_requests, window_seconds in RATE_LIMIT_RULES:
         if method.upper() != rule_method:
@@ -169,22 +262,76 @@ async def security_and_limits_middleware(request: Request, call_next):
     if content_length:
         try:
             if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                write_monitoring_event(
+                    "security",
+                    "request_too_large",
+                    "warning",
+                    request=request,
+                    metadata={"content_length": content_length, "limit": MAX_REQUEST_BODY_BYTES},
+                )
                 response = JSONResponse({"detail": "Request is too large."}, status_code=413)
                 add_security_headers(response)
                 return response
         except ValueError:
+            write_monitoring_event(
+                "security",
+                "invalid_content_length",
+                "warning",
+                request=request,
+                metadata={"content_length": content_length},
+            )
             response = JSONResponse({"detail": "Invalid Content-Length header."}, status_code=400)
             add_security_headers(response)
             return response
 
     if not is_rate_limit_enabled():
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except HTTPException as exc:
+            if exc.status_code >= 500:
+                write_monitoring_event(
+                    classify_error_detail(exc.detail),
+                    "http_exception",
+                    "error",
+                    request=request,
+                    metadata={"status_code": exc.status_code, "detail": exc.detail},
+                )
+            raise
+        except Exception as exc:
+            write_monitoring_event(
+                "server_error",
+                "unhandled_exception",
+                "critical",
+                request=request,
+                metadata={"error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            raise
         add_security_headers(response)
         return response
 
     rule = find_rate_limit_rule(request.method, request.url.path)
     if not rule:
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except HTTPException as exc:
+            if exc.status_code >= 500:
+                write_monitoring_event(
+                    classify_error_detail(exc.detail),
+                    "http_exception",
+                    "error",
+                    request=request,
+                    metadata={"status_code": exc.status_code, "detail": exc.detail},
+                )
+            raise
+        except Exception as exc:
+            write_monitoring_event(
+                "server_error",
+                "unhandled_exception",
+                "critical",
+                request=request,
+                metadata={"error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            raise
         add_security_headers(response)
         return response
 
@@ -195,7 +342,14 @@ async def security_and_limits_middleware(request: Request, call_next):
         recent = [timestamp for timestamp in RATE_LIMIT_BUCKETS.get(bucket_key, []) if now - timestamp < window_seconds]
         if len(recent) >= max_requests:
             retry_after = max(1, int(window_seconds - (now - recent[0])))
-            return JSONResponse(
+            write_monitoring_event(
+                "abuse",
+                "rate_limit_hit",
+                "warning",
+                request=request,
+                metadata={"rule": rule_path, "max_requests": max_requests, "window_seconds": window_seconds, "retry_after": retry_after},
+            )
+            response = JSONResponse(
                 {"detail": "Too many requests. Please wait and try again."},
                 status_code=429,
                 headers={"Retry-After": str(retry_after)},
@@ -205,7 +359,27 @@ async def security_and_limits_middleware(request: Request, call_next):
         recent.append(now)
         RATE_LIMIT_BUCKETS[bucket_key] = recent
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except HTTPException as exc:
+        if exc.status_code >= 500:
+            write_monitoring_event(
+                classify_error_detail(exc.detail),
+                "http_exception",
+                "error",
+                request=request,
+                metadata={"status_code": exc.status_code, "detail": exc.detail},
+            )
+        raise
+    except Exception as exc:
+        write_monitoring_event(
+            "server_error",
+            "unhandled_exception",
+            "critical",
+            request=request,
+            metadata={"error": str(exc), "error_type": exc.__class__.__name__},
+        )
+        raise
     add_security_headers(response)
     return response
 
@@ -271,6 +445,13 @@ ACCOUNT_SCOPED_SETTING_KEYS = {
     "LAST_NAME",
     "BIRTHDAY",
     "GENDER",
+}
+USAGE_LIMIT_ENV_KEYS = {
+    "run_summarizer": ("EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY", 10),
+    "scheduled_report": ("EMAIL_SUMMARIZER_LIMIT_SCHEDULED_REPORTS_PER_DAY", 24),
+    "chat": ("EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY", 100),
+    "refine": ("EMAIL_SUMMARIZER_LIMIT_REFINE_PER_DAY", 30),
+    "report_delivery": ("EMAIL_SUMMARIZER_LIMIT_REPORT_DELIVERY_PER_DAY", 50),
 }
 
 app.mount("/dashboard_static", StaticFiles(directory=STATIC_DIR), name="dashboard_static")
@@ -376,6 +557,30 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL,
                 metadata_json TEXT NOT NULL DEFAULT '{}'
             );
+
+            CREATE TABLE IF NOT EXISTS usage_counters (
+                user_id TEXT NOT NULL,
+                usage_key TEXT NOT NULL,
+                window_start TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(user_id, usage_key, window_start),
+                FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS monitoring_events (
+                event_id TEXT PRIMARY KEY,
+                category TEXT NOT NULL,
+                event_name TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'warning',
+                user_id TEXT,
+                request_path TEXT,
+                request_method TEXT,
+                client_ip TEXT,
+                user_agent TEXT,
+                created_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
+            );
             """
         )
         existing_columns = {
@@ -440,6 +645,93 @@ def enforce_summary_id_limit(summary_ids: List[str]) -> None:
             status_code=413,
             detail=f"Too many summaries selected. Limit: {MAX_SUMMARY_IDS_PER_REQUEST}.",
         )
+
+
+def get_usage_window_start() -> str:
+    return datetime.now(ZoneInfo("UTC")).date().isoformat()
+
+
+def get_usage_limit(usage_key: str) -> int:
+    env_key, default = USAGE_LIMIT_ENV_KEYS.get(usage_key, ("", 0))
+    raw_value = os.getenv(env_key, str(default)).strip() if env_key else str(default)
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return default
+
+
+def get_usage_snapshot(user_id: str) -> Dict[str, Any]:
+    window_start = get_usage_window_start()
+    usage: Dict[str, Dict[str, int]] = {}
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT usage_key, count
+            FROM usage_counters
+            WHERE user_id = ? AND window_start = ?
+            """,
+            (user_id, window_start),
+        ).fetchall()
+    for usage_key, (_, default_limit) in USAGE_LIMIT_ENV_KEYS.items():
+        usage[usage_key] = {"count": 0, "limit": get_usage_limit(usage_key)}
+    for row in rows:
+        usage_key = str(row["usage_key"])
+        usage.setdefault(usage_key, {"count": 0, "limit": get_usage_limit(usage_key)})
+        usage[usage_key]["count"] = int(row["count"] or 0)
+    return {"user_id": user_id, "window_start": window_start, "usage": usage}
+
+
+def enforce_usage_limit(user_id: str, usage_key: str, amount: int = 1) -> Dict[str, int]:
+    limit = get_usage_limit(usage_key)
+    if limit <= 0:
+        return {"count": 0, "limit": limit, "remaining": -1}
+
+    window_start = get_usage_window_start()
+    now = datetime.now().isoformat()
+    limit_hit: Optional[Dict[str, int]] = None
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO usage_counters (user_id, usage_key, window_start, count, updated_at)
+            VALUES (?, ?, ?, 0, ?)
+            """,
+            (user_id, usage_key, window_start, now),
+        )
+        row = connection.execute(
+            """
+            SELECT count
+            FROM usage_counters
+            WHERE user_id = ? AND usage_key = ? AND window_start = ?
+            """,
+            (user_id, usage_key, window_start),
+        ).fetchone()
+        current_count = int((row or {})["count"] or 0)
+        if current_count + amount > limit:
+            limit_hit = {"count": current_count, "limit": limit}
+        else:
+            new_count = current_count + amount
+            connection.execute(
+                """
+                UPDATE usage_counters
+                SET count = ?, updated_at = ?
+                WHERE user_id = ? AND usage_key = ? AND window_start = ?
+                """,
+                (new_count, now, user_id, usage_key, window_start),
+            )
+            return {"count": new_count, "limit": limit, "remaining": max(0, limit - new_count)}
+
+    if limit_hit:
+        track_analytics_event(
+            user_id,
+            "usage_limit_hit",
+            {"usage_key": usage_key, "count": limit_hit["count"], "limit": limit_hit["limit"]},
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily usage limit reached for {usage_key.replace('_', ' ')}. Limit: {limit}/day.",
+        )
+
+    return {"count": 0, "limit": limit, "remaining": limit}
 
 
 def reconnect_error(provider: str, purpose: str, detail: str) -> HTTPException:
@@ -617,10 +909,24 @@ def build_deploy_readiness() -> Dict[str, Any]:
         "cors_origins_production_safe": cors_origins_are_production_safe(),
         "security_headers_enabled": True,
         "request_size_limit_bytes": MAX_REQUEST_BODY_BYTES,
+        "usage_limits_enabled": True,
+        "monitoring_enabled": monitoring_enabled(),
+        "recent_monitoring_alerts": 0,
     }
     try:
         with get_db_connection() as connection:
             connection.execute("SELECT 1").fetchone()
+            since = (datetime.now() - timedelta(hours=24)).isoformat()
+            checks["recent_monitoring_alerts"] = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM monitoring_events
+                WHERE created_at >= ?
+                  AND (severity IN ('error', 'critical')
+                    OR category IN ('oauth', 'summarizer', 'data_isolation', 'report_delivery', 'abuse', 'server_error', 'security', 'retention'))
+                """,
+                (since,),
+            ).fetchone()["count"]
         checks["database_reachable"] = True
     except sqlite3.Error:
         checks["database_reachable"] = False
@@ -647,6 +953,10 @@ def build_deploy_readiness() -> Dict[str, Any]:
         errors.append("Output directory is not writable.")
     if not checks["database_reachable"]:
         errors.append("SQLite database is not reachable.")
+    if not checks["monitoring_enabled"]:
+        warnings.append("Production monitoring is disabled.")
+    if int(checks["recent_monitoring_alerts"] or 0) > 0:
+        warnings.append(f"Recent monitoring alerts in the last 24 hours: {checks['recent_monitoring_alerts']}.")
     if not checks["google_redirect_configured_or_derivable"]:
         warnings.append("Google OAuth redirect URL is not configured or derivable.")
     if not checks["microsoft_redirect_configured_or_derivable"]:
@@ -726,6 +1036,51 @@ def admin_bug_reports(request: Request, limit: int = Query(100, ge=1, le=1000)) 
     return {"count": len(reports), "bug_reports": reports}
 
 
+@app.get("/admin/monitoring")
+def admin_monitoring(request: Request, limit: int = Query(100, ge=1, le=1000)) -> Dict[str, Any]:
+    require_admin(request)
+    since = (datetime.now() - timedelta(hours=24)).isoformat()
+    with get_db_connection() as connection:
+        totals = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT severity, category, COUNT(*) AS count
+                FROM monitoring_events
+                WHERE created_at >= ?
+                GROUP BY severity, category
+                ORDER BY count DESC, severity, category
+                """,
+                (since,),
+            ).fetchall()
+        ]
+        recent_events = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT event_id, category, event_name, severity, user_id, request_path,
+                       request_method, client_ip, user_agent, created_at, metadata_json
+                FROM monitoring_events
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        ]
+    return {
+        "enabled": monitoring_enabled(),
+        "window_hours": 24,
+        "totals": totals,
+        "events": recent_events,
+    }
+
+
+@app.get("/usage")
+def current_usage(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    return get_usage_snapshot(resolved_user_id)
+
+
 @app.on_event("startup")
 def startup_configuration_check() -> None:
     validate_startup_configuration()
@@ -763,6 +1118,11 @@ def settings_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "settings.html")
 
 
+@app.get("/admin")
+def admin_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "admin.html")
+
+
 @app.get("/signup")
 def signup_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "signup.html")
@@ -771,6 +1131,11 @@ def signup_page() -> FileResponse:
 @app.get("/privacy")
 def privacy_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "privacy.html")
+
+
+@app.get("/security")
+def security_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "security.html")
 
 
 @app.get("/terms")
@@ -860,6 +1225,7 @@ def delete_account(request: Request, response: Response) -> Dict[str, Any]:
         connection.execute("DELETE FROM report_schedules WHERE user_id = ?", (user_id,))
         connection.execute("DELETE FROM analytics_events WHERE user_id = ?", (user_id,))
         connection.execute("DELETE FROM bug_reports WHERE user_id = ?", (user_id,))
+        connection.execute("DELETE FROM usage_counters WHERE user_id = ?", (user_id,))
         connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         connection.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
 
@@ -1001,16 +1367,19 @@ def auth_google_start(
 @app.get("/auth/google/callback")
 def auth_google_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None) -> RedirectResponse:
     if error:
+        write_monitoring_event("oauth", "google_callback_error", "error", request=request, metadata={"error": error})
         return RedirectResponse(f"/dashboard?google_error={quote(error, safe='')}")
     cookie_state = request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)
     known_state = GOOGLE_OAUTH_STATE.get(state or "")
     if not code or not state:
+        write_monitoring_event("oauth", "google_invalid_callback", "error", request=request, metadata={"reason": "missing_code_or_state"})
         return RedirectResponse("/dashboard?google_error=invalid_callback")
     if cookie_state and state == cookie_state:
         pass
     elif known_state:
         pass
     else:
+        write_monitoring_event("oauth", "google_invalid_callback", "error", request=request, metadata={"reason": "state_mismatch"})
         return RedirectResponse("/dashboard?google_error=invalid_callback")
 
     config = get_google_oauth_config()
@@ -1028,12 +1397,14 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
             },
         )
     except HTTPException:
+        write_monitoring_event("oauth", "google_token_exchange_failed", "error", request=request)
         response = RedirectResponse("/dashboard?google_error=token_exchange_failed")
         response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         return response
     access_token = token_payload.get("access_token")
     if not access_token:
+        write_monitoring_event("oauth", "google_missing_access_token", "error", request=request)
         response = RedirectResponse("/dashboard?google_error=missing_access_token")
         response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1042,6 +1413,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
     try:
         userinfo = get_json_with_bearer("https://openidconnect.googleapis.com/v1/userinfo", access_token)
     except HTTPException:
+        write_monitoring_event("oauth", "google_userinfo_failed", "error", request=request)
         response = RedirectResponse("/dashboard?google_error=userinfo_failed")
         response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1049,6 +1421,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
     email = str(userinfo.get("email", "")).strip().lower()
     display_name = str(userinfo.get("name") or userinfo.get("given_name") or "").strip()
     if not email:
+        write_monitoring_event("oauth", "google_no_email_returned", "error", request=request)
         response = RedirectResponse("/dashboard?google_error=no_email_returned")
         response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1161,17 +1534,20 @@ def auth_microsoft_start(
 @app.get("/auth/microsoft/callback")
 def auth_microsoft_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None) -> RedirectResponse:
     if error:
+        write_monitoring_event("oauth", "microsoft_callback_error", "error", request=request, metadata={"error": error})
         return RedirectResponse(f"/dashboard?microsoft_error={quote(error, safe='')}")
 
     cookie_state = request.cookies.get(MICROSOFT_OAUTH_STATE_COOKIE)
     known_state = MICROSOFT_OAUTH_STATE.get(state or "")
     if not code or not state:
+        write_monitoring_event("oauth", "microsoft_invalid_callback", "error", request=request, metadata={"reason": "missing_code_or_state"})
         return RedirectResponse("/dashboard?microsoft_error=invalid_callback")
     if cookie_state and state == cookie_state:
         pass
     elif known_state:
         pass
     else:
+        write_monitoring_event("oauth", "microsoft_invalid_callback", "error", request=request, metadata={"reason": "state_mismatch"})
         return RedirectResponse("/dashboard?microsoft_error=invalid_callback")
 
     config = get_microsoft_oauth_config()
@@ -1192,6 +1568,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
             error_prefix="Microsoft token exchange failed",
         )
     except HTTPException:
+        write_monitoring_event("oauth", "microsoft_token_exchange_failed", "error", request=request)
         response = RedirectResponse("/dashboard?microsoft_error=token_exchange_failed")
         response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1199,6 +1576,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
 
     access_token = token_payload.get("access_token")
     if not access_token:
+        write_monitoring_event("oauth", "microsoft_missing_access_token", "error", request=request)
         response = RedirectResponse("/dashboard?microsoft_error=missing_access_token")
         response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1211,6 +1589,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
             error_prefix="Microsoft userinfo request failed",
         )
     except HTTPException:
+        write_monitoring_event("oauth", "microsoft_userinfo_failed", "error", request=request)
         response = RedirectResponse("/dashboard?microsoft_error=userinfo_failed")
         response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1220,6 +1599,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
     display_name = str(userinfo.get("displayName", "") or "").strip()
     email = resolve_microsoft_account_email(userinfo, token_payload) or fallback_email
     if not email:
+        write_monitoring_event("oauth", "microsoft_no_email_returned", "error", request=request)
         response = RedirectResponse("/dashboard?microsoft_error=no_email_returned")
         response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
@@ -1853,11 +2233,13 @@ def post_json_with_bearer(url: str, access_token: str, payload: Dict[str, Any], 
 
 def refresh_google_access_token(profile: Dict[str, Any]) -> str:
     google_oauth = profile.get("google_oauth") or {}
+    user_id = str(profile.get("user_id", "") or "")
     refresh_token = str(google_oauth.get("refresh_token", "")).strip()
     access_token = str(google_oauth.get("access_token", "")).strip()
     if access_token and not refresh_token:
         return access_token
     if not refresh_token:
+        write_monitoring_event("oauth", "google_missing_refresh_token", "error", user_id=user_id)
         raise reconnect_error(
             "google",
             "refresh_token",
@@ -1865,18 +2247,23 @@ def refresh_google_access_token(profile: Dict[str, Any]) -> str:
         )
 
     config = get_google_oauth_config()
-    token_payload = post_form_json(
-        "https://oauth2.googleapis.com/token",
-        {
-            "client_id": config["client_id"],
-            "client_secret": config["client_secret"],
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        },
-        error_prefix="Google token refresh failed",
-    )
+    try:
+        token_payload = post_form_json(
+            "https://oauth2.googleapis.com/token",
+            {
+                "client_id": config["client_id"],
+                "client_secret": config["client_secret"],
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            error_prefix="Google token refresh failed",
+        )
+    except HTTPException as exc:
+        write_monitoring_event("oauth", "google_token_refresh_failed", "error", user_id=user_id, metadata={"detail": exc.detail})
+        raise
     new_access_token = str(token_payload.get("access_token", "")).strip()
     if not new_access_token:
+        write_monitoring_event("oauth", "google_refresh_missing_access_token", "error", user_id=user_id)
         raise HTTPException(status_code=500, detail="Google token refresh did not return an access token.")
 
     google_oauth["access_token"] = new_access_token
@@ -1904,11 +2291,13 @@ def microsoft_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> b
 
 def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
     microsoft_oauth = profile.get("microsoft_oauth") or {}
+    user_id = str(profile.get("user_id", "") or "")
     refresh_token = str(microsoft_oauth.get("refresh_token", "")).strip()
     access_token = str(microsoft_oauth.get("access_token", "")).strip()
     if access_token and not refresh_token:
         return access_token
     if not refresh_token:
+        write_monitoring_event("oauth", "microsoft_missing_refresh_token", "error", user_id=user_id)
         raise reconnect_error(
             "microsoft",
             "refresh_token",
@@ -1916,19 +2305,24 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
         )
 
     config = get_microsoft_oauth_config()
-    token_payload = post_form_json(
-        f"https://login.microsoftonline.com/{config['tenant']}/oauth2/v2.0/token",
-        {
-            "client_id": config["client_id"],
-            "client_secret": config["client_secret"],
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-            "scope": " ".join(MICROSOFT_OAUTH_SCOPES),
-        },
-        error_prefix="Microsoft token refresh failed",
-    )
+    try:
+        token_payload = post_form_json(
+            f"https://login.microsoftonline.com/{config['tenant']}/oauth2/v2.0/token",
+            {
+                "client_id": config["client_id"],
+                "client_secret": config["client_secret"],
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+                "scope": " ".join(MICROSOFT_OAUTH_SCOPES),
+            },
+            error_prefix="Microsoft token refresh failed",
+        )
+    except HTTPException as exc:
+        write_monitoring_event("oauth", "microsoft_token_refresh_failed", "error", user_id=user_id, metadata={"detail": exc.detail})
+        raise
     new_access_token = str(token_payload.get("access_token", "")).strip()
     if not new_access_token:
+        write_monitoring_event("oauth", "microsoft_refresh_missing_access_token", "error", user_id=user_id)
         raise HTTPException(status_code=500, detail="Microsoft token refresh did not return an access token.")
 
     microsoft_oauth["access_token"] = new_access_token
@@ -2552,8 +2946,23 @@ def resolve_user_id(request: Request, explicit_user_id: Optional[str] = None) ->
     explicit = explicit_user_id.strip() if explicit_user_id and explicit_user_id.strip() else None
 
     if explicit and not session_user_id:
+        write_monitoring_event(
+            "security",
+            "unauthenticated_user_id_override",
+            "warning",
+            request=request,
+            user_id=explicit,
+        )
         raise HTTPException(status_code=401, detail="Please log in first.")
     if explicit and session_user_id and explicit != session_user_id:
+        write_monitoring_event(
+            "data_isolation",
+            "cross_account_user_id_override",
+            "critical",
+            request=request,
+            user_id=session_user_id,
+            metadata={"requested_user_id": explicit},
+        )
         raise HTTPException(status_code=403, detail="You do not have access to that user.")
     if explicit:
         return explicit
@@ -3128,6 +3537,14 @@ def get_attachment(request: Request, user_id: str = Query(...), path: str = Quer
         requested_path == root or requested_path.is_relative_to(root)
         for root in allowed_roots
     ):
+        write_monitoring_event(
+            "data_isolation",
+            "attachment_access_denied",
+            "critical",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"requested_path": str(requested_path)},
+        )
         raise HTTPException(status_code=403, detail="You do not have access to that attachment.")
 
     if not requested_path.exists() or not requested_path.is_file():
@@ -3364,6 +3781,13 @@ def default_sender_email(profile: Dict[str, Any], settings: Dict[str, str]) -> s
 
 def send_microsoft_graph_email(profile: Dict[str, Any], recipient: str, subject: str, html_body: str) -> None:
     if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_SEND_SCOPE):
+        write_monitoring_event(
+            "oauth",
+            "microsoft_missing_send_scope",
+            "error",
+            user_id=str(profile.get("user_id", "") or ""),
+            metadata={"required_scope": REQUIRED_MICROSOFT_SEND_SCOPE},
+        )
         raise reconnect_error(
             "microsoft",
             "send_email",
@@ -3439,6 +3863,13 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
 
     if str(google_oauth.get("provider", "")).strip().lower() == "google":
         if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
+            write_monitoring_event(
+                "oauth",
+                "google_missing_send_scope",
+                "error",
+                user_id=user_id,
+                metadata={"required_scope": REQUIRED_GOOGLE_SEND_SCOPE},
+            )
             raise reconnect_error(
                 "google",
                 "send_email",
@@ -3457,10 +3888,27 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
         return {"recipient": recipient, "subject": msg["Subject"]}
 
     if str(microsoft_oauth.get("provider", "")).strip().lower() == "microsoft":
-        send_microsoft_graph_email(profile, recipient, subject, html_body)
+        try:
+            send_microsoft_graph_email(profile, recipient, subject, html_body)
+        except Exception as exc:
+            write_monitoring_event(
+                "report_delivery",
+                "microsoft_summary_email_failed",
+                "error",
+                user_id=user_id,
+                metadata={"recipient": recipient, "error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            raise
         return {"recipient": recipient, "subject": msg["Subject"]}
 
     if not all([smtp_host, smtp_user, smtp_password]):
+        write_monitoring_event(
+            "report_delivery",
+            "email_sending_not_configured",
+            "warning",
+            user_id=user_id,
+            metadata={"smtp_host_configured": bool(smtp_host), "smtp_user_configured": bool(smtp_user), "smtp_password_configured": bool(smtp_password)},
+        )
         raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
 
     try:
@@ -3474,6 +3922,13 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_user, [recipient], msg.as_string())
     except Exception as exc:
+        write_monitoring_event(
+            "report_delivery",
+            "smtp_summary_email_failed",
+            "error",
+            user_id=user_id,
+            metadata={"recipient": recipient, "smtp_host": smtp_host, "smtp_port": smtp_port, "error": str(exc), "error_type": exc.__class__.__name__},
+        )
         raise HTTPException(status_code=500, detail=f"Failed to send summary email: {exc}") from exc
 
     return {"recipient": recipient, "subject": msg["Subject"]}
@@ -3917,8 +4372,20 @@ def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] 
             response_payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         payload_text = exc.read().decode("utf-8", errors="replace")
+        write_monitoring_event(
+            "report_delivery",
+            "twilio_http_error",
+            "error",
+            metadata={"phone_number": phone_number, "status_code": exc.code, "response": payload_text[:1200]},
+        )
         raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {payload_text}") from exc
     except Exception as exc:
+        write_monitoring_event(
+            "report_delivery",
+            "twilio_send_failed",
+            "error",
+            metadata={"phone_number": phone_number, "error": str(exc), "error_type": exc.__class__.__name__},
+        )
         raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {exc}") from exc
 
     return {
@@ -3929,11 +4396,21 @@ def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] 
 
 
 def send_combined_report_via_sms(user_id: str, title: str, markdown: str, phone_number: str) -> Dict[str, Any]:
-    pdf_path = generate_report_pdf(user_id, title, markdown)
-    public_pdf_url = build_public_report_url(user_id, pdf_path)
-    message_body = render_markdown_report_text(title, markdown, max_chars=240) + f"\n\nOpen PDF: {public_pdf_url}"
-    media_url = public_pdf_url if should_attach_pdf_to_message(pdf_path) else None
-    delivery = send_text_via_twilio(phone_number, message_body, media_url=media_url)
+    try:
+        pdf_path = generate_report_pdf(user_id, title, markdown)
+        public_pdf_url = build_public_report_url(user_id, pdf_path)
+        message_body = render_markdown_report_text(title, markdown, max_chars=240) + f"\n\nOpen PDF: {public_pdf_url}"
+        media_url = public_pdf_url if should_attach_pdf_to_message(pdf_path) else None
+        delivery = send_text_via_twilio(phone_number, message_body, media_url=media_url)
+    except Exception as exc:
+        write_monitoring_event(
+            "report_delivery",
+            "sms_report_delivery_failed",
+            "error",
+            user_id=user_id,
+            metadata={"phone_number": phone_number, "title": title, "error": str(exc), "error_type": exc.__class__.__name__},
+        )
+        raise
     track_analytics_event(
         user_id,
         "report_delivered",
@@ -3966,6 +4443,30 @@ def process_due_schedule(schedule_id: str) -> None:
         delivery_channel = str(schedule["delivery_channel"] or "email")
         recipient_email = str(schedule["recipient_email"] or "").strip()
         recipient_phone = str(schedule["recipient_phone"] or "").strip()
+
+        try:
+            enforce_usage_limit(user_id, "scheduled_report")
+        except HTTPException:
+            now_dt = datetime.now(ZoneInfo(str(schedule["timezone"] or "America/Los_Angeles")))
+            next_run_at = compute_next_schedule_run(
+                now=now_dt,
+                timezone_name=str(schedule["timezone"] or "America/Los_Angeles"),
+                interval_value=int(schedule["interval_value"]),
+                interval_unit=str(schedule["interval_unit"]),
+                preferred_hour=int(schedule["preferred_hour"]),
+                preferred_minute=int(schedule["preferred_minute"]),
+                last_run_at=now_dt.isoformat(),
+            )
+            with get_db_connection() as connection:
+                connection.execute(
+                    """
+                    UPDATE report_schedules
+                    SET last_run_at = ?, next_run_at = ?, updated_at = ?
+                    WHERE schedule_id = ?
+                    """,
+                    (now_dt.isoformat(), next_run_at, datetime.now().isoformat(), schedule_id),
+                )
+            return
 
         execute_summarizer_run(user_id, days_back)
 
@@ -4035,6 +4536,7 @@ threading.Thread(target=schedule_runner_loop, daemon=True).start()
 @app.post("/chat")
 def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_usage_limit(resolved_user_id, "chat")
     question = enforce_text_limit(payload.question, "Question", MAX_CHAT_QUESTION_CHARS)
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -4059,6 +4561,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
     api_key = settings.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     model = normalize_openai_model(settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1")
     if not api_key:
+        write_monitoring_event("server_error", "openai_key_missing_chat", "error", request=request, user_id=resolved_user_id)
         raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
 
     client = OpenAI(api_key=api_key)
@@ -4088,6 +4591,14 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
             max_output_tokens=700,
         )
     except Exception as exc:
+        write_monitoring_event(
+            "server_error",
+            "openai_chat_failed",
+            "error",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"model": model, "error": str(exc), "error_type": exc.__class__.__name__},
+        )
         raise HTTPException(status_code=500, detail=f"OpenAI chat request failed: {exc}") from exc
 
     return {
@@ -4110,6 +4621,7 @@ def combined_summary(payload: CombinedSummaryRequest, request: Request) -> Dict[
 def send_combined_summary_email(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
     enforce_summary_id_limit(payload.summary_ids)
+    enforce_usage_limit(resolved_user_id, "report_delivery")
     combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
     delivery = send_combined_report_via_smtp(
         resolved_user_id,
@@ -4129,6 +4641,7 @@ def send_combined_summary_email(payload: CombinedSummaryRequest, request: Reques
 def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
     enforce_summary_id_limit(payload.summary_ids)
+    enforce_usage_limit(resolved_user_id, "report_delivery")
     combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
     phone_number = str(payload.phone_number or "").strip()
     if not phone_number:
@@ -4159,6 +4672,7 @@ def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Req
 @app.post("/summaries/refine")
 def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_usage_limit(resolved_user_id, "refine")
     markdown = enforce_text_limit(payload.markdown, "Summary content", MAX_REFINE_MARKDOWN_CHARS)
     instructions = enforce_text_limit(payload.instructions, "Refinement instructions", MAX_REFINE_INSTRUCTIONS_CHARS)
     title = str(payload.title or "Refined Summary").strip()
@@ -4173,6 +4687,7 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
     model = normalize_openai_model(settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1")
     saved_preferences = parse_summary_style_preferences(settings)
     if not api_key:
+        write_monitoring_event("server_error", "openai_key_missing_refine", "error", request=request, user_id=resolved_user_id)
         raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
 
     client = OpenAI(api_key=api_key)
@@ -4207,6 +4722,14 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
             max_output_tokens=1800,
         )
     except Exception as exc:
+        write_monitoring_event(
+            "server_error",
+            "openai_refine_failed",
+            "error",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"model": model, "error": str(exc), "error_type": exc.__class__.__name__},
+        )
         raise HTTPException(status_code=500, detail=f"Refine summary request failed: {exc}") from exc
 
     updated_preferences = saved_preferences
@@ -4333,6 +4856,26 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
             "first_summary_generated",
             {"days_back": days_back, "summary_count": after_count},
         )
+    if not result_payload["success"]:
+        combined_output = f"{result_payload.get('stderr', '')}\n{result_payload.get('stdout', '')}"
+        category = "summarizer"
+        event_name = "summarizer_failed"
+        if "gmail" in combined_output.lower() or "imap" in combined_output.lower() or "oauth" in combined_output.lower() or "token" in combined_output.lower():
+            event_name = "summarizer_mailbox_or_oauth_failed"
+        if "openai" in combined_output.lower():
+            event_name = "summarizer_openai_failed"
+        write_monitoring_event(
+            category,
+            event_name,
+            "error",
+            user_id=user_id,
+            metadata={
+                "days_back": days_back,
+                "returncode": result_payload.get("returncode"),
+                "stderr_tail": result_payload.get("stderr", "")[-1200:],
+                "stdout_tail": result_payload.get("stdout", "")[-1200:],
+            },
+        )
     return result_payload
 
 
@@ -4368,6 +4911,13 @@ def launch_summarizer_job(user_id: str, days_back: int) -> Dict[str, Any]:
                 **result_payload,
             }
         except subprocess.TimeoutExpired as exc:
+            write_monitoring_event(
+                "summarizer",
+                "summarizer_timeout",
+                "error",
+                user_id=user_id,
+                metadata={"job_id": job_id, "days_back": days_back, "timeout_seconds": 600},
+            )
             final_job = {
                 "job_id": job_id,
                 "user_id": user_id,
@@ -4382,6 +4932,13 @@ def launch_summarizer_job(user_id: str, days_back: int) -> Dict[str, Any]:
                 "success": False,
             }
         except Exception as exc:
+            write_monitoring_event(
+                "summarizer",
+                "summarizer_worker_exception",
+                "critical",
+                user_id=user_id,
+                metadata={"job_id": job_id, "days_back": days_back, "error": str(exc), "error_type": exc.__class__.__name__},
+            )
             final_job = {
                 "job_id": job_id,
                 "user_id": user_id,
@@ -4438,11 +4995,20 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
     profile = load_profile_or_404(resolved_user_id)
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     if google_connected and not google_oauth_has_scope(profile, REQUIRED_GOOGLE_READ_SCOPE):
+        write_monitoring_event(
+            "oauth",
+            "google_missing_read_scope",
+            "error",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"required_scope": REQUIRED_GOOGLE_READ_SCOPE},
+        )
         raise reconnect_error(
             "google",
             "read_mailbox",
             "Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
         )
+    enforce_usage_limit(resolved_user_id, "run_summarizer")
     return launch_summarizer_job(resolved_user_id, payload.days_back)
 
 
@@ -4600,6 +5166,7 @@ def mark_summary_done(summary_id: str, payload: SummaryDoneRequest, request: Req
 @app.post("/summaries/{summary_id}/send-email")
 def send_summary_email(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    enforce_usage_limit(user_id, "report_delivery")
     summary = get_summary(summary_id, request, user_id)
     delivery = send_summary_via_smtp(user_id, summary)
     return {

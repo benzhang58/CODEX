@@ -23,6 +23,18 @@ services:
         sync: false
       - key: EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED
         value: "true"
+      - key: EMAIL_SUMMARIZER_MONITORING_ENABLED
+        value: "true"
+      - key: EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY
+        value: "10"
+      - key: EMAIL_SUMMARIZER_LIMIT_SCHEDULED_REPORTS_PER_DAY
+        value: "24"
+      - key: EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY
+        value: "100"
+      - key: EMAIL_SUMMARIZER_LIMIT_REFINE_PER_DAY
+        value: "30"
+      - key: EMAIL_SUMMARIZER_LIMIT_REPORT_DELIVERY_PER_DAY
+        value: "50"
       - key: EMAIL_SUMMARIZER_CORS_ORIGINS
         sync: false
       - key: EMAIL_SUMMARIZER_COOKIE_DOMAIN

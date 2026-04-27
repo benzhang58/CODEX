@@ -928,55 +928,142 @@
         line-height: 1.5;
       }
 
-      .howto-popup {
+      .onboarding-shell {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px 12px;
+        grid-template-columns: minmax(280px, 0.82fr) minmax(420px, 1.18fr);
+        gap: 16px;
+        align-items: stretch;
       }
 
-      .howto-popup .howto-card {
-        display: grid;
-        grid-template-columns: 36px 1fr;
-        gap: 12px;
-        align-items: start;
-        padding: 12px 14px;
+      .onboarding-intro,
+      .onboarding-checklist {
         border: 1px solid var(--border);
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.72);
+        border-radius: 24px;
+        background: #ffffff;
+        padding: 18px;
       }
 
-      .howto-popup .howto-step {
-        width: 36px;
-        height: 36px;
-        border-radius: 999px;
+      .onboarding-intro {
         display: grid;
-        place-items: center;
-        background: #111111;
-        color: #ffffff;
+        align-content: space-between;
+        gap: 18px;
+        min-height: 100%;
+      }
+
+      .onboarding-kicker {
+        margin: 0 0 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .onboarding-title {
+        margin: 0;
+        color: #111111;
+        font-size: clamp(28px, 4vw, 46px);
+        line-height: 0.95;
+        letter-spacing: -0.06em;
+      }
+
+      .onboarding-copy {
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.45;
+      }
+
+      .onboarding-progress {
+        display: grid;
+        gap: 8px;
+      }
+
+      .onboarding-progress-label {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: #111111;
         font-weight: 700;
       }
 
-      .howto-popup .howto-copy strong {
+      .onboarding-progress-track {
+        height: 10px;
+        border-radius: 999px;
+        background: #e9e8e3;
+        overflow: hidden;
+      }
+
+      .onboarding-progress-fill {
+        height: 100%;
+        width: var(--onboarding-progress, 0%);
+        border-radius: inherit;
+        background: #111111;
+      }
+
+      .onboarding-checklist {
+        display: grid;
+        gap: 10px;
+      }
+
+      .onboarding-item {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: #ffffff;
+      }
+
+      .onboarding-item.is-complete {
+        background: #f2f7f1;
+        border-color: rgba(45, 126, 69, 0.2);
+      }
+
+      .onboarding-check {
+        width: 42px;
+        height: 42px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #f0efea;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .onboarding-item.is-complete .onboarding-check {
+        background: #111111;
+        color: #ffffff;
+      }
+
+      .onboarding-copy-block strong {
         display: block;
         color: #111111;
         margin-bottom: 4px;
       }
 
-      .howto-popup .howto-copy p {
+      .onboarding-copy-block p {
         margin: 0;
         color: var(--muted);
-        line-height: 1.45;
+        line-height: 1.4;
       }
 
       @media (max-width: 1200px) {
-        .howto-popup {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+        .onboarding-shell {
+          grid-template-columns: 1fr;
         }
       }
 
       @media (max-width: 900px) {
-        .howto-popup {
-          grid-template-columns: 1fr;
+        .onboarding-intro,
+        .onboarding-checklist {
+          padding: 14px;
+        }
+
+        .onboarding-title {
+          font-size: 30px;
         }
       }
 
@@ -2869,7 +2956,7 @@
         inputValue = "",
         inputPlaceholder = "",
       }) {
-        const isHowToModal = title === "How To" || String(messageHtml || "").includes("howto-popup");
+        const isHowToModal = title === "How To" || title === "Getting Started" || String(messageHtml || "").includes("onboarding-shell");
         appModalTitle.textContent = title || "Confirm";
         appModalCard.classList.toggle("is-howto-modal", isHowToModal);
         if (messageHtml) {
@@ -3003,50 +3090,79 @@
         return await markLegalAcceptance();
       }
 
-      function buildHowToModalHtml() {
+      function profileHasMailboxAccess(profile) {
+        if (!profile) return false;
+        if (profile.google_connected || profile.microsoft_connected) return true;
+        return Boolean(profile?.settings?.mailbox_connected);
+      }
+
+      function buildOnboardingItem({ complete, title, copy }) {
         return `
-          <div class="howto-popup">
-            <div class="howto-card">
-              <div class="howto-step">1</div>
-              <div class="howto-copy">
-                <strong>Sign in the right way</strong>
-                <p>Use Gmail or Outlook login. Otherwise, create an account.</p>
+          <div class="onboarding-item ${complete ? "is-complete" : ""}">
+            <div class="onboarding-check" aria-hidden="true">${complete ? "✓" : "•"}</div>
+            <div class="onboarding-copy-block">
+              <strong>${escapeHtml(title)}</strong>
+              <p>${escapeHtml(copy)}</p>
+            </div>
+          </div>
+        `;
+      }
+
+      function buildHowToModalHtml() {
+        const hasName = Boolean(getProfileNameParts(currentProfile).firstName || getProfileNameParts(currentProfile).lastName);
+        const hasMailboxAccess = profileHasMailboxAccess(currentProfile);
+        const hasContacts = Array.isArray(currentContacts) && currentContacts.length > 0;
+        const hasSummaries = Array.isArray(allSummaries) && allSummaries.length > 0;
+        const hasReadSummary = Array.isArray(allSummaries) && allSummaries.some((summary) => Boolean(summary.read_at || summary.opened_at));
+        const checklist = [
+          {
+            complete: hasMailboxAccess,
+            title: "Connect your mailbox",
+            copy: "Gmail and Outlook are connected by login. Other email providers connect in Settings.",
+          },
+          {
+            complete: hasName,
+            title: "Add your name",
+            copy: "This personalizes the dashboard greeting and can be changed later.",
+          },
+          {
+            complete: hasContacts,
+            title: "Add key contacts",
+            copy: "Track the people whose emails matter most.",
+          },
+          {
+            complete: hasSummaries,
+            title: "Run your first summary",
+            copy: "Use the play button to check recent emails from your contacts.",
+          },
+          {
+            complete: hasReadSummary,
+            title: "Open a summary",
+            copy: "Unread summaries become read when you click and review them.",
+          },
+        ];
+        const completedCount = checklist.filter((item) => item.complete).length;
+        const progressPercent = Math.round((completedCount / checklist.length) * 100);
+        return `
+          <div class="onboarding-shell">
+            <div class="onboarding-intro">
+              <div>
+                <p class="onboarding-kicker">Onboarding</p>
+                <h4 class="onboarding-title">Set up Discere in a few steps.</h4>
+                <p class="onboarding-copy">Use this checklist to connect your inbox, add important people, and generate your first useful summary.</p>
+              </div>
+              <div class="onboarding-progress">
+                <div class="onboarding-progress-label">
+                  <span>Progress</span>
+                  <span>${completedCount}/${checklist.length}</span>
+                </div>
+                <div class="onboarding-progress-track">
+                  <div class="onboarding-progress-fill" style="--onboarding-progress:${progressPercent}%"></div>
+                </div>
               </div>
             </div>
-            <div class="howto-card">
-              <div class="howto-step">2</div>
-              <div class="howto-copy">
-                <strong>Set mailbox access if needed</strong>
-                <p>If it is not Gmail or Outlook, add your mailbox login in Settings.</p>
-              </div>
-            </div>
-            <div class="howto-card">
-              <div class="howto-step">3</div>
-              <div class="howto-copy">
-                <strong>Add contacts</strong>
-                <p>Add the people you want to track in Contacts.</p>
-              </div>
-            </div>
-            <div class="howto-card">
-              <div class="howto-step">4</div>
-              <div class="howto-copy">
-                <strong>Run the summarizer</strong>
-                <p>Run Summarizer to check recent emails from those contacts.</p>
-              </div>
-            </div>
-            <div class="howto-card">
-              <div class="howto-step">5</div>
-              <div class="howto-copy">
-                <strong>Read and combine</strong>
-                <p>Open a summary to read it. Select more than one to combine them.</p>
-              </div>
-            </div>
-            <div class="howto-card">
-              <div class="howto-step">6</div>
-              <div class="howto-copy">
-                <strong>Ask AI questions</strong>
-                <p>Use AI Assistant to ask about your emails.</p>
-              </div>
+            <div class="onboarding-checklist">
+              ${checklist.map(buildOnboardingItem).join("")}
             </div>
           </div>
         `;
@@ -3058,7 +3174,7 @@
         const requestedOnboarding = params.get("onboarding") === "1";
         if (!force && !requestedOnboarding && Boolean(currentProfile?.settings?.how_to_seen)) return;
         await openAppModal({
-          title: "How To",
+          title: "Getting Started",
           messageHtml: buildHowToModalHtml(),
           confirmLabel: "Got it",
           cancelLabel: "Close",
@@ -3351,10 +3467,10 @@
           if (!(await showLegalAcceptanceIfNeeded())) {
             return false;
           }
-          await showHowToIfNeeded();
-          await promptForProfileNameIfNeeded();
           await fetchContacts();
           await loadSummaries();
+          await showHowToIfNeeded();
+          await promptForProfileNameIfNeeded();
           let existingJobId = readActiveRunJob(currentUserId);
           if (!existingJobId) {
             existingJobId = await fetchActiveRunJob(currentUserId);

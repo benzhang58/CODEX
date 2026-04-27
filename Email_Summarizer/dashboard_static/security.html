@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discere Security FAQ</title>
+    <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
+    <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
+    <link rel="stylesheet" href="/dashboard_static/public_site.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-nav">
+        <a class="site-brand" href="/">
+          <span class="brand-mark logo-mark">
+            <img src="/dashboard_static/discere-logo.png" alt="" />
+          </span>
+          <span>Discere</span>
+        </a>
+        <div class="nav-actions">
+          <a class="button-secondary" href="/privacy">Privacy</a>
+          <a class="button" href="/login">Log In</a>
+        </div>
+      </header>
+
+      <main class="legal-list">
+        <section class="content-card">
+          <div class="eyebrow">Security FAQ</div>
+          <h1 class="section-head">Plain-English security overview for business users.</h1>
+          <p>
+            Discere summarizes emails from contacts you choose. This page explains what the product accesses, what is stored,
+            what is sent to AI, and what risks a business should evaluate before use.
+          </p>
+        </section>
+
+        <section class="feature-grid two-column" aria-label="Security overview">
+          <article class="feature-card">
+            <div class="eyebrow">Access</div>
+            <h3>Discere reads relevant mailbox data.</h3>
+            <p class="section-copy">
+              The app searches your connected mailbox for emails from tracked contacts. It does not need you to forward all mail
+              manually, but connected mailbox permissions can technically allow broader access depending on the provider scope.
+            </p>
+          </article>
+          <article class="feature-card">
+            <div class="eyebrow">Storage</div>
+            <h3>Account data and summaries are stored.</h3>
+            <p class="section-copy">
+              Discere stores settings, contacts, schedules, generated summaries, processed message IDs, and limited source email
+              data needed to show summaries and avoid duplicate processing.
+            </p>
+          </article>
+        </section>
+
+        <section class="content-card">
+          <h2>What data is read?</h2>
+          <ul class="mini-list">
+            <li><strong>Gmail:</strong> Discere uses Google OAuth to sign you in, read Gmail messages for summarization, and send requested report emails.</li>
+            <li><strong>Microsoft:</strong> Discere uses Microsoft OAuth to sign you in, read mailbox content through Microsoft-supported access, refresh tokens, and send requested report emails.</li>
+            <li><strong>Other providers:</strong> Discere uses the mailbox credentials or connection settings you provide to read emails from tracked contacts.</li>
+            <li><strong>Contacts filter:</strong> The summarizer is designed to process only emails whose actual sender matches your tracked contacts.</li>
+          </ul>
+        </section>
+
+        <section class="content-card">
+          <h2>What gets sent to AI?</h2>
+          <p>
+            To generate summaries, Discere sends relevant email text and thread context to the AI provider. This can include
+            sender, recipient, subject, message date, body text, and summary preferences.
+          </p>
+          <p>
+            Attachment contents are sent to AI only if the user enables AI attachment access. If that setting is off, Discere
+            limits attachment use to metadata such as filenames.
+          </p>
+        </section>
+
+        <section class="content-card">
+          <h2>What is stored?</h2>
+          <table class="simple-table" aria-label="Stored data">
+            <tbody>
+              <tr>
+                <th scope="row">Account settings</th>
+                <td>Email address, sign-in method, profile name, preferences, timezone, contacts, and schedules.</td>
+              </tr>
+              <tr>
+                <th scope="row">Credentials and tokens</th>
+                <td>OAuth tokens or mailbox credentials where needed. These are stored encrypted.</td>
+              </tr>
+              <tr>
+                <th scope="row">Summary data</th>
+                <td>Generated summary cards, combined reports, done/read state, and limited source data needed to display and manage summaries.</td>
+              </tr>
+              <tr>
+                <th scope="row">Operational data</th>
+                <td>Analytics events, bug reports, usage counters, and logs used for support, abuse prevention, debugging, and reliability.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="content-card">
+          <h2>How does deletion work?</h2>
+          <ul>
+            <li>Users can export their account data from Settings.</li>
+            <li>Users can delete individual summaries. This also removes the linked processed IDs so the email can be rediscovered later.</li>
+            <li>Users can delete their account from Settings. This removes account data, summaries, source email files, attachments, schedules, sessions, user analytics, bug reports, and usage counters.</li>
+            <li>Read or done summaries have source email bodies and saved attachments purged after the retention period, while processed message IDs can remain to prevent accidental duplicate summaries.</li>
+            <li>Provider access can also be revoked directly from Google or Microsoft account settings.</li>
+          </ul>
+        </section>
+
+        <section class="content-card">
+          <h2>Business risk summary</h2>
+          <p>
+            The main realistic risk is that email-derived data is processed and stored by a third-party web application and AI
+            provider. For normal business email, that can be acceptable if users understand the access and retention model. For
+            regulated, attorney-client, medical, financial, export-controlled, or highly confidential data, a business should
+            review its own policies before connecting those inboxes.
+          </p>
+          <p>
+            Discere uses account isolation, encrypted secret storage, secure production cookies, security headers, rate limits,
+            export/delete flows, and backup procedures. These reduce risk, but they do not make any cloud product risk-free.
+          </p>
+        </section>
+
+        <section class="content-card">
+          <h2>OAuth consent screen wording</h2>
+          <p>
+            Google and Microsoft consent screens should describe the app consistently with this behavior:
+          </p>
+          <ul>
+            <li><strong>App purpose:</strong> Discere summarizes emails from contacts selected by the user.</li>
+            <li><strong>Mailbox read access:</strong> Used to find and summarize relevant emails from tracked contacts.</li>
+            <li><strong>Mail send access:</strong> Used only when the user requests an emailed report or scheduled report delivery.</li>
+            <li><strong>Profile/email access:</strong> Used to sign the user in and identify the connected mailbox.</li>
+            <li><strong>Offline/refresh access:</strong> Used to keep scheduled reports and mailbox access working without forcing a new login every run.</li>
+          </ul>
+        </section>
+
+        <section class="content-card">
+          <h2>Questions</h2>
+          <p>
+            For security, privacy, or business review questions, contact <strong>discereresearch@gmail.com</strong>.
+          </p>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>Discere Security FAQ</div>
+        <div class="footer-links">
+          <a href="/">Home</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/login">Log In</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -68,11 +68,53 @@
             </p>
           </article>
         </section>
+
+        <section class="content-card">
+          <div class="eyebrow">Data Use</div>
+          <h2 class="section-head">What Discere reads, stores, and sends to AI.</h2>
+          <table class="simple-table" aria-label="Discere data handling overview">
+            <tbody>
+              <tr>
+                <th scope="row">What is read</th>
+                <td>
+                  Discere reads mailbox data needed to find emails from the contacts you choose. For Gmail and Microsoft users,
+                  this happens through OAuth permissions. For other supported email providers, it uses the mailbox connection you enter.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">What is stored</th>
+                <td>
+                  Discere stores your account settings, tracked contacts, summaries, processed message identifiers, schedules,
+                  and limited source email data needed to show summaries and avoid duplicate processing.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">What goes to AI</th>
+                <td>
+                  Email text needed for summaries is sent to the AI provider. Attachment content is sent only if you turn on AI
+                  attachment access; otherwise Discere limits attachment use to metadata such as file names.
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">How deletion works</th>
+                <td>
+                  You can delete summaries or your account. Read or done summaries have source bodies and attachments purged
+                  after the retention period, while processed IDs can remain so old emails are not summarized again by accident.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="callout">
+            Business users can review the plain-English security overview before connecting sensitive inboxes.
+            <a href="/security"><strong>Read Security FAQ</strong></a>
+          </p>
+        </section>
       </main>
 
       <footer class="site-footer">
         <div>Discere</div>
         <div class="footer-links">
+          <a href="/security">Security</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
           <a href="/login">Log In</a>

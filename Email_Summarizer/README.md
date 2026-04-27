@@ -73,6 +73,48 @@ This app now separates code from runtime data.
 
 If you deploy this to Render, Railway, Fly, etc., mount persistent storage and point those two env vars at that mounted path.
 
+## Backup and restore plan
+
+The persistent disk is the source of truth for production state. Back up the whole disk state, not just the SQLite file.
+
+What must be backed up:
+
+- `EMAIL_SUMMARIZER_STORAGE_DIR/app/app.db`: users, sessions, profiles, schedules, analytics, bug reports, and usage counters
+- `EMAIL_SUMMARIZER_STORAGE_DIR/app/email_summarizer.key`: local fallback encryption key if `EMAIL_SUMMARIZER_ENCRYPTION_KEY` is not set
+- `EMAIL_SUMMARIZER_STORAGE_DIR/users/...`: per-user summaries, source email JSON, processed email IDs, and attachment metadata/files
+- `EMAIL_SUMMARIZER_OUTPUT_DIR/...`: legacy summarizer output folders still used by older worker paths
+- Render environment variables, especially `EMAIL_SUMMARIZER_ENCRYPTION_KEY`, OAuth secrets, OpenAI key, admin config, and public base URL
+
+Create a backup from a Render shell:
+
+```bash
+cd /opt/render/project/src/Email_Summarizer
+python3 scripts/backup_persistent_data.py \
+  --storage-dir /var/data/storage \
+  --output-dir /var/data/output \
+  --backup-dir /var/data/backups
+```
+
+The script creates a timestamped `discere-backup-YYYYMMDDTHHMMSSZ.tar.gz` archive. It uses SQLite's online backup API so `app.db` is copied consistently while the app is running, then bundles user files and output folders into the same archive. The archive contains sensitive data and must be stored somewhere private.
+
+Recommended operating cadence:
+
+- Before launch: run a manual backup and restore test.
+- During beta: back up at least daily and before any risky deployment.
+- After paid/customer usage starts: automate daily backups and keep at least 14-30 days of history.
+- After every backup: download or sync the archive off the Render disk. A backup stored only on the same disk does not protect against disk loss.
+
+Restore outline:
+
+1. Put the app in maintenance mode or stop the Render service.
+2. Save a copy of the current `/var/data` folder before replacing anything.
+3. Extract the backup archive into a temporary folder.
+4. Restore `storage/app/app.db`, `storage/app/email_summarizer.key` if used, `storage/users`, and `output` into `/var/data`.
+5. Confirm Render env vars match the backup, especially `EMAIL_SUMMARIZER_ENCRYPTION_KEY`.
+6. Start the service and verify `/health/readiness`, login, contacts, summaries, schedules, and report delivery.
+
+Do not commit backup archives. `.gitignore` excludes local backup folders and `.tar.gz` archives.
+
 ## Smallest hosted path
 
 The repo now includes:
@@ -111,6 +153,16 @@ The deployment/readiness endpoints should confirm:
 - database reachable
 - rate limiting enabled
 
+Usage limits are enforced per account per UTC day. Defaults:
+
+- `EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY=10`
+- `EMAIL_SUMMARIZER_LIMIT_SCHEDULED_REPORTS_PER_DAY=24`
+- `EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY=100`
+- `EMAIL_SUMMARIZER_LIMIT_REFINE_PER_DAY=30`
+- `EMAIL_SUMMARIZER_LIMIT_REPORT_DELIVERY_PER_DAY=50`
+
+Set a limit to `0` to make that action unlimited. The `/usage` endpoint shows the logged-in account's current daily usage.
+
 ## Public launch checklist
 
 Before sending real users to the app:
@@ -121,11 +173,14 @@ Before sending real users to the app:
 4. Set `EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED=true`.
 5. Set either `EMAIL_SUMMARIZER_ADMIN_EMAILS` or `EMAIL_SUMMARIZER_ADMIN_KEY`.
 6. Set `OPENAI_API_KEY` and `OPENAI_MODEL=gpt-5.1`.
-7. Add `https://discere-ai.com/auth/google/callback` in Google OAuth credentials.
-8. Add `https://discere-ai.com/auth/microsoft/callback` in Azure app registration.
-9. Confirm `/health/readiness` returns `status: ready` or only expected OAuth warnings.
-10. Run the security regression tests below before pushing launch changes.
-11. Confirm account isolation manually with two real accounts before broad rollout.
+7. Confirm usage limit env vars match the beta/free tier you want.
+8. Add `https://discere-ai.com/auth/google/callback` in Google OAuth credentials.
+9. Add `https://discere-ai.com/auth/microsoft/callback` in Azure app registration.
+10. Confirm `/health/readiness` returns `status: ready` or only expected OAuth warnings.
+11. Run the security regression tests below before pushing launch changes.
+12. Confirm account isolation manually with two real accounts before broad rollout.
+13. Run `scripts/backup_persistent_data.py` on Render and download the archive off the Render disk.
+14. Restore that archive into a separate test/local environment once, then verify login, summaries, schedules, and settings load.
 
 Security regression tests:
 
@@ -138,8 +193,51 @@ Admin inspection endpoints:
 
 - `/admin/analytics`
 - `/admin/bug-reports`
+- `/admin/monitoring`
 
 Set `EMAIL_SUMMARIZER_ADMIN_EMAILS` to comma-separated admin login emails, or use `EMAIL_SUMMARIZER_ADMIN_KEY` and send it as the `x-discere-admin-key` header.
+
+## Production monitoring
+
+The app includes first-party monitoring in the SQLite database. It is not a full replacement for Sentry/PagerDuty, but it catches the most important launch risks without adding another vendor.
+
+Set:
+
+- `EMAIL_SUMMARIZER_MONITORING_ENABLED=true`
+
+Monitoring records:
+
+- OAuth callback/token/scope failures
+- summarizer failures, timeouts, and mailbox/OpenAI error hints
+- cross-account `user_id` override attempts and attachment access denials
+- report delivery failures for email, SMS, PDFs, Twilio, SMTP, Gmail, and Microsoft
+- rate-limit hits, oversized requests, and invalid request headers
+- unhandled server exceptions and OpenAI chat/refine failures
+- deletion/export/purge-related failures when surfaced as server errors
+
+Admins can review events at `/admin` or directly through `/admin/monitoring`. The readiness endpoint includes `recent_monitoring_alerts` from the last 24 hours. Metadata is redacted for sensitive-looking keys such as tokens, secrets, passwords, authorization headers, cookies, and API keys.
+
+For later scale, add Sentry or another hosted error monitor for stack traces, alert routing, and uptime checks. Keep this internal monitoring anyway because it is product-aware and stores events alongside app state.
+
+## OAuth consent screen alignment
+
+The public website, privacy page, and OAuth consent screens should describe the same data use. Current app behavior:
+
+- App purpose: Discere summarizes emails from contacts selected by the user.
+- Google scopes: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/gmail.send`.
+- Microsoft scopes: `openid`, `email`, `profile`, `offline_access`, `User.Read`, `Mail.Send`, `https://outlook.office.com/IMAP.AccessAsUser.All`.
+- Mailbox read access is used to find emails from tracked contacts and build summaries.
+- Mail send access is used only when a user requests emailed report delivery or scheduled emailed reports.
+- Profile/email access is used to sign the user in, identify the connected mailbox, and display account information.
+- Offline/refresh access is used so scheduled reports and recurring mailbox checks can run without forcing the user to sign in every time.
+- Email/thread content needed for summaries is sent to the AI provider. Attachment contents are sent only when AI attachment access is enabled.
+- OAuth tokens and mailbox credentials are stored encrypted.
+
+Suggested short consent/support description:
+
+```text
+Discere helps users summarize important emails from contacts they choose. It reads mailbox content needed to find and summarize relevant messages, uses send permission only to deliver reports requested by the user, and uses profile/email access to sign users in and identify the connected mailbox.
+```
 
 ## Current limitations
 

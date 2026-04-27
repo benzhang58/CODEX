@@ -17,6 +17,8 @@ env/
 # Local product data and generated outputs
 Email_Summarizer/data/
 Email_Summarizer/email_summaries_output/
+Email_Summarizer/backups/
+Email_Summarizer/*.tar.gz
 
 # Local debug/runtime files
 *.log
