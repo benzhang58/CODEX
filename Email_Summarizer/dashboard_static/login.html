@@ -218,6 +218,9 @@
         if (lower.includes("scope")) {
           return `${label} sign-in is missing a required permission scope. Reconnect with ${label} and approve mailbox/profile permissions.`;
         }
+        if (lower.includes("missing_refresh_token")) {
+          return `${label} sign-in worked, but mailbox refresh access was not returned. Try again and approve the permissions shown on the ${label} consent screen.`;
+        }
         return `${label} sign-in failed: ${code.replaceAll("_", " ")}`;
       }
 

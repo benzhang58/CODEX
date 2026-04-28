@@ -519,11 +519,8 @@ class EmailSummarizer:
 
     def _gmail_refresh_access_token(self) -> str:
         refresh_token = str(self.google_oauth.get("refresh_token", "")).strip()
-        access_token = str(self.google_oauth.get("access_token", "")).strip()
-        if access_token and not refresh_token:
-            return access_token
         if not refresh_token:
-            raise ValueError("Google OAuth tokens are not available for this Gmail account.")
+            raise ValueError("Google mailbox access expired. Sign in with Google again to reconnect your mailbox.")
 
         client_id = get_app_config_value("GOOGLE_CLIENT_ID", APP_BASE_DIR)
         client_secret = get_app_config_value("GOOGLE_CLIENT_SECRET", APP_BASE_DIR)
@@ -561,11 +558,8 @@ class EmailSummarizer:
 
     def _microsoft_refresh_access_token(self) -> str:
         refresh_token = str(self.microsoft_oauth.get("refresh_token", "")).strip()
-        access_token = str(self.microsoft_oauth.get("access_token", "")).strip()
-        if access_token and not refresh_token:
-            return access_token
         if not refresh_token:
-            raise ValueError("Microsoft OAuth tokens are not available for this Outlook account.")
+            raise ValueError("Microsoft mailbox access expired. Sign in with Microsoft again to reconnect your mailbox.")
 
         client_id = get_app_config_value("MICROSOFT_CLIENT_ID", APP_BASE_DIR)
         client_secret = get_app_config_value("MICROSOFT_CLIENT_SECRET", APP_BASE_DIR)

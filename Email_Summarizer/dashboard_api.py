@@ -1325,17 +1325,17 @@ def export_account_data(request: Request) -> JSONResponse:
 def auth_google_start(
     next: str = "/dashboard",
     login_hint: str = "",
-    prompt: str = "",
+    prompt: str = "consent",
 ) -> RedirectResponse:
     try:
         config = get_google_oauth_config()
     except HTTPException:
         return RedirectResponse("/dashboard?google_error=not_configured")
-    state = secrets.token_urlsafe(24)
-    GOOGLE_OAUTH_STATE[state] = {"next": next}
     scope = " ".join(GOOGLE_OAUTH_SCOPES)
     login_hint_value = login_hint.strip()
     prompt_value = prompt.strip()
+    state = secrets.token_urlsafe(24)
+    GOOGLE_OAUTH_STATE[state] = {"next": next, "prompt": prompt_value}
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         f"?client_id={quote(config['client_id'], safe='')}"
@@ -1343,6 +1343,7 @@ def auth_google_start(
         "&response_type=code"
         f"&scope={quote(scope, safe='')}"
         "&access_type=offline"
+        "&include_granted_scopes=true"
         f"&state={quote(state, safe='')}"
     )
     if login_hint_value:
@@ -1392,7 +1393,8 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         return RedirectResponse("/dashboard?google_error=invalid_callback")
 
     config = get_google_oauth_config()
-    next_url = request.cookies.get(GOOGLE_OAUTH_NEXT_COOKIE) or GOOGLE_OAUTH_STATE.pop(state, {}).get("next") or "/dashboard"
+    state_metadata = GOOGLE_OAUTH_STATE.pop(state, {}) if state else {}
+    next_url = request.cookies.get(GOOGLE_OAUTH_NEXT_COOKIE) or state_metadata.get("next") or "/dashboard"
 
     try:
         token_payload = post_form_json(
@@ -1460,11 +1462,24 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         }
 
     existing_google_oauth = profile.get("google_oauth") or {}
+    google_refresh_token = str(token_payload.get("refresh_token", "") or existing_google_oauth.get("refresh_token", "") or "").strip()
+    if not google_refresh_token:
+        write_monitoring_event("oauth", "google_missing_refresh_token_after_login", "error", request=request, user_id=str(profile.get("user_id", "")))
+        if state_metadata.get("prompt") == "consent":
+            response = RedirectResponse("/dashboard?google_error=missing_refresh_token")
+            response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+            response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+            return response
+        reconnect_query = urlencode({"next": next_url, "login_hint": email, "prompt": "consent"})
+        response = RedirectResponse(f"/auth/google/start?{reconnect_query}")
+        response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
     profile["google_oauth"] = {
         "provider": "google",
         "email": email,
         "access_token": token_payload.get("access_token", ""),
-        "refresh_token": token_payload.get("refresh_token", "") or existing_google_oauth.get("refresh_token", ""),
+        "refresh_token": google_refresh_token,
         "token_type": token_payload.get("token_type", ""),
         "scope": token_payload.get("scope", ""),
         "expires_in": token_payload.get("expires_in", 0),
@@ -1499,11 +1514,11 @@ def auth_microsoft_start(
     except HTTPException:
         return RedirectResponse("/dashboard?microsoft_error=not_configured")
 
-    state = secrets.token_urlsafe(24)
-    MICROSOFT_OAUTH_STATE[state] = {"next": next}
     scope = " ".join(MICROSOFT_OAUTH_SCOPES)
     login_hint_value = login_hint.strip()
     prompt_value = prompt.strip()
+    state = secrets.token_urlsafe(24)
+    MICROSOFT_OAUTH_STATE[state] = {"next": next, "prompt": prompt_value}
     auth_url = (
         f"https://login.microsoftonline.com/{quote(config['tenant'], safe='')}/oauth2/v2.0/authorize"
         f"?client_id={quote(config['client_id'], safe='')}"
@@ -1561,7 +1576,8 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         return RedirectResponse("/dashboard?microsoft_error=invalid_callback")
 
     config = get_microsoft_oauth_config()
-    next_url = request.cookies.get(MICROSOFT_OAUTH_NEXT_COOKIE) or MICROSOFT_OAUTH_STATE.pop(state, {}).get("next") or "/dashboard"
+    state_metadata = MICROSOFT_OAUTH_STATE.pop(state, {}) if state else {}
+    next_url = request.cookies.get(MICROSOFT_OAUTH_NEXT_COOKIE) or state_metadata.get("next") or "/dashboard"
     token_url = f"https://login.microsoftonline.com/{config['tenant']}/oauth2/v2.0/token"
 
     try:
@@ -1644,12 +1660,25 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         profile["email"] = email
 
     existing_microsoft_oauth = profile.get("microsoft_oauth") or {}
+    microsoft_refresh_token = str(token_payload.get("refresh_token", "") or existing_microsoft_oauth.get("refresh_token", "") or "").strip()
+    if not microsoft_refresh_token:
+        write_monitoring_event("oauth", "microsoft_missing_refresh_token_after_login", "error", request=request, user_id=str(profile.get("user_id", "")))
+        if state_metadata.get("prompt") == "consent":
+            response = RedirectResponse("/dashboard?microsoft_error=missing_refresh_token")
+            response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+            response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+            return response
+        reconnect_query = urlencode({"next": next_url, "login_hint": email, "prompt": "consent"})
+        response = RedirectResponse(f"/auth/microsoft/start?{reconnect_query}")
+        response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
+        return response
     profile["microsoft_oauth"] = {
         "provider": "microsoft",
         "email": email,
         "display_name": str(userinfo.get("displayName", "")).strip(),
         "access_token": token_payload.get("access_token", ""),
-        "refresh_token": token_payload.get("refresh_token", "") or existing_microsoft_oauth.get("refresh_token", ""),
+        "refresh_token": microsoft_refresh_token,
         "token_type": token_payload.get("token_type", ""),
         "scope": token_payload.get("scope", ""),
         "expires_in": token_payload.get("expires_in", 0),

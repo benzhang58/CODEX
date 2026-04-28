@@ -4,6 +4,8 @@ import shutil
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"] = "/tmp/discere-test-storage"
 os.environ["EMAIL_SUMMARIZER_OUTPUT_DIR"] = "/tmp/discere-test-output"
@@ -64,6 +66,113 @@ class SecurityRegressionTests(unittest.TestCase):
 
         response = client.get("/", follow_redirects=False)
         self.assertEqual(response.status_code, 200, response.text)
+
+    def test_google_oauth_start_requests_offline_consent_for_refresh_token(self) -> None:
+        originals = {
+            "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID"),
+            "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "GOOGLE_REDIRECT_URI": os.environ.get("GOOGLE_REDIRECT_URI"),
+        }
+        os.environ["GOOGLE_CLIENT_ID"] = "test-google-client"
+        os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-secret"
+        os.environ["GOOGLE_REDIRECT_URI"] = "https://discere-test.example/auth/google/callback"
+        try:
+            response = self.client.get("/auth/google/start", follow_redirects=False)
+            self.assertEqual(response.status_code, 307, response.text)
+            query = parse_qs(urlparse(response.headers["location"]).query)
+            self.assertEqual(query.get("access_type"), ["offline"])
+            self.assertEqual(query.get("prompt"), ["consent"])
+            self.assertEqual(query.get("include_granted_scopes"), ["true"])
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_existing_google_session_refreshes_mailbox_token_before_run(self) -> None:
+        client = self.signup("remembered-gmail@gmail.com")
+        user_id = "remembered_gmail_gmail_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["google_oauth"] = {
+            "provider": "google",
+            "email": "remembered-gmail@gmail.com",
+            "access_token": "expired-access-token",
+            "refresh_token": "stored-refresh-token",
+            "scope": dashboard_api.REQUIRED_GOOGLE_READ_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        originals = {
+            "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID"),
+            "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET"),
+        }
+        os.environ["GOOGLE_CLIENT_ID"] = "test-google-client"
+        os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-secret"
+        try:
+            with patch.object(dashboard_api, "post_form_json", return_value={"access_token": "fresh-access-token"}), patch.object(
+                dashboard_api,
+                "launch_summarizer_job",
+                return_value={"job_id": "job-google", "status": "running", "user_id": user_id},
+            ) as launch_mock:
+                response = client.post("/run-summarizer", json={"days_back": 7})
+
+            self.assertEqual(response.status_code, 200, response.text)
+            launch_mock.assert_called_once()
+            refreshed = dashboard_api.load_profile_or_404(user_id)
+            self.assertEqual(refreshed["google_oauth"].get("access_token"), "fresh-access-token")
+            self.assertEqual(refreshed["google_oauth"].get("refresh_token"), "stored-refresh-token")
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_existing_microsoft_session_refreshes_mailbox_token_before_run(self) -> None:
+        client = self.signup("remembered-outlook@example.com")
+        user_id = "remembered_outlook_example_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "remembered-outlook@example.com",
+            "access_token": "expired-access-token",
+            "refresh_token": "stored-refresh-token",
+            "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            with patch.object(
+                dashboard_api,
+                "post_form_json",
+                return_value={"access_token": "fresh-access-token", "refresh_token": "rotated-refresh-token"},
+            ), patch.object(
+                dashboard_api,
+                "launch_summarizer_job",
+                return_value={"job_id": "job-microsoft", "status": "running", "user_id": user_id},
+            ) as launch_mock:
+                response = client.post("/run-summarizer", json={"days_back": 7})
+
+            self.assertEqual(response.status_code, 200, response.text)
+            launch_mock.assert_called_once()
+            refreshed = dashboard_api.load_profile_or_404(user_id)
+            self.assertEqual(refreshed["microsoft_oauth"].get("access_token"), "fresh-access-token")
+            self.assertEqual(refreshed["microsoft_oauth"].get("refresh_token"), "rotated-refresh-token")
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     def test_new_accounts_do_not_inherit_global_account_scoped_settings(self) -> None:
         client = self.signup("fresh@example.com")
