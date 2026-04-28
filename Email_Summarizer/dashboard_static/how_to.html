@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discere How-To</title>
+    <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
+    <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
+    <link rel="stylesheet" href="/dashboard_static/public_site.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-nav">
+        <a class="site-brand" href="/">
+          <span class="brand-mark logo-mark">
+            <img src="/dashboard_static/discere-logo.png" alt="" />
+          </span>
+          <span>Discere</span>
+        </a>
+        <div class="nav-actions">
+          <a class="button-secondary" href="/security">Security</a>
+          <a class="button-secondary" href="/privacy">Privacy</a>
+          <a class="button" href="/login">Log In</a>
+        </div>
+      </header>
+
+      <main class="legal-list">
+        <section class="hero-card">
+          <div>
+            <div class="eyebrow">How To</div>
+            <h1 class="hero-title">Use Discere from first login to recurring reports.</h1>
+            <p class="hero-copy">
+              This guide explains how to connect your inbox, choose important contacts, generate summaries, ask AI questions
+              about your emails, and manage privacy controls.
+            </p>
+            <div class="hero-actions">
+              <a class="button" href="/login">Open Discere</a>
+            </div>
+          </div>
+          <aside class="hero-panel">
+            <div class="eyebrow">Quick Flow</div>
+            <h2 class="hero-panel-title">Connect. Add contacts. Summarize. Ask AI.</h2>
+            <ul class="hero-list">
+              <li>Log in with Gmail or Microsoft, or create an account for another mailbox.</li>
+              <li>Add the senders you want Discere to track.</li>
+              <li>Run the summarizer or schedule recurring reports.</li>
+              <li>Use AI Assistant to ask questions about saved summaries and how Discere works.</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="content-card">
+          <h2>Step-by-step guide</h2>
+          <div class="how-to-steps">
+            <article class="how-to-step">
+              <div class="how-to-step-number">1</div>
+              <h3>Log in or create an account</h3>
+              <p>
+                If you use Gmail or Outlook/Microsoft, use the matching sign-in button on the login page. Discere connects
+                through OAuth, so you do not need to type a mailbox password into Discere for those providers.
+              </p>
+              <p>
+                If your mailbox is not Gmail or Microsoft, create an account with your email address first. Then open Settings
+                and use Mailbox Connection to add the mailbox login details Discere should use.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">2</div>
+              <h3>Confirm your mailbox connection</h3>
+              <p>
+                Gmail users are connected through Gmail API read-only access. Microsoft users are connected through Microsoft
+                OAuth and Microsoft-supported IMAP access. Non-OAuth mailboxes use the IMAP connection details saved in Settings.
+              </p>
+              <p>
+                Gmail and Microsoft users should not need the Mailbox Connection module. That module is only for standard
+                mailbox accounts such as 263.com or other supported non-OAuth providers.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">3</div>
+              <h3>Add important contacts</h3>
+              <p>
+                Open the Contacts card in the dashboard and add the email addresses you care about. Discere is designed around
+                tracked senders, not your entire inbox.
+              </p>
+              <p>
+                If you run the summarizer without contacts, Discere will ask you to add contacts first. This prevents accidental
+                broad inbox scans.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">4</div>
+              <h3>Run the summarizer</h3>
+              <p>
+                Choose the Days Back value, then click the play button. Discere checks recent emails from your tracked contacts
+                and creates structured summaries with key topics, developments, action items, deadlines, attachments, and a
+                bottom line.
+              </p>
+              <p>
+                The summarizer may include relevant thread context so you can understand the conversation without opening every
+                email manually.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">5</div>
+              <h3>Read, mark done, or delete summaries</h3>
+              <p>
+                A summary is considered new until you open and review it. Read or done summaries have source email bodies and
+                saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental
+                duplicate summaries.
+              </p>
+              <p>
+                Use Mark as Done when you want Discere to remember the email was handled. If you delete a summary, Discere
+                removes the related identifier, so that email can be rediscovered if you run the summarizer again.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">6</div>
+              <h3>Ask AI about your emails</h3>
+              <p>
+                Click AI Assistant in the dashboard to ask questions about saved summaries and source email context. You can ask
+                things like "What deadlines do I have?", "What did Grant ask me to do?", or "Which attachments mention pricing?"
+              </p>
+              <p>
+                AI Assistant can also answer questions about Discere itself, including how summaries work, why deleted summaries
+                can reappear, what data is sent to AI, how scheduled reports work, and where privacy controls live.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">7</div>
+              <h3>Send or combine reports</h3>
+              <p>
+                Select multiple summaries when you want to combine them into one report. Email reports are sent from Discere's
+                configured report sender, intended to be Discere &lt;discereresearch@gmail.com&gt;, not from your connected
+                mailbox.
+              </p>
+              <p>
+                This keeps Gmail, Microsoft, and non-OAuth users on the same report-sending path.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">8</div>
+              <h3>Schedule recurring reports</h3>
+              <p>
+                Click the clock button to create a scheduled report. Choose the report name, recipient email, repeat cadence,
+                send time, timezone, and Days Back value.
+              </p>
+              <p>
+                Each scheduled run creates a fresh summarizer check first, then emails the full formatted report to the selected
+                recipient. Saved schedules can be viewed, edited, toggled on/off, or deleted.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">9</div>
+              <h3>Control attachments and summary style</h3>
+              <p>
+                In Settings, AI Attachment Access controls whether attachment contents can be sent to AI. When it is off,
+                Discere limits attachment use to metadata such as filenames.
+              </p>
+              <p>
+                Summary Preferences let you save reusable instructions for future summaries, such as focusing more on deadlines,
+                commercial terms, or action items.
+              </p>
+            </article>
+
+            <article class="how-to-step">
+              <div class="how-to-step-number">10</div>
+              <h3>Export, delete, or report issues</h3>
+              <p>
+                Settings includes account export, account deletion, privacy links, and bug reporting. Exports exclude passwords,
+                OAuth tokens, mailbox passwords, and API keys.
+              </p>
+              <p>
+                You can also revoke Google access from Google Account permissions. Microsoft access can be revoked from
+                Microsoft account consent management or Microsoft My Apps, depending on the account type.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="content-card">
+          <h2>Common questions</h2>
+          <div class="faq-stack">
+            <article class="faq-card">
+              <h3>Why did an email come back after I deleted the summary?</h3>
+              <p>
+                Deleting a summary removes the saved summary and related identifier so the email can be rediscovered later. If
+                you want Discere to remember that the email was handled, mark the summary as Done instead of deleting it.
+              </p>
+            </article>
+            <article class="faq-card">
+              <h3>Can AI Assistant answer privacy or security questions?</h3>
+              <p>
+                Yes. AI Assistant can answer questions about saved emails and about Discere’s workflow, privacy policy, security
+                FAQ, terms, report sending, retention behavior, and account controls.
+              </p>
+            </article>
+            <article class="faq-card">
+              <h3>Does Discere summarize every email?</h3>
+              <p>
+                No. Discere is designed to summarize emails from the contacts you choose. It verifies the parsed sender before
+                processing so unrelated senders should not be summarized as tracked contacts.
+              </p>
+            </article>
+            <article class="faq-card">
+              <h3>What gets sent to AI?</h3>
+              <p>
+                Relevant email text and thread context are sent to OpenAI for summarization. Attachment contents are included
+                only if AI Attachment Access is enabled.
+              </p>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div>Discere How-To</div>
+        <div class="footer-links">
+          <a href="/">Home</a>
+          <a href="/security">Security</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/login">Log In</a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

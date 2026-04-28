@@ -29,7 +29,7 @@
           <h1 class="section-head">How Discere handles account and email data</h1>
           <p>
             This Privacy Policy explains how Discere accesses, uses, stores, shares, and deletes information when you use the
-            product.
+            service.
           </p>
           <p>
             <strong>Effective date:</strong> April 23, 2026<br />
@@ -40,8 +40,8 @@
             <strong>discereresearch@gmail.com</strong>.
           </p>
           <p>
-            Short version: Discere reads the email data needed to summarize messages from contacts you choose, stores the account
-            and summary data needed to run the product, sends relevant summary inputs to AI, and lets you export or delete your
+            TLDR (Too long, didn't read): Discere reads the email data needed to summarize messages from contacts you choose, stores the account
+            and summary data needed to operate Discere, sends relevant summary inputs to AI, and lets you export or delete your
             account data.
           </p>
         </section>
@@ -53,44 +53,55 @@
             and related support or analytics functions.
           </p>
           <p>
-            Discere is the product and service name. The service is operated by <strong>Discere Research</strong>.
+            Discere is the service name. The service is operated by <strong>Discere Research</strong>.
           </p>
           <p>
             It does not apply to third-party services that you use separately outside Discere, even if those services integrate
-            with the product.
+            with Discere.
           </p>
         </section>
 
         <section class="content-card">
           <h2>2. Information Discere collects</h2>
-          <ul>
-            <li>Account information such as email address, sign-in method, and profile name</li>
-            <li>Connected mailbox information needed to authenticate Gmail, Outlook, Microsoft 365, or other supported providers</li>
-            <li>Email thread data needed to detect tracked contacts and generate summaries</li>
-            <li>Attachment names and, if enabled, attachment content previews or extracted attachment text</li>
-            <li>Product settings such as tracked contacts, summary preferences, scheduling choices, timezone, and delivery settings</li>
-            <li>Operational data such as analytics events, bug reports, page metadata, and service logs</li>
-          </ul>
+          <p>
+            Discere collects the account information needed to create and manage your account, such as your email address,
+            sign-in method, and profile name. When you connect a mailbox, Discere stores the connection information needed to
+            authenticate Gmail, Outlook, Microsoft 365, or another supported provider.
+          </p>
+          <p>
+            Discere also processes email thread data needed to detect messages from tracked contacts and generate summaries.
+            Attachment names may be processed, and attachment content previews or extracted attachment text are processed only
+            when AI attachment access is enabled. Discere also stores settings such as tracked contacts, summary preferences,
+            scheduling choices, timezone, and delivery settings, along with operational data such as analytics events, bug
+            reports, and service logs.
+          </p>
         </section>
 
         <section class="content-card">
           <h2>3. How Discere uses information</h2>
-          <ul>
-            <li>Authenticate users and maintain account access</li>
-            <li>Read supported mailbox data needed to identify relevant emails from tracked contacts</li>
-            <li>Generate, refine, and deliver structured summaries and combined reports</li>
-            <li>Support user settings such as tracked contacts, AI attachment access, and summary preferences</li>
-            <li>Send scheduled reports by email or phone where configured</li>
-            <li>Operate, secure, debug, monitor, and improve the product</li>
-          </ul>
+          <p>
+            Discere uses information to authenticate users, maintain account access, and read supported mailbox data needed to
+            identify relevant emails from tracked contacts. Discere uses that information to generate, refine, and deliver
+            structured summaries and combined reports.
+          </p>
+          <p>
+            Discere also uses information to support user settings such as tracked contacts, AI attachment access, summary
+            preferences, and scheduled report settings. Requested and scheduled email reports are sent from Discere to the
+            recipient you choose. Operational information is used to operate, secure, debug, monitor, and improve Discere.
+          </p>
         </section>
 
         <section class="content-card">
           <h2>4. Google and Microsoft user data</h2>
           <p>
             When you connect a Google or Microsoft account, Discere uses OAuth-based permissions to access the scopes you grant.
-            Discere uses that access only to operate the features you request, such as reading mailbox content for summaries or
-            sending a report from your connected account where supported.
+            Discere uses that access only to operate the features you request, such as reading mailbox content for summaries.
+            Email reports are sent from Discere, not from your connected Gmail or Microsoft mailbox.
+          </p>
+          <p>
+            Gmail OAuth uses Google profile/email access and the Gmail API read-only scope. Gmail OAuth does not use IMAP for
+            mailbox reading. Microsoft OAuth uses Microsoft profile/email access, offline access, user read access, and
+            Microsoft-supported IMAP mailbox access.
           </p>
           <table class="simple-table" aria-label="OAuth permission use">
             <thead>
@@ -103,20 +114,27 @@
             <tbody>
               <tr>
                 <td>Google</td>
-                <td>Profile/email, Gmail read-only, Gmail send</td>
-                <td>Sign you in, identify your Gmail address, read relevant mailbox content for summaries, and send requested reports.</td>
+                <td>Profile/email, Gmail API read-only</td>
+                <td>Sign you in, identify your Gmail address, and read relevant Gmail content for summaries.</td>
               </tr>
               <tr>
                 <td>Microsoft</td>
-                <td>Profile/email, offline access, user read, mail send, IMAP mailbox access</td>
-                <td>Sign you in, identify your Microsoft email address, read relevant mailbox content for summaries, refresh access, and send requested reports.</td>
+                <td>Profile/email, offline access, user read, IMAP mailbox access</td>
+                <td>Sign you in, identify your Microsoft email address, read relevant mailbox content for summaries, and refresh access for scheduled reports.</td>
               </tr>
             </tbody>
           </table>
           <p>
             Discere does not sell Google or Microsoft user data. Discere does not use Gmail or Microsoft mailbox data for
-            advertising. Discere does not transfer Google Workspace API data to third parties except as needed to operate the
-            requested product functions, comply with law, enforce terms, or protect the service.
+            advertising. Discere transfers Google or Microsoft mailbox data to service providers only as needed to operate the
+            requested Discere functions, such as sending relevant summary inputs to OpenAI for summarization, hosting Discere,
+            complying with law, enforcing terms, or protecting the service.
+          </p>
+          <p>
+            You can revoke Google access from your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer">Google Account permissions</a>.
+            You can revoke Microsoft access from Microsoft’s
+            connected-app pages, including <a href="https://account.live.com/consent/Manage" target="_blank" rel="noopener noreferrer">Microsoft account consent management</a>
+            or <a href="https://myapps.microsoft.com" target="_blank" rel="noopener noreferrer">Microsoft My Apps</a>, depending on the account type.
           </p>
         </section>
 
@@ -125,6 +143,11 @@
           <p>
             Discere uses the OpenAI API to generate summaries and related AI output. Email thread content is sent to the AI
             provider for that purpose.
+          </p>
+          <p>
+            According to OpenAI’s published API data controls, data sent to the OpenAI API is not used to train or improve
+            OpenAI models unless the API organization explicitly opts in to share data with OpenAI. OpenAI also states that API
+            data is encrypted in transit and at rest.
           </p>
           <p>
             The AI input may include sender, recipient, subject, message dates, email body text, relevant thread context, and
@@ -137,6 +160,13 @@
             metadata such as file names.
           </p>
           <p>
+            OpenAI may still process and retain limited API data for purposes such as abuse monitoring, safety, legal compliance,
+            and operating the API. OpenAI’s published API data controls state that abuse-monitoring logs may include customer
+            content such as prompts and responses and are retained for up to 30 days by default, unless a longer period is
+            required by law or needed to protect OpenAI’s services or others from harm. Certain qualifying organizations may be
+            eligible for additional retention controls such as Modified Abuse Monitoring or Zero Data Retention.
+          </p>
+          <p>
             AI output can be incomplete or inaccurate. Users should review generated summaries before relying on them for legal,
             financial, operational, or other sensitive decisions.
           </p>
@@ -144,31 +174,31 @@
 
         <section class="content-card">
           <h2>6. Sharing and service providers</h2>
-          <p>Discere may share information with service providers strictly as needed to operate the product.</p>
-          <ul>
-            <li>OpenAI for AI summarization and related model output</li>
-            <li>Render or comparable infrastructure providers for application hosting and storage</li>
-            <li>Twilio or comparable messaging providers for SMS or MMS delivery where enabled</li>
-            <li>Google and Microsoft for OAuth and mailbox-related access where you choose to connect those providers</li>
-          </ul>
+          <p>
+            Discere may share information with service providers strictly as needed to operate Discere. This includes OpenAI
+            for AI summarization and related model output, Render or comparable infrastructure providers for hosting and
+            storage, email delivery providers for requested and scheduled report emails sent from Discere, and Google or
+            Microsoft for OAuth and mailbox-related access where you choose to connect those providers.
+          </p>
           <p>
             Discere may also disclose information where required by law, to respond to valid legal process, to enforce its terms,
-            or to protect users, the product, or the public.
+            or to protect users, Discere, or the public.
           </p>
         </section>
 
         <section class="content-card">
           <h2>7. Storage and retention</h2>
-          <p>Discere stores summary data, configuration data, and limited operational data needed for product behavior.</p>
-          <ul>
-            <li>OAuth tokens and mailbox credentials, where used, are stored encrypted.</li>
-            <li>Summary cards and generated report text are stored so you can reopen them in the dashboard.</li>
-            <li>Unread summaries are retained and are not automatically purged under the read-or-done retention rule.</li>
-            <li>For summaries marked as read or done, stored source thread bodies and saved attachments are purged after 20 days.</li>
-            <li>Processed message identifiers are retained after purge so previously handled emails are not re-summarized accidentally.</li>
-            <li>If a user manually deletes a summary, the related processed identifiers are removed so the email can be rediscovered later.</li>
-            <li>Bug reports, analytics events, and service logs may be retained for operational, support, or security purposes.</li>
-          </ul>
+          <p>
+            Discere stores account settings, summaries, and limited operational data needed for Discere to work. OAuth tokens
+            and mailbox credentials, where used, are stored encrypted. Summary cards and generated report text are stored so
+            you can reopen them in the dashboard.
+          </p>
+          <p>
+            Read or done summaries have source email bodies and saved attachments purged after the retention period, while
+            summarized email IDs remain to prevent accidental duplicate summaries. If you manually delete a summary, Discere
+            removes the related saved summary data. Bug reports, analytics events, and service logs may be retained for
+            operational, support, or security purposes.
+          </p>
         </section>
 
         <section class="content-card">
@@ -179,20 +209,25 @@
           </p>
           <p>
             No internet-based service is completely secure. Discere cannot guarantee absolute security. Users handling highly
-            confidential, regulated, or mission-critical data should evaluate whether the current product architecture is
+            confidential, regulated, or mission-critical data should evaluate whether Discere’s current architecture is
             appropriate for their use case before connecting that information.
           </p>
         </section>
 
         <section class="content-card">
           <h2>9. Your choices and rights</h2>
-          <ul>
-            <li>You can update tracked contacts, summary preferences, schedule settings, and AI attachment access in the product.</li>
-            <li>You can export your account data from Settings. Exports exclude passwords, OAuth tokens, mailbox passwords, and API keys.</li>
-            <li>You can delete summaries. Deleting a summary also removes the related processed identifiers so the email can be rediscovered later.</li>
-            <li>You can delete your account from Settings. Account deletion removes the account, sessions, contacts, schedules, summaries, source email data, attachments, analytics tied to the user, bug reports tied to the user, and usage counters.</li>
-            <li>You can revoke Google or Microsoft OAuth access from your provider account settings.</li>
-          </ul>
+          <p>
+            You can update tracked contacts, summary preferences, schedule settings, and AI attachment access in Discere. You
+            can export your account data from Settings, and exports exclude passwords, OAuth tokens, mailbox passwords, and API
+            keys.
+          </p>
+          <p>
+            You can delete summaries from the dashboard, and you can delete your account from Settings. Account deletion
+            removes your account, contacts, schedules, summaries, source email data, attachments, and related user records. You
+            can also revoke Google access from your Google Account permissions page. Microsoft access can be revoked from
+            Microsoft account consent management or Microsoft My Apps, depending on whether you use a personal or work/school
+            Microsoft account.
+          </p>
           <p>
             For deletion help, export assistance, or privacy requests, contact <strong>discereresearch@gmail.com</strong>.
           </p>
@@ -201,7 +236,7 @@
         <section class="content-card">
           <h2>10. Children’s privacy</h2>
           <p>
-            Discere is not intended for children under 13, and it is not designed for use by children. Do not use the product if
+            Discere is not intended for children under 13, and it is not designed for use by children. Do not use Discere if
             you are not old enough to do so under applicable law.
           </p>
         </section>
@@ -209,7 +244,7 @@
         <section class="content-card">
           <h2>11. International use</h2>
           <p>
-            Discere may process and store information in jurisdictions other than your own. By using the product, you understand
+            Discere may process and store information in jurisdictions other than your own. By using Discere, you understand
             that your information may be transferred to and processed in those jurisdictions, subject to applicable law.
           </p>
         </section>
@@ -217,7 +252,7 @@
         <section class="content-card">
           <h2>12. Changes to this policy</h2>
           <p>
-            Discere may update this policy as the product evolves. Material changes should be reflected on this page, including a
+            Discere may update this policy as Discere evolves. Material changes should be reflected on this page, including a
             revised effective or last-updated date.
           </p>
         </section>

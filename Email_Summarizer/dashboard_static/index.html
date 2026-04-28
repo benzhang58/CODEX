@@ -2190,7 +2190,7 @@
           <h3>AI Assistant</h3>
         </div>
         <div class="chat-modal-shell">
-          <div id="chatStatus" class="status">Ask a question about any of your emails.</div>
+          <div id="chatStatus" class="status">Ask about your emails, summaries, or how Discere works.</div>
           <div id="chatLog" class="chat-log"></div>
           <div class="chat-modal-footer">
             <input
@@ -2232,7 +2232,7 @@
             <div class="schedule-section-header">
               <div class="schedule-section-label">Delivery</div>
               <div class="schedule-section-title">Choose where the report goes</div>
-              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then sends the resulting full report to the email address you choose.</div>
+              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then Discere emails the full report from discereresearch@gmail.com to the address you choose.</div>
             </div>
             <div class="schedule-grid">
               <div class="field">
@@ -2246,7 +2246,7 @@
             <div class="schedule-section-header">
               <div class="schedule-section-label">Timing</div>
               <div class="schedule-section-title">Set the cadence</div>
-              <div class="schedule-section-note">Choose how often the app should run and which timezone should control the send time.</div>
+              <div class="schedule-section-note">Choose how often Discere should run and which timezone should control the send time.</div>
             </div>
             <div class="schedule-grid">
               <div class="field">
@@ -2626,13 +2626,21 @@
           lower.includes("insufficient authentication scopes") ||
           lower.includes("insufficient permission") ||
           lower.includes("grant gmail permissions") ||
-          lower.includes("grant send permissions") ||
-          lower.includes("missing_read_scope") ||
-          lower.includes("missing_send_scope")
+          lower.includes("missing_read_scope")
         ) {
           const provider = lower.includes("microsoft") ? "Microsoft" : "Google";
-          const purpose = lower.includes("send") ? "send reports" : "read your mailbox";
-          return `${provider} needs permission to ${purpose}. Log out, then log back in with ${provider} and approve the requested permissions.`;
+          return `${provider} needs permission to read your mailbox. Log out, then log back in with ${provider} and approve the requested permissions.`;
+        }
+        if (
+          lower.includes("invalid credentials") ||
+          lower.includes("invalid authentication credentials") ||
+          lower.includes("unauthenticated") ||
+          lower.includes("autherror") ||
+          lower.includes("missing_refresh_token") ||
+          lower.includes("needs a refreshed")
+        ) {
+          const provider = lower.includes("microsoft") ? "Microsoft" : "Google";
+          return `${provider} mailbox access expired. Log out, then sign in with ${provider} again to reconnect your mailbox.`;
         }
         if (lower.includes("daily usage limit reached") || lower.includes("usage_limit_hit")) {
           const clean = message.replace(/^run failed\.?\s*/i, "").trim();
@@ -2641,8 +2649,8 @@
         if (lower.includes("request is too large") || lower.includes("too long") || lower.includes("too many summaries selected")) {
           return `${message} Try selecting fewer summaries or shortening the request.`;
         }
-        if (lower.includes("email sending is not configured")) {
-          return "Email sending is not configured for this account yet. Gmail/Microsoft users should reconnect with send permission; standard mailbox users need SMTP settings configured.";
+        if (lower.includes("email sending is not configured") || lower.includes("discere report email sending is not configured")) {
+          return "Discere report email sending is not configured yet. Add the Discere report sender SMTP settings on Render.";
         }
         return message;
       }
@@ -3242,17 +3250,91 @@
         `;
       }
 
+      function buildHowToActionsModalHtml() {
+        const checklist = [
+          {
+            complete: false,
+            title: "Mark summaries as done",
+            copy: "When you finish handling a summary, select it and use the check button. Done summaries stay out of your way.",
+          },
+          {
+            complete: false,
+            title: "Delete only when you want it removed",
+            copy: "Deleting removes the summary. If that email still matches later, Discere can find it again.",
+          },
+          {
+            complete: false,
+            title: "Email selected summaries",
+            copy: "Select one or more summaries and use the email button to send yourself a clean report.",
+          },
+          {
+            complete: false,
+            title: "Schedule routine reports",
+            copy: "Use the clock button to have Discere check your contacts and email you summaries on a schedule.",
+          },
+          {
+            complete: false,
+            title: "Ask follow-up questions",
+            copy: "Open AI Assistant to ask about deadlines, requests, people, attachments, or how Discere works.",
+          },
+        ];
+        return `
+          <div class="onboarding-shell">
+            <div class="onboarding-intro">
+              <div>
+                <p class="onboarding-kicker">Daily Use</p>
+                <h4 class="onboarding-title">What to do after summaries appear.</h4>
+                <p class="onboarding-copy">These steps help you keep summaries organized, send reports, and automate routine checks.</p>
+              </div>
+              <div class="onboarding-progress">
+                <div class="onboarding-progress-label">
+                  <span>Guide</span>
+                  <span>2/2</span>
+                </div>
+                <div class="onboarding-progress-track">
+                  <div class="onboarding-progress-fill" style="--onboarding-progress:100%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="onboarding-checklist">
+              ${checklist.map(buildOnboardingItem).join("")}
+            </div>
+          </div>
+        `;
+      }
+
       async function showHowToIfNeeded(force = false) {
         if (!currentProfile?.user_id) return;
         const params = new URLSearchParams(window.location.search);
         const requestedOnboarding = params.get("onboarding") === "1";
         if (!force && !requestedOnboarding && Boolean(currentProfile?.settings?.how_to_seen)) return;
-        await openAppModal({
-          title: "Getting Started",
-          messageHtml: buildHowToModalHtml(),
-          confirmLabel: "Got it",
-          cancelLabel: "Close",
-        });
+        let showFirstPage = true;
+        let finished = false;
+        while (!finished) {
+          if (showFirstPage) {
+            const next = await openAppModal({
+              title: "Getting Started",
+              messageHtml: buildHowToModalHtml(),
+              confirmLabel: "Next",
+              cancelLabel: "Close",
+            });
+            if (!next) break;
+            showFirstPage = false;
+          } else {
+            const result = await openAppModal({
+              title: "Getting Started",
+              messageHtml: buildHowToActionsModalHtml(),
+              confirmLabel: "Got it",
+              cancelLabel: "Back",
+              altLabel: "Close",
+            });
+            if (result) {
+              finished = true;
+            } else {
+              showFirstPage = true;
+            }
+          }
+        }
         await markHowToSeen();
         if (requestedOnboarding) {
           const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
@@ -4395,6 +4477,10 @@
             body: JSON.stringify({
               user_id: currentUserId,
               question,
+              conversation: chatConversation.slice(-12).map((entry) => ({
+                role: entry.role,
+                text: entry.text,
+              })),
             }),
           });
           const data = await response.json();
@@ -4410,7 +4496,9 @@
             data.attachment_matches && data.attachment_matches.length
               ? ` ${data.attachment_matches.length} matching attachment(s) linked below.`
               : "";
-          chatStatus.textContent = `Answer generated from ${data.summary_count} saved summaries and ${data.email_count || 0} emails.${attachmentNote}`;
+          chatStatus.textContent = data.summary_count
+            ? `Answer generated from ${data.summary_count} saved summaries and ${data.email_count || 0} emails.${attachmentNote}`
+            : `Answer generated from Discere help and policy context.${attachmentNote}`;
         } catch (error) {
           appendChatMessage("assistant", `Chat request failed: ${friendlyApiMessage(error.message)}`);
           chatStatus.textContent = "Chat request failed.";

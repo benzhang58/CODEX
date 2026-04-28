@@ -53,6 +53,18 @@ services:
         value: smtp.gmail.com
       - key: SMTP_PORT
         value: "587"
+      - key: EMAIL_SUMMARIZER_REPORT_SMTP_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_SUMMARIZER_REPORT_SMTP_PORT
+        value: "465"
+      - key: EMAIL_SUMMARIZER_REPORT_SMTP_USER
+        value: discereresearch@gmail.com
+      - key: EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_SUMMARIZER_REPORT_FROM_EMAIL
+        value: discereresearch@gmail.com
+      - key: EMAIL_SUMMARIZER_REPORT_FROM_NAME
+        value: Discere
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET

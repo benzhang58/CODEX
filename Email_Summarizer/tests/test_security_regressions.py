@@ -51,6 +51,20 @@ class SecurityRegressionTests(unittest.TestCase):
     def test_cookie_secure_defaults_on_for_https_public_base_url(self) -> None:
         self.assertTrue(dashboard_api.SESSION_COOKIE_SECURE)
 
+    def test_home_redirects_to_dashboard_when_session_is_valid(self) -> None:
+        client = self.signup("home-redirect@example.com")
+        response = client.get("/", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(response.headers.get("location"), "/dashboard")
+
+    def test_home_stays_public_after_logout(self) -> None:
+        client = self.signup("home-logout@example.com")
+        logout_response = client.post("/auth/logout")
+        self.assertEqual(logout_response.status_code, 200, logout_response.text)
+
+        response = client.get("/", follow_redirects=False)
+        self.assertEqual(response.status_code, 200, response.text)
+
     def test_new_accounts_do_not_inherit_global_account_scoped_settings(self) -> None:
         client = self.signup("fresh@example.com")
         response = client.get("/whitelist")
@@ -81,6 +95,64 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(response.json()["contacts"], [])
 
         response = bob.get("/whitelist", params={"user_id": "alice_example_com"})
+        self.assertEqual(response.status_code, 403, response.text)
+
+    def test_cross_account_summary_and_attachment_access_is_blocked(self) -> None:
+        alice = self.signup("summary-alice@example.com")
+        bob = self.signup("summary-bob@example.com")
+        alice_user_id = "summary_alice_example_com"
+        bob_user_id = "summary_bob_example_com"
+
+        alice_summary_dir = dashboard_api.get_user_json_summaries_dir(alice_user_id)
+        alice_summary_dir.mkdir(parents=True, exist_ok=True)
+        (alice_summary_dir / "secret.json").write_text(
+            json.dumps(
+                {
+                    "summary_id": "secret",
+                    "sender": "boss@example.com",
+                    "title": "Private Alice summary",
+                    "executive_summary": "Alice-only content",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        alice_attachment_dir = Path(os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"]) / "users" / alice_user_id / "attachments"
+        alice_attachment_dir.mkdir(parents=True, exist_ok=True)
+        alice_attachment = alice_attachment_dir / "private.txt"
+        alice_attachment.write_text("alice private attachment", encoding="utf-8")
+
+        response = alice.get("/summaries/secret")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("Alice-only content", response.text)
+
+        response = bob.get("/summaries/secret")
+        self.assertEqual(response.status_code, 404, response.text)
+
+        response = bob.get("/summaries/secret", params={"user_id": alice_user_id})
+        self.assertEqual(response.status_code, 403, response.text)
+
+        response = bob.get(
+            "/attachments",
+            params={"user_id": bob_user_id, "path": str(alice_attachment)},
+        )
+        self.assertEqual(response.status_code, 403, response.text)
+
+    def test_public_report_links_reject_path_traversal_even_with_valid_signature(self) -> None:
+        user_id = "report_owner"
+        private_dir = Path(os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"]) / "users" / user_id
+        private_dir.mkdir(parents=True, exist_ok=True)
+        private_file = private_dir / "private.pdf"
+        private_file.write_bytes(b"%PDF-1.4 private")
+
+        traversal_path = f"{user_id}/../users/{user_id}/private.pdf"
+        expires = int((dashboard_api.datetime.now() + dashboard_api.timedelta(minutes=5)).timestamp())
+        signature = dashboard_api.sign_public_report_token(user_id, traversal_path, expires)
+
+        response = self.client.get(
+            "/public-report",
+            params={"user_id": user_id, "path": traversal_path, "expires": expires, "sig": signature},
+        )
         self.assertEqual(response.status_code, 403, response.text)
 
     def test_export_redacts_sensitive_values(self) -> None:

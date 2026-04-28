@@ -39,7 +39,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from security_utils import decrypt_json_payload
+from security_utils import decrypt_json_payload, encrypt_json_payload
 
 # Don't load .env at import time — we load the right one at runtime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -450,6 +450,23 @@ class EmailSummarizer:
         except Exception:
             return {}
 
+    def _save_oauth_payload(self, column_name: str, payload: Dict[str, Any]) -> None:
+        if column_name not in {"google_oauth_json", "microsoft_oauth_json"}:
+            return
+        app_db_path = APP_STORAGE_DIR / "app" / "app.db"
+        if not app_db_path.exists():
+            return
+        encrypted_payload = encrypt_json_payload(payload or {}, APP_STORAGE_DIR)
+        connection = sqlite3.connect(app_db_path)
+        try:
+            connection.execute(
+                f"UPDATE users SET {column_name} = ?, updated_at = ? WHERE user_id = ?",
+                (encrypted_payload, datetime.now().isoformat(), self.user_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
     def _should_use_gmail_api(self) -> bool:
         if not self.profile_email.endswith("@gmail.com"):
             return False
@@ -538,6 +555,8 @@ class EmailSummarizer:
         if not new_access_token:
             raise ValueError("Google token refresh did not return an access token.")
         self.google_oauth["access_token"] = new_access_token
+        self.google_oauth["updated_at"] = datetime.now().isoformat()
+        self._save_oauth_payload("google_oauth_json", self.google_oauth)
         return new_access_token
 
     def _microsoft_refresh_access_token(self) -> str:
@@ -583,6 +602,8 @@ class EmailSummarizer:
         maybe_refresh_token = str(payload.get("refresh_token", "")).strip()
         if maybe_refresh_token:
             self.microsoft_oauth["refresh_token"] = maybe_refresh_token
+        self.microsoft_oauth["updated_at"] = datetime.now().isoformat()
+        self._save_oauth_payload("microsoft_oauth_json", self.microsoft_oauth)
         return new_access_token
 
     @staticmethod

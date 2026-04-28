@@ -587,7 +587,7 @@
       <section class="section">
         <h2>Summary Preferences</h2>
         <div class="card">
-          <p class="inline-note">These are reusable instructions the app uses when generating future summaries.</p>
+          <p class="inline-note">These are reusable instructions Discere uses when generating future summaries.</p>
           <div class="row" style="align-items: flex-end; gap: 12px;">
             <div class="field" style="flex: 1 1 auto;">
               <label for="summaryPreferenceInput">New Preference</label>
@@ -687,7 +687,7 @@
               <div class="howto-step">6</div>
               <div class="howto-copy">
                 <strong>Ask follow-up questions</strong>
-                <p>Use AI Assistant to ask simple questions about deadlines, asks, or attachment-related details from your saved summaries.</p>
+                <p>Use AI Assistant to ask about deadlines, asks, attachments, saved summaries, or how Discere works.</p>
               </div>
             </div>
 
@@ -705,21 +705,22 @@
       <section class="section">
         <h2>FAQ</h2>
         <div class="card">
-          <p class="inline-note">Plain-English answers to the questions business users usually ask before trusting an email product.</p>
+          <p class="inline-note">Answers to the questions business users usually ask before trusting an email service.</p>
           <div class="faq-list">
             <details class="faq-item">
               <summary>Where does my email data go?</summary>
               <div class="faq-answer">
-                <p>Your mailbox is accessed by the app so it can find emails from the contacts you track and generate summaries from those threads.</p>
+                <p>Your mailbox is accessed by Discere so we can find emails from the contacts you track and generate summaries from those threads.</p>
                 <p>To generate summaries, the relevant email content is sent to the AI provider through the API. If AI attachment access is turned on, attachment content can be included too.</p>
+                <p>OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data for abuse monitoring and safety under its published API data controls.</p>
               </div>
             </details>
 
             <details class="faq-item">
               <summary>Who can see my data?</summary>
               <div class="faq-answer">
-                <p>Your saved summaries, thread data, and attachments are scoped to your account inside the product.</p>
-                <p>The app server processes the data, and the AI provider receives the content needed to generate summaries. Other users should not be able to see your account data through the product UI.</p>
+                <p>Your saved summaries, thread data, and attachments are scoped to your account inside Discere.</p>
+                <p>Discere processes the data, and the AI provider receives the content needed to generate summaries. Other users should not be able to see your account data through Discere.</p>
               </div>
             </details>
 
@@ -727,22 +728,29 @@
               <summary>Are attachments sent to AI?</summary>
               <div class="faq-answer">
                 <p>Only if you turn on <strong>AI Attachment Access</strong>.</p>
-                <p>If it is off, the app withholds attachment contents from the AI and only uses the email thread plus basic attachment references.</p>
+                <p>If it is off, Discere withholds attachment contents from the AI and only uses the email thread plus basic attachment references.</p>
               </div>
             </details>
 
             <details class="faq-item">
               <summary>How long is source email data kept?</summary>
               <div class="faq-answer">
-                <p>Once a summary has been read, the app keeps the processed email ID so it does not summarize the same email again by accident.</p>
-                <p>After 20 days, the stored source thread body and saved attachments for a read or done summary are purged automatically for safety, unless you delete the summary manually first.</p>
+                <p>Read or done summaries have source email bodies and saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental duplicate summaries.</p>
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>Can I revoke Gmail or Microsoft access?</summary>
+              <div class="faq-answer">
+                <p>Yes. You can revoke Google access from Google Account permissions. Microsoft access can be revoked from Microsoft account consent management or Microsoft My Apps, depending on whether you use a personal or work/school Microsoft account.</p>
+                <p>Revoking access can disable mailbox summaries or scheduled reports until you reconnect.</p>
               </div>
             </details>
 
             <details class="faq-item">
               <summary>What are the main privacy and security risks?</summary>
               <div class="faq-answer">
-                <p>The main risks are server-side storage of email-derived data, third-party AI processing of summary inputs, and any future delivery paths such as emailed reports or texted PDF links.</p>
+                <p>The main risks are Discere storing email-derived summary data, relevant email text being sent to the AI provider for summarization, and report emails being delivered from Discere to the recipient you choose.</p>
                 <p>This is reasonable for many normal workflows, but highly confidential legal, finance, board, or executive use should be evaluated more carefully.</p>
               </div>
             </details>
@@ -750,7 +758,7 @@
             <details class="faq-item">
               <summary>Is this a formal privacy policy or enterprise security certification?</summary>
               <div class="faq-answer">
-                <p>No. This FAQ is a plain-English overview, not a legal policy or enterprise certification.</p>
+                <p>No. This FAQ is an overview, not a legal policy or enterprise certification.</p>
                 <p>Businesses that need a formal review should request a privacy policy, retention explanation, and a written security overview before production rollout.</p>
               </div>
             </details>
@@ -781,7 +789,7 @@
       <section class="section">
         <h2>Bug Reports</h2>
         <div class="card">
-          <p class="inline-note">Report bugs directly from the app. Reports are stored with your account email, current page, and browser context so they can be reviewed later.</p>
+          <p class="inline-note">Report bugs directly from Discere. Reports are stored with your account email, current page, and browser context so they can be reviewed later.</p>
           <div class="field">
             <label for="bugTitleInput">Bug Title</label>
             <input id="bugTitleInput" type="text" placeholder="Short description of the problem" />

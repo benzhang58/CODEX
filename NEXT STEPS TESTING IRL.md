@@ -143,11 +143,24 @@ Use two real accounts in two separate browsers or incognito windows.
 
 - [ ] Try running summarizer with zero contacts and confirm the app says to add contacts first.
 - [ ] Test an account missing Gmail read scope and confirm the message tells the user to reconnect with Google.
-- [ ] Test an account missing Gmail/Microsoft send scope and confirm the message tells the user to reconnect for send permissions.
+- [ ] Confirm report email delivery uses the Discere sender account and does not require Gmail/Microsoft send permission.
 - [ ] Temporarily lower a usage limit in Render and confirm the app only shows the daily-limit message after the cap is actually hit.
 - [ ] Confirm normal users do not see usage-limit language before hitting the cap.
 - [ ] Confirm failed report delivery shows a clear message, not a raw stack trace.
 - [ ] Confirm OAuth callback mismatch shows a clear login error.
+
+Discere report sender setup:
+
+- [ ] Enable 2-step verification on `discereresearch@gmail.com`.
+- [ ] Create a Gmail app password for Discere report sending.
+- [ ] Add `EMAIL_SUMMARIZER_REPORT_SMTP_HOST=smtp.gmail.com` in Render.
+- [ ] Add `EMAIL_SUMMARIZER_REPORT_SMTP_PORT=465` in Render.
+- [ ] Add `EMAIL_SUMMARIZER_REPORT_SMTP_USER=discereresearch@gmail.com` in Render.
+- [ ] Add `EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD=<Gmail app password>` in Render.
+- [ ] Add `EMAIL_SUMMARIZER_REPORT_FROM_EMAIL=discereresearch@gmail.com` in Render.
+- [ ] Add `EMAIL_SUMMARIZER_REPORT_FROM_NAME=Discere` in Render.
+- [ ] Redeploy Render and send a manual report.
+- [ ] Confirm the report arrives from `Discere <discereresearch@gmail.com>`.
 - [ ] Confirm app errors appear in Admin Monitoring.
 
 ## 9. Admin, Monitoring, Analytics, And Bug Reports
@@ -220,7 +233,6 @@ Google setup:
   - `email`
   - `profile`
   - `https://www.googleapis.com/auth/gmail.readonly`
-  - `https://www.googleapis.com/auth/gmail.send`
 - [ ] Google demo video shows homepage, login, consent screen, add contact, run summarizer, open summary, send report, Settings privacy controls, export, and delete account.
 
 Microsoft setup:
@@ -234,8 +246,8 @@ Microsoft setup:
   - `profile`
   - `offline_access`
   - `User.Read`
-  - `Mail.Send`
   - `https://outlook.office.com/IMAP.AccessAsUser.All`
+- [ ] If the Azure app registration still has old send permissions, remove them unless a future feature truly needs connected-account sending.
 - [ ] If pursuing Microsoft publisher verification, confirm you have Partner Center / Microsoft AI Cloud Partner Program requirements ready.
 
 ## 12. Legal, Business, And Trust Checklist

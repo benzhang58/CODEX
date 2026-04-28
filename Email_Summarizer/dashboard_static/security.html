@@ -26,9 +26,9 @@
       <main class="legal-list">
         <section class="content-card">
           <div class="eyebrow">Security FAQ</div>
-          <h1 class="section-head">Plain-English security overview for business users.</h1>
+          <h1 class="section-head">Security overview for business users.</h1>
           <p>
-            Discere summarizes emails from contacts you choose. This page explains what the product accesses, what is stored,
+            Discere summarizes emails from contacts you choose. This page explains what Discere accesses, what is stored,
             what is sent to AI, and what risks a business should evaluate before use.
           </p>
         </section>
@@ -38,7 +38,7 @@
             <div class="eyebrow">Access</div>
             <h3>Discere reads relevant mailbox data.</h3>
             <p class="section-copy">
-              The app searches your connected mailbox for emails from tracked contacts. It does not need you to forward all mail
+              Discere searches your connected mailbox for emails from tracked contacts. It does not need you to forward all mail
               manually, but connected mailbox permissions can technically allow broader access depending on the provider scope.
             </p>
           </article>
@@ -46,7 +46,7 @@
             <div class="eyebrow">Storage</div>
             <h3>Account data and summaries are stored.</h3>
             <p class="section-copy">
-              Discere stores settings, contacts, schedules, generated summaries, processed message IDs, and limited source email
+              Discere stores settings, contacts, schedules, generated summaries, summarized email IDs, and limited source email
               data needed to show summaries and avoid duplicate processing.
             </p>
           </article>
@@ -55,8 +55,9 @@
         <section class="content-card">
           <h2>What data is read?</h2>
           <ul class="mini-list">
-            <li><strong>Gmail:</strong> Discere uses Google OAuth to sign you in, read Gmail messages for summarization, and send requested report emails.</li>
-            <li><strong>Microsoft:</strong> Discere uses Microsoft OAuth to sign you in, read mailbox content through Microsoft-supported access, refresh tokens, and send requested report emails.</li>
+            <li><strong>Gmail:</strong> Discere uses Google OAuth to sign you in and read Gmail messages through the Gmail API read-only scope. Gmail OAuth does not use IMAP.</li>
+            <li><strong>Microsoft:</strong> Discere uses Microsoft OAuth to sign you in, read mailbox content through Microsoft-supported IMAP access, and refresh tokens for scheduled reports.</li>
+            <li><strong>Report emails:</strong> Discere sends requested and scheduled reports from discereresearch@gmail.com, not from your connected mailbox.</li>
             <li><strong>Other providers:</strong> Discere uses the mailbox credentials or connection settings you provide to read emails from tracked contacts.</li>
             <li><strong>Contacts filter:</strong> The summarizer is designed to process only emails whose actual sender matches your tracked contacts.</li>
           </ul>
@@ -72,6 +73,11 @@
             Attachment contents are sent to AI only if the user enables AI attachment access. If that setting is off, Discere
             limits attachment use to metadata such as filenames.
           </p>
+          <p>
+            OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API
+            organization explicitly opts in. OpenAI may still retain limited API data for abuse monitoring and safety purposes
+            under its published API data controls.
+          </p>
         </section>
 
         <section class="content-card">
@@ -84,15 +90,15 @@
               </tr>
               <tr>
                 <th scope="row">Credentials and tokens</th>
-                <td>OAuth tokens or mailbox credentials where needed. These are stored encrypted.</td>
+                <td>OAuth tokens or mailbox credentials are encrypted and stored where needed.</td>
               </tr>
               <tr>
                 <th scope="row">Summary data</th>
-                <td>Generated summary cards, combined reports, done/read state, and limited source data needed to display and manage summaries.</td>
+                <td>Generated summaries, combined reports, and limited source data needed to display and manage summaries.</td>
               </tr>
               <tr>
                 <th scope="row">Operational data</th>
-                <td>Analytics events, bug reports, usage counters, and logs used for support, abuse prevention, debugging, and reliability.</td>
+                <td>Analytics events, bug reports, and logs used for support, abuse prevention, debugging, and reliability.</td>
               </tr>
             </tbody>
           </table>
@@ -102,36 +108,37 @@
           <h2>How does deletion work?</h2>
           <ul>
             <li>Users can export their account data from Settings.</li>
-            <li>Users can delete individual summaries. This also removes the linked processed IDs so the email can be rediscovered later.</li>
-            <li>Users can delete their account from Settings. This removes account data, summaries, source email files, attachments, schedules, sessions, user analytics, bug reports, and usage counters.</li>
-            <li>Read or done summaries have source email bodies and saved attachments purged after the retention period, while processed message IDs can remain to prevent accidental duplicate summaries.</li>
-            <li>Provider access can also be revoked directly from Google or Microsoft account settings.</li>
+            <li>Users can delete individual summaries. This means that the email will be rediscovered if you run the summarizer again.</li>
+            <li>Users can delete their account from Settings. This removes account data, summaries, source email files, attachments, schedules, and related user records.</li>
+            <li>Read or done summaries have source email bodies and saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental duplicate summaries.</li>
+            <li>Provider access can also be revoked directly from Google Account permissions, Microsoft account consent management, or Microsoft My Apps, depending on the provider and account type.</li>
           </ul>
         </section>
 
         <section class="content-card">
           <h2>Business risk summary</h2>
           <p>
-            The main realistic risk is that email-derived data is processed and stored by a third-party web application and AI
-            provider. For normal business email, that can be acceptable if users understand the access and retention model. For
-            regulated, attorney-client, medical, financial, export-controlled, or highly confidential data, a business should
-            review its own policies before connecting those inboxes.
+            Discere needs access to selected email content so it can create summaries. That means relevant email text is processed
+            by Discere and sent to the OpenAI API to generate the summary. Discere is hosted on cloud infrastructure, so account
+            data, summaries, and needed settings are stored on Discere’s server rather than only on your own computer.
           </p>
           <p>
-            Discere uses account isolation, encrypted secret storage, secure production cookies, security headers, rate limits,
-            export/delete flows, and backup procedures. These reduce risk, but they do not make any cloud product risk-free.
+            For everyday business email, this may be reasonable. For very sensitive inboxes, such as legal, medical, financial,
+            government, board-level, or confidential customer data, review your own company rules before connecting that inbox.
+            Discere uses safeguards such as account separation, encrypted credentials, secure cookies, rate limits, export/delete
+            controls, and backups, but no internet service can remove every risk.
           </p>
         </section>
 
         <section class="content-card">
           <h2>OAuth consent screen wording</h2>
           <p>
-            Google and Microsoft consent screens should describe the app consistently with this behavior:
+            Google and Microsoft consent screens should describe Discere consistently with this behavior:
           </p>
           <ul>
             <li><strong>App purpose:</strong> Discere summarizes emails from contacts selected by the user.</li>
-            <li><strong>Mailbox read access:</strong> Used to find and summarize relevant emails from tracked contacts.</li>
-            <li><strong>Mail send access:</strong> Used only when the user requests an emailed report or scheduled report delivery.</li>
+            <li><strong>Mailbox read access:</strong> Gmail uses Gmail API read-only access. Microsoft uses Microsoft-supported IMAP mailbox access. Non-OAuth providers use the mailbox connection details the user enters.</li>
+            <li><strong>Report delivery:</strong> Requested and scheduled reports are emailed from Discere, not from the user's connected mailbox.</li>
             <li><strong>Profile/email access:</strong> Used to sign the user in and identify the connected mailbox.</li>
             <li><strong>Offline/refresh access:</strong> Used to keep scheduled reports and mailbox access working without forcing a new login every run.</li>
           </ul>

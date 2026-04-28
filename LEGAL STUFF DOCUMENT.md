@@ -20,7 +20,7 @@ If the site says "we only read tracked contacts," the code and logs need to supp
 
 4. Align OAuth consent screens exactly.
 
-Google requires apps to accurately represent identity and intent. Microsoft publisher verification is about helping users/admins trust who publishes the app. Your consent copy should say: reads mailbox data to summarize emails from contacts users choose, sends email only for user-requested reports, uses profile/email for login, uses refresh/offline access for recurring scheduled reports.
+Google requires apps to accurately represent identity and intent. Microsoft publisher verification is about helping users/admins trust who publishes the service. Your consent copy should say: reads mailbox data to summarize emails from contacts users choose, sends requested and scheduled report emails from Discere rather than the user's connected mailbox, uses profile/email for login, and uses refresh/offline access for recurring scheduled reports.
 
 5. Implement a breach response plan.
 
@@ -70,4 +70,4 @@ Minimum before paid users:
 - Get cyber liability quote.
 - Keep first users as beta users with clear "early access" language.
 
-For Discere, forming an LLC before charging businesses is the safer path. But the LLC is only one piece. The bigger issue is: do not promise privacy/security behavior unless the app actually does it.
+For Discere, forming an LLC before charging businesses is the safer path. But the LLC is only one piece. The bigger issue is: do not promise privacy/security behavior unless Discere actually does it.

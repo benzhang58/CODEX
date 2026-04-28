@@ -62,7 +62,7 @@ Headline:
 
 Copy:
 
-> Discere reads mailbox data needed to summarize emails from contacts you choose. It stores account settings, summaries, processed message IDs, and limited source data needed to run the product. Email text needed for summaries is sent to AI. Attachment contents are only sent to AI if you enable attachment access.
+> Discere reads mailbox data needed to summarize emails from contacts you choose. It stores account settings, summaries, processed message IDs, and limited source data needed to run Discere. Email text needed for summaries is sent to AI. Attachment contents are only sent to AI if you enable attachment access. Requested and scheduled reports are emailed from Discere, not from your connected mailbox.
 
 CTA:
 

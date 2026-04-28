@@ -6,7 +6,7 @@ Local-first email summarization app with:
 - local browser dashboard
 - SQLite-backed users/sessions/profiles
 - per-user saved summaries and source email JSON
-- optional Google OAuth sign-in scaffolding
+- Google and Microsoft OAuth sign-in and mailbox access
 
 ## Current architecture
 
@@ -59,6 +59,12 @@ Recommended environment variables:
 - `EMAIL_SUMMARIZER_ADMIN_EMAILS` or `EMAIL_SUMMARIZER_ADMIN_KEY` if using admin views
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` if enabling Google sign-in
 - `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` if enabling Microsoft sign-in
+- `EMAIL_SUMMARIZER_REPORT_SMTP_HOST=smtp.gmail.com`
+- `EMAIL_SUMMARIZER_REPORT_SMTP_PORT=465`
+- `EMAIL_SUMMARIZER_REPORT_SMTP_USER=discereresearch@gmail.com`
+- `EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD=<Gmail app password or SMTP password>`
+- `EMAIL_SUMMARIZER_REPORT_FROM_EMAIL=discereresearch@gmail.com`
+- `EMAIL_SUMMARIZER_REPORT_FROM_NAME=Discere`
 
 ## Persistence
 
@@ -149,6 +155,7 @@ The deployment/readiness endpoints should confirm:
 - security headers enabled
 - production CORS origins are HTTPS-only and do not use `*`
 - Google/Microsoft OAuth config present if using OAuth sign-in
+- Discere report sender SMTP credentials configured
 - storage/output paths mounted
 - database reachable
 - rate limiting enabled
@@ -210,7 +217,7 @@ Monitoring records:
 - OAuth callback/token/scope failures
 - summarizer failures, timeouts, and mailbox/OpenAI error hints
 - cross-account `user_id` override attempts and attachment access denials
-- report delivery failures for email, SMS, PDFs, Twilio, SMTP, Gmail, and Microsoft
+- report delivery failures for email, PDFs, and the Discere report sender SMTP account
 - rate-limit hits, oversized requests, and invalid request headers
 - unhandled server exceptions and OpenAI chat/refine failures
 - deletion/export/purge-related failures when surfaced as server errors
@@ -224,31 +231,35 @@ For later scale, add Sentry or another hosted error monitor for stack traces, al
 The public website, privacy page, and OAuth consent screens should describe the same data use. Current app behavior:
 
 - App purpose: Discere summarizes emails from contacts selected by the user.
-- Google scopes: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/gmail.send`.
-- Microsoft scopes: `openid`, `email`, `profile`, `offline_access`, `User.Read`, `Mail.Send`, `https://outlook.office.com/IMAP.AccessAsUser.All`.
-- Mailbox read access is used to find emails from tracked contacts and build summaries.
-- Mail send access is used only when a user requests emailed report delivery or scheduled emailed reports.
+- Google scopes: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`.
+- Microsoft scopes: `openid`, `email`, `profile`, `offline_access`, `User.Read`, `https://outlook.office.com/IMAP.AccessAsUser.All`.
+- Gmail OAuth uses Gmail API read-only access to find emails from tracked contacts and build summaries.
+- Microsoft OAuth uses Microsoft-supported IMAP mailbox access to find emails from tracked contacts and build summaries.
+- Non-OAuth mailbox connections use the IMAP settings and mailbox credentials the user provides.
+- Report emails are sent from the Discere report sender address, not from the connected user mailbox.
 - Profile/email access is used to sign the user in, identify the connected mailbox, and display account information.
 - Offline/refresh access is used so scheduled reports and recurring mailbox checks can run without forcing the user to sign in every time.
 - Email/thread content needed for summaries is sent to the AI provider. Attachment contents are sent only when AI attachment access is enabled.
 - OAuth tokens and mailbox credentials are stored encrypted.
+- Google API data use should align with the Google API Services User Data Policy, including Limited Use requirements.
+- Microsoft API and Microsoft-supported email protocol use should align with applicable Microsoft API terms and policies.
+- Users can revoke provider access through Google Account permissions, Microsoft account consent management, or Microsoft My Apps, depending on provider and account type.
 
 Suggested short consent/support description:
 
 ```text
-Discere helps users summarize important emails from contacts they choose. It reads mailbox content needed to find and summarize relevant messages, uses send permission only to deliver reports requested by the user, and uses profile/email access to sign users in and identify the connected mailbox.
+Discere helps users summarize important emails from contacts they choose. It reads mailbox content needed to find and summarize relevant messages, sends requested reports from Discere's report sender address instead of from the user's connected mailbox, and uses profile/email access to sign users in and identify the connected mailbox.
 ```
 
 ## Current limitations
 
-- Gmail OAuth is present for sign-in/token capture but not yet the full inbox-fetch path
 - summaries/source emails are still stored as JSON on disk rather than in Postgres
 - unread state is still browser-local
-- SMTP delivery still depends on valid provider credentials
+- report email delivery depends on the Discere report sender SMTP credentials
 
 ## Recommended next steps
 
 1. Finish database-backed summarizer config loading end-to-end
-2. Finish Gmail OAuth inbox access so Gmail users do not need IMAP app passwords
+2. Test the full Google and Microsoft OAuth inbox summarizer flow in production
 3. Move summary/email metadata into the database
 4. Deploy behind a real public domain

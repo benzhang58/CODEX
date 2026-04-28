@@ -18,6 +18,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from html import escape
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -402,10 +403,9 @@ GOOGLE_OAUTH_SCOPES = [
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send",
 ]
 REQUIRED_GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
-REQUIRED_GOOGLE_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+REQUIRED_MICROSOFT_IMAP_SCOPE = "https://outlook.office.com/IMAP.AccessAsUser.All"
 TERMS_VERSION = "2026-04-23"
 PRIVACY_VERSION = "2026-04-23"
 MICROSOFT_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
@@ -417,10 +417,8 @@ MICROSOFT_OAUTH_SCOPES = [
     "profile",
     "offline_access",
     "User.Read",
-    "Mail.Send",
     "https://outlook.office.com/IMAP.AccessAsUser.All",
 ]
-REQUIRED_MICROSOFT_SEND_SCOPE = "Mail.Send"
 REQUIRED_PRODUCTION_ENV_VARS = [
     "EMAIL_SUMMARIZER_PUBLIC_BASE_URL",
     "OPENAI_API_KEY",
@@ -431,6 +429,8 @@ RECOMMENDED_PRODUCTION_ENV_VARS = [
     "GOOGLE_CLIENT_SECRET",
     "MICROSOFT_CLIENT_ID",
     "MICROSOFT_CLIENT_SECRET",
+    "EMAIL_SUMMARIZER_REPORT_SMTP_USER",
+    "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD",
 ]
 ACCOUNT_SCOPED_SETTING_KEYS = {
     "WHITELIST_SENDERS",
@@ -770,6 +770,7 @@ class ContactProfileUpdateRequest(BaseModel):
 class ChatRequest(BaseModel):
     user_id: Optional[str] = None
     question: str
+    conversation: List[Dict[str, str]] = []
 
 
 class CombinedSummaryRequest(BaseModel):
@@ -869,7 +870,9 @@ class LegalAcceptanceRequest(BaseModel):
 
 
 @app.get("/")
-def home() -> FileResponse:
+def home(request: Request) -> Response:
+    if get_session_user_id(request):
+        return RedirectResponse("/dashboard")
     return FileResponse(STATIC_DIR / "home.html")
 
 
@@ -890,6 +893,7 @@ def check_path_writable(path: Path) -> bool:
 
 
 def build_deploy_readiness() -> Dict[str, Any]:
+    report_sender = get_report_sender_config()
     checks = {
         "production_environment": is_production_environment(),
         "public_base_url_configured": bool(PUBLIC_BASE_URL),
@@ -904,7 +908,7 @@ def build_deploy_readiness() -> Dict[str, Any]:
         "microsoft_oauth_configured": bool(get_app_config_value("MICROSOFT_CLIENT_ID") and get_app_config_value("MICROSOFT_CLIENT_SECRET")),
         "google_redirect_configured_or_derivable": bool(get_app_config_value("GOOGLE_REDIRECT_URI") or PUBLIC_BASE_URL),
         "microsoft_redirect_configured_or_derivable": bool(get_app_config_value("MICROSOFT_REDIRECT_URI") or PUBLIC_BASE_URL),
-        "smtp_host_configured": bool(get_app_config_value("SMTP_HOST")),
+        "discere_report_sender_configured": bool(report_sender["host"] and report_sender["user"] and report_sender["password"]),
         "rate_limit_enabled": is_rate_limit_enabled(),
         "cors_origins_production_safe": cors_origins_are_production_safe(),
         "security_headers_enabled": True,
@@ -939,7 +943,7 @@ def build_deploy_readiness() -> Dict[str, Any]:
                 errors.append(f"Missing required production env var: {key}")
         for key in RECOMMENDED_PRODUCTION_ENV_VARS:
             if not get_app_config_value(key):
-                warnings.append(f"Missing recommended OAuth env var: {key}")
+                warnings.append(f"Missing recommended production env var: {key}")
         if not checks["cookie_secure"]:
             errors.append("Production session cookies must use Secure=true.")
         if PUBLIC_BASE_URL and not checks["public_base_url_https"]:
@@ -1136,6 +1140,11 @@ def privacy_page() -> FileResponse:
 @app.get("/security")
 def security_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "security.html")
+
+
+@app.get("/how-to")
+def how_to_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "how_to.html")
 
 
 @app.get("/terms")
@@ -1450,11 +1459,12 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
             "settings": settings,
         }
 
+    existing_google_oauth = profile.get("google_oauth") or {}
     profile["google_oauth"] = {
         "provider": "google",
         "email": email,
         "access_token": token_payload.get("access_token", ""),
-        "refresh_token": token_payload.get("refresh_token", ""),
+        "refresh_token": token_payload.get("refresh_token", "") or existing_google_oauth.get("refresh_token", ""),
         "token_type": token_payload.get("token_type", ""),
         "scope": token_payload.get("scope", ""),
         "expires_in": token_payload.get("expires_in", 0),
@@ -1633,12 +1643,13 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
     else:
         profile["email"] = email
 
+    existing_microsoft_oauth = profile.get("microsoft_oauth") or {}
     profile["microsoft_oauth"] = {
         "provider": "microsoft",
         "email": email,
         "display_name": str(userinfo.get("displayName", "")).strip(),
         "access_token": token_payload.get("access_token", ""),
-        "refresh_token": token_payload.get("refresh_token", ""),
+        "refresh_token": token_payload.get("refresh_token", "") or existing_microsoft_oauth.get("refresh_token", ""),
         "token_type": token_payload.get("token_type", ""),
         "scope": token_payload.get("scope", ""),
         "expires_in": token_payload.get("expires_in", 0),
@@ -2235,9 +2246,6 @@ def refresh_google_access_token(profile: Dict[str, Any]) -> str:
     google_oauth = profile.get("google_oauth") or {}
     user_id = str(profile.get("user_id", "") or "")
     refresh_token = str(google_oauth.get("refresh_token", "")).strip()
-    access_token = str(google_oauth.get("access_token", "")).strip()
-    if access_token and not refresh_token:
-        return access_token
     if not refresh_token:
         write_monitoring_event("oauth", "google_missing_refresh_token", "error", user_id=user_id)
         raise reconnect_error(
@@ -2293,9 +2301,6 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
     microsoft_oauth = profile.get("microsoft_oauth") or {}
     user_id = str(profile.get("user_id", "") or "")
     refresh_token = str(microsoft_oauth.get("refresh_token", "")).strip()
-    access_token = str(microsoft_oauth.get("access_token", "")).strip()
-    if access_token and not refresh_token:
-        return access_token
     if not refresh_token:
         write_monitoring_event("oauth", "microsoft_missing_refresh_token", "error", user_id=user_id)
         raise reconnect_error(
@@ -2326,6 +2331,9 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
         raise HTTPException(status_code=500, detail="Microsoft token refresh did not return an access token.")
 
     microsoft_oauth["access_token"] = new_access_token
+    maybe_refresh_token = str(token_payload.get("refresh_token", "")).strip()
+    if maybe_refresh_token:
+        microsoft_oauth["refresh_token"] = maybe_refresh_token
     microsoft_oauth["scope"] = token_payload.get("scope", microsoft_oauth.get("scope", ""))
     microsoft_oauth["updated_at"] = datetime.now().isoformat()
     profile["microsoft_oauth"] = microsoft_oauth
@@ -3162,6 +3170,19 @@ def get_user_processed_state_path(user_id: str) -> Path:
     return OUTPUT_ROOT_DIR / user_id / "processed_state.json"
 
 
+def safe_user_file_path(base_dir: Path, file_stem: str, suffix: str, label: str) -> Path:
+    clean_stem = str(file_stem or "").strip()
+    if not clean_stem or "/" in clean_stem or "\\" in clean_stem or clean_stem in {".", ".."} or ".." in Path(clean_stem).parts:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}.")
+    base_resolved = base_dir.resolve()
+    candidate = (base_dir / f"{clean_stem}{suffix}").resolve()
+    try:
+        candidate.relative_to(base_resolved)
+    except ValueError:
+        raise HTTPException(status_code=403, detail=f"Invalid {label} path.")
+    return candidate
+
+
 def extract_markdown_title(content: str, fallback: str) -> str:
     for line in content.splitlines():
         stripped = line.strip()
@@ -3520,6 +3541,127 @@ def _to_ascii_safe(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
+DISCERE_PRODUCT_KNOWLEDGE = """
+DISCERE PRODUCT KNOWLEDGE
+
+Purpose and core workflow:
+- Discere summarizes emails from important contacts selected by the user.
+- Users add tracked contacts, run the summarizer for a chosen days-back window, review generated summaries, ask AI Assistant questions, combine selected summaries, and optionally schedule recurring email summary reports.
+- If the user runs the summarizer with no tracked contacts, Discere should tell them to add contacts first.
+- The checkbox/select controls are for actions such as combining summaries, emailing reports, deleting summaries, or marking summaries done. A summary becomes read when the user opens/clicks it.
+
+Contacts and summarization behavior:
+- Discere is designed to process trigger emails only when the actual parsed From email matches a tracked contact.
+- Gmail OAuth uses Gmail API read-only access to find and read relevant Gmail messages. Gmail OAuth does not use IMAP.
+- Microsoft OAuth uses Microsoft-supported IMAP mailbox access plus refresh/offline access for scheduled runs.
+- Non-OAuth providers such as 263.com use the mailbox credentials/IMAP settings the user enters in Mailbox Connection.
+- Gmail and Microsoft OAuth users do not need the Mailbox Connection module. Standard/non-OAuth users use Mailbox Connection.
+- The summarizer reconstructs thread context so a summary can include relevant messages and attachments in the thread, not only the single trigger email.
+
+Read, done, delete, and re-summarization:
+- New/unread summaries become read when the user opens and reviews them.
+- Marking a summary as done keeps the summarized email IDs so Discere avoids accidentally summarizing the same email again.
+- Read or done summaries have source email bodies and saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental duplicate summaries.
+- Deleting an individual summary removes the saved summary and related processed identifiers for emails only tied to that summary. That means the email can be rediscovered and summarized again if it still matches the user's contacts and search window.
+- If a user says deleted emails keep coming back, explain that deletion is intentionally rediscovery-friendly. They should mark summaries as done instead of deleting them when they want Discere to remember that the email was already handled.
+- A new email in the same thread has a new message ID and can create a fresh summary if it matches a tracked contact and the scan window.
+
+Reports and scheduled reports:
+- Manual and scheduled email reports are sent from Discere's configured report sender address, intended to be Discere <discereresearch@gmail.com>, not from the user's connected Gmail, Microsoft, or mailbox account.
+- Scheduled reports always create a fresh summarizer run first, then email the full formatted report to the recipient chosen in the schedule.
+- Saved schedules can be viewed, edited, deleted, and toggled on/off.
+- Phone/SMS report delivery is not part of the current launch flow unless explicitly re-enabled later.
+
+Privacy and AI processing:
+- Discere reads mailbox data needed to find emails from tracked contacts and generate summaries.
+- Discere stores account settings, contacts, schedules, summaries, summarized email IDs, and limited source email data needed to operate Discere.
+- Relevant email text and thread context are sent to the OpenAI API to generate summaries and AI answers. Attachment contents are sent to AI only if AI attachment access is enabled; otherwise Discere limits attachment use to metadata such as filenames.
+- OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data for abuse monitoring, safety, legal compliance, and API operation under its published API data controls.
+- OpenAI's published API data controls say abuse-monitoring logs may include customer content such as prompts and responses and are retained for up to 30 days by default, unless longer retention is required by law or needed to protect OpenAI's services or others from harm.
+- Discere does not sell Google or Microsoft user data and does not use mailbox data for advertising.
+
+Security and account controls:
+- OAuth tokens and mailbox credentials are encrypted and stored where needed.
+- Discere uses account isolation so users should only access their own summaries, contacts, settings, attachments, schedules, and related account data.
+- Users can export account data from Settings. Exports exclude passwords, OAuth tokens, mailbox passwords, and API keys.
+- Users can delete individual summaries from the dashboard.
+- Users can delete their account from Settings. Account deletion removes account data, contacts, schedules, summaries, source email data, attachments, and related user records.
+- Users can revoke Google or Microsoft OAuth access from their provider account settings.
+- No internet service is risk-free. Sensitive legal, medical, financial, government, board-level, regulated, or highly confidential inboxes should be reviewed carefully before connecting.
+
+Limits and errors:
+- Usage limits exist to prevent runaway AI/API cost, but normal users should only see limit messaging after a limit is hit.
+- If OAuth scope errors occur, users may need to log out and log back in with Google or Microsoft and approve the requested permissions.
+- If report email sending is not configured, Discere needs the report sender SMTP settings configured on Render.
+
+Terms-style plain English:
+- Users must have the legal right to connect each mailbox and process the emails/attachments made available through that connection.
+- AI outputs can be incomplete or inaccurate and should be reviewed before relying on them for legal, financial, operational, or sensitive decisions.
+- Discere is a summarization and reporting service, not legal, financial, medical, tax, security, employment, or compliance advice.
+""".strip()
+
+
+def is_discere_product_question(question: str) -> bool:
+    text = str(question or "").lower()
+    product_terms = [
+        "discere",
+        "privacy",
+        "security",
+        "terms",
+        "policy",
+        "oauth",
+        "gmail",
+        "microsoft",
+        "outlook",
+        "imap",
+        "openai",
+        "ai provider",
+        "train",
+        "data",
+        "delete",
+        "deleted",
+        "again",
+        "resummar",
+        "re-summar",
+        "rediscover",
+        "done",
+        "read",
+        "schedule",
+        "scheduled",
+        "report",
+        "sender",
+        "mailbox connection",
+        "attachment",
+        "export",
+        "account",
+        "contact",
+        "contacts",
+        "summarizer",
+        "how does",
+        "how do i",
+        "why",
+    ]
+    return any(term in text for term in product_terms)
+
+
+def build_recent_chat_history(conversation: List[Dict[str, str]], max_chars: int = 6000) -> str:
+    blocks: List[str] = []
+    total = 0
+    for entry in list(conversation or [])[-12:]:
+        role = str(entry.get("role") or "").strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        text = _compact_for_chat(str(entry.get("text") or ""), 1000)
+        if not text:
+            continue
+        block = f"{role.upper()}: {_to_ascii_safe(text)}"
+        if total + len(block) > max_chars and blocks:
+            break
+        blocks.append(block)
+        total += len(block) + 2
+    return "\n\n".join(blocks)
+
+
 def render_inline_markdown_html(text: str) -> str:
     escaped = escape(str(text or ""))
     return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
@@ -3586,7 +3728,7 @@ def get_public_report(
 @app.delete("/summaries/{summary_id}")
 def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
-    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
 
@@ -3603,7 +3745,7 @@ def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Q
         if any(email_id in (other.get("source_email_file_ids", []) or []) for other in other_summaries):
             continue
 
-        email_path = get_user_json_emails_dir(user_id) / f"{email_id}.json"
+        email_path = safe_user_file_path(get_user_json_emails_dir(user_id), email_id, ".json", "email id")
         if not email_path.exists():
             continue
         email_payload = load_email_json(email_path)
@@ -3779,54 +3921,102 @@ def default_sender_email(profile: Dict[str, Any], settings: Dict[str, str]) -> s
     )
 
 
-def send_microsoft_graph_email(profile: Dict[str, Any], recipient: str, subject: str, html_body: str) -> None:
-    if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_SEND_SCOPE):
+def get_report_sender_config() -> Dict[str, Any]:
+    from_email = (
+        get_app_config_value("EMAIL_SUMMARIZER_REPORT_FROM_EMAIL")
+        or get_app_config_value("EMAIL_SUMMARIZER_REPORT_SMTP_USER")
+        or "discereresearch@gmail.com"
+    ).strip()
+    smtp_user = (
+        get_app_config_value("EMAIL_SUMMARIZER_REPORT_SMTP_USER")
+        or get_app_config_value("EMAIL_SUMMARIZER_REPORT_FROM_EMAIL")
+        or from_email
+    ).strip()
+    raw_port = get_app_config_value("EMAIL_SUMMARIZER_REPORT_SMTP_PORT") or "465"
+    try:
+        smtp_port = int(raw_port)
+    except ValueError:
+        smtp_port = 465
+    return {
+        "host": (get_app_config_value("EMAIL_SUMMARIZER_REPORT_SMTP_HOST") or "smtp.gmail.com").strip(),
+        "port": smtp_port,
+        "user": smtp_user,
+        "password": get_app_config_value("EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD").strip(),
+        "from_email": from_email,
+        "from_name": (get_app_config_value("EMAIL_SUMMARIZER_REPORT_FROM_NAME") or "Discere").strip(),
+    }
+
+
+def send_report_email_from_discere(
+    user_id: str,
+    recipient: str,
+    subject: str,
+    html_body: str,
+    text_body: str,
+    event_name: str,
+) -> Dict[str, str]:
+    if not is_valid_email(recipient):
+        raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
+
+    sender = get_report_sender_config()
+    if not all([sender["host"], sender["user"], sender["password"], sender["from_email"]]):
         write_monitoring_event(
-            "oauth",
-            "microsoft_missing_send_scope",
-            "error",
-            user_id=str(profile.get("user_id", "") or ""),
-            metadata={"required_scope": REQUIRED_MICROSOFT_SEND_SCOPE},
-        )
-        raise reconnect_error(
-            "microsoft",
-            "send_email",
-            "Microsoft email sending needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant send permissions.",
-        )
-    access_token = refresh_microsoft_access_token(profile)
-    post_json_with_bearer(
-        "https://graph.microsoft.com/v1.0/me/sendMail",
-        access_token,
-        {
-            "message": {
-                "subject": subject,
-                "body": {
-                    "contentType": "HTML",
-                    "content": html_body,
-                },
-                "toRecipients": [
-                    {
-                        "emailAddress": {
-                            "address": recipient,
-                        }
-                    }
-                ],
+            "report_delivery",
+            "discere_report_sender_not_configured",
+            "warning",
+            user_id=user_id,
+            metadata={
+                "smtp_host_configured": bool(sender["host"]),
+                "smtp_user_configured": bool(sender["user"]),
+                "smtp_password_configured": bool(sender["password"]),
+                "from_email_configured": bool(sender["from_email"]),
             },
-            "saveToSentItems": True,
-        },
-        error_prefix="Failed to send Microsoft message",
-    )
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Discere report email sending is not configured yet. Add the report sender SMTP settings on Render.",
+        )
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = formataddr((sender["from_name"], sender["from_email"]))
+    msg["To"] = recipient
+    msg.attach(MIMEText(_to_ascii_safe(text_body), "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    try:
+        if sender["port"] == 587:
+            with smtplib.SMTP(sender["host"], sender["port"], timeout=30) as server:
+                server.starttls()
+                server.login(sender["user"], sender["password"])
+                server.sendmail(sender["from_email"], [recipient], msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(sender["host"], sender["port"], timeout=30) as server:
+                server.login(sender["user"], sender["password"])
+                server.sendmail(sender["from_email"], [recipient], msg.as_string())
+    except Exception as exc:
+        write_monitoring_event(
+            "report_delivery",
+            event_name,
+            "error",
+            user_id=user_id,
+            metadata={
+                "recipient": recipient,
+                "smtp_host": sender["host"],
+                "smtp_port": sender["port"],
+                "from_email": sender["from_email"],
+                "error": str(exc),
+                "error_type": exc.__class__.__name__,
+            },
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to send report email from Discere: {exc}") from exc
+
+    return {"recipient": recipient, "subject": subject, "from": sender["from_email"]}
 
 
 def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
-    google_oauth = profile.get("google_oauth") or {}
-    microsoft_oauth = profile.get("microsoft_oauth") or {}
-    smtp_host = settings.get("SMTP_HOST", "")
-    smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
-    smtp_user = default_sender_email(profile, settings)
-    smtp_password = settings.get("SMTP_PASSWORD", "")
     recipient = default_report_recipient(profile, settings)
 
     if not is_valid_email(recipient):
@@ -3834,10 +4024,6 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
 
     subject = summary.get("title", f"Summary: {summary.get('summary_id', '')}")
     html_body = render_summary_email_html(summary)
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = recipient
     text_parts: List[str] = [
         str(summary.get("title") or summary.get("summary_id") or "Summary").strip(),
         "",
@@ -3858,80 +4044,14 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
         text_parts.append(f"{label}:")
         text_parts.append(re.sub(r"\*\*(.+?)\*\*", r"\1", value))
         text_parts.append("")
-    msg.attach(MIMEText(_to_ascii_safe("\n".join(text_parts).strip()), "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-    if str(google_oauth.get("provider", "")).strip().lower() == "google":
-        if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
-            write_monitoring_event(
-                "oauth",
-                "google_missing_send_scope",
-                "error",
-                user_id=user_id,
-                metadata={"required_scope": REQUIRED_GOOGLE_SEND_SCOPE},
-            )
-            raise reconnect_error(
-                "google",
-                "send_email",
-                "Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
-            )
-        if not is_valid_email(recipient):
-            raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
-        access_token = refresh_google_access_token(profile)
-        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
-        post_json_with_bearer(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-            access_token,
-            {"raw": raw_message},
-            error_prefix="Failed to send Gmail message",
-        )
-        return {"recipient": recipient, "subject": msg["Subject"]}
-
-    if str(microsoft_oauth.get("provider", "")).strip().lower() == "microsoft":
-        try:
-            send_microsoft_graph_email(profile, recipient, subject, html_body)
-        except Exception as exc:
-            write_monitoring_event(
-                "report_delivery",
-                "microsoft_summary_email_failed",
-                "error",
-                user_id=user_id,
-                metadata={"recipient": recipient, "error": str(exc), "error_type": exc.__class__.__name__},
-            )
-            raise
-        return {"recipient": recipient, "subject": msg["Subject"]}
-
-    if not all([smtp_host, smtp_user, smtp_password]):
-        write_monitoring_event(
-            "report_delivery",
-            "email_sending_not_configured",
-            "warning",
-            user_id=user_id,
-            metadata={"smtp_host_configured": bool(smtp_host), "smtp_user_configured": bool(smtp_user), "smtp_password_configured": bool(smtp_password)},
-        )
-        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
-
-    try:
-        if smtp_port == 587:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_user, [recipient], msg.as_string())
-        else:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_user, [recipient], msg.as_string())
-    except Exception as exc:
-        write_monitoring_event(
-            "report_delivery",
-            "smtp_summary_email_failed",
-            "error",
-            user_id=user_id,
-            metadata={"recipient": recipient, "smtp_host": smtp_host, "smtp_port": smtp_port, "error": str(exc), "error_type": exc.__class__.__name__},
-        )
-        raise HTTPException(status_code=500, detail=f"Failed to send summary email: {exc}") from exc
-
-    return {"recipient": recipient, "subject": msg["Subject"]}
+    return send_report_email_from_discere(
+        user_id=user_id,
+        recipient=recipient,
+        subject=subject,
+        html_body=html_body,
+        text_body="\n".join(text_parts).strip(),
+        event_name="discere_summary_email_failed",
+    )
 
 
 def clean_summary_title(title: str, fallback: str = "Summary") -> str:
@@ -4128,78 +4248,27 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
 def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recipient_override: Optional[str] = None) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
-    google_oauth = profile.get("google_oauth") or {}
-    microsoft_oauth = profile.get("microsoft_oauth") or {}
-    smtp_host = settings.get("SMTP_HOST", "")
-    smtp_port = int(settings.get("SMTP_PORT", "465") or 465)
-    smtp_user = default_sender_email(profile, settings)
-    smtp_password = settings.get("SMTP_PASSWORD", "")
     recipient = default_report_recipient(profile, settings, recipient_override)
 
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
 
     html_body = render_markdown_report_email_html(title, markdown)
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = title
-    msg["From"] = smtp_user
-    msg["To"] = recipient
-    msg.attach(MIMEText(render_markdown_report_text(title, markdown, max_chars=20000), "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-    if str(google_oauth.get("provider", "")).strip().lower() == "google":
-        if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_SEND_SCOPE):
-            raise reconnect_error(
-                "google",
-                "send_email",
-                "Google email sending needs to be refreshed for this account. Sign out and sign back in with Google to grant send permissions.",
-            )
-        access_token = refresh_google_access_token(profile)
-        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
-        post_json_with_bearer(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-            access_token,
-            {"raw": raw_message},
-            error_prefix="Failed to send Gmail message",
-        )
-        track_analytics_event(
-            user_id,
-            "report_delivered",
-            {"delivery_channel": "email", "recipient": recipient, "title": title},
-        )
-        return {"recipient": recipient, "subject": msg["Subject"]}
-
-    if str(microsoft_oauth.get("provider", "")).strip().lower() == "microsoft":
-        send_microsoft_graph_email(profile, recipient, title, html_body)
-        track_analytics_event(
-            user_id,
-            "report_delivered",
-            {"delivery_channel": "email", "recipient": recipient, "title": title},
-        )
-        return {"recipient": recipient, "subject": msg["Subject"]}
-
-    if not all([smtp_host, smtp_user, smtp_password]):
-        raise HTTPException(status_code=400, detail="Email sending is not configured for this account yet.")
-
-    try:
-        if smtp_port == 587:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_user, [recipient], msg.as_string())
-        else:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_user, [recipient], msg.as_string())
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to send combined report email: {exc}") from exc
+    delivery = send_report_email_from_discere(
+        user_id=user_id,
+        recipient=recipient,
+        subject=title,
+        html_body=html_body,
+        text_body=render_markdown_report_text(title, markdown, max_chars=20000),
+        event_name="discere_combined_report_email_failed",
+    )
 
     track_analytics_event(
         user_id,
         "report_delivered",
         {"delivery_channel": "email", "recipient": recipient, "title": title},
     )
-    return {"recipient": recipient, "subject": msg["Subject"]}
+    return delivery
 
 
 def render_markdown_report_text(title: str, markdown: str, max_chars: int = 1400) -> str:
@@ -4542,7 +4611,8 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     summaries = get_chat_ready_summaries(resolved_user_id)
-    if not summaries:
+    product_question = is_discere_product_question(question)
+    if not summaries and not product_question:
         raise HTTPException(status_code=404, detail=f"No saved summaries found for user '{resolved_user_id}'.")
     emails = get_chat_ready_emails(resolved_user_id, summaries)
     attachment_matches = find_attachment_matches(resolved_user_id, emails, payload.question)
@@ -4566,18 +4636,26 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
 
     client = OpenAI(api_key=api_key)
     context = build_chat_context(resolved_user_id, summaries, emails)
+    recent_history = build_recent_chat_history(payload.conversation)
     instructions = (
-        "You are a grounded assistant answering questions about one user's historical email summaries and source emails. "
+        "You are Discere's grounded AI assistant. You answer questions about the user's historical email summaries/source emails "
+        "and questions about how Discere works, including privacy, security, terms, OAuth, retention, schedules, reports, and settings. "
         "Address the user as 'you' rather than by name. "
-        "Answer only from the provided context. Do not invent facts, deadlines, requests, attachments, or email text. "
-        "If the answer is not in the provided summaries or email bodies, say so clearly. "
+        "For email-specific questions, answer only from the provided summaries and email bodies. Do not invent facts, deadlines, requests, attachments, or email text. "
+        "For Discere product, privacy, security, terms, and workflow questions, answer only from the Discere product knowledge provided. "
+        "If the answer is not in the provided context or product knowledge, say so clearly and suggest checking Settings, Privacy, Security FAQ, Terms, or contacting discereresearch@gmail.com. "
         "If the user asks where something was said, quote the exact relevant email text when available. "
         "If the user asks about attachments, mention attachment filenames explicitly when available. "
+        "If the user asks why deleted summaries/emails appear again, explain that deleting a summary removes the identifier so it can be rediscovered; marking it done keeps the identifier so it should not be re-summarized accidentally. "
         "Prefer practical, concise answers."
     )
     input_text = (
-        "CONTEXT\n"
-        f"{context}\n\n"
+        "DISCERE PRODUCT KNOWLEDGE\n"
+        f"{DISCERE_PRODUCT_KNOWLEDGE}\n\n"
+        "RECENT CHAT HISTORY\n"
+        f"{recent_history or '[No prior chat history provided]'}\n\n"
+        "USER EMAIL SUMMARY CONTEXT\n"
+        f"{context or '[No saved email summaries available]'}\n\n"
         "QUESTION\n"
         f"{_to_ascii_safe(question)}\n"
     )
@@ -4994,6 +5072,7 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
     resolved_user_id = resolve_user_id(request, payload.user_id)
     profile = load_profile_or_404(resolved_user_id)
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
     if google_connected and not google_oauth_has_scope(profile, REQUIRED_GOOGLE_READ_SCOPE):
         write_monitoring_event(
             "oauth",
@@ -5008,6 +5087,24 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
             "read_mailbox",
             "Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
         )
+    if microsoft_connected and not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_IMAP_SCOPE):
+        write_monitoring_event(
+            "oauth",
+            "microsoft_missing_imap_scope",
+            "error",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"required_scope": REQUIRED_MICROSOFT_IMAP_SCOPE},
+        )
+        raise reconnect_error(
+            "microsoft",
+            "read_mailbox",
+            "Microsoft mailbox access needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant mailbox permissions.",
+        )
+    if google_connected:
+        refresh_google_access_token(profile)
+    elif microsoft_connected:
+        refresh_microsoft_access_token(profile)
     enforce_usage_limit(resolved_user_id, "run_summarizer")
     return launch_summarizer_job(resolved_user_id, payload.days_back)
 
@@ -5058,11 +5155,11 @@ def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Quer
     user_id = resolve_user_id(request, user_id)
     purge_old_read_source_data(user_id)
     contact_profiles = parse_contact_profiles(get_settings_for_user(user_id))
-    json_summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    json_summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if json_summary_path.exists():
         return apply_contact_profile_to_summary(load_summary_json(json_summary_path), contact_profiles)
 
-    summary_path = get_user_summaries_dir(user_id) / f"{summary_id}.md"
+    summary_path = safe_user_file_path(get_user_summaries_dir(user_id), summary_id, ".md", "summary id")
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
 
@@ -5073,7 +5170,7 @@ def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Quer
 def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
     purge_old_read_source_data(user_id)
-    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
 
@@ -5082,7 +5179,7 @@ def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str]
     threads: List[Dict[str, Any]] = []
 
     for email_id in email_ids:
-        email_path = get_user_json_emails_dir(user_id) / f"{email_id}.json"
+        email_path = safe_user_file_path(get_user_json_emails_dir(user_id), email_id, ".json", "email id")
         if not email_path.exists():
             continue
         email_payload = load_email_json(email_path)
@@ -5119,7 +5216,7 @@ def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str]
 @app.post("/summaries/{summary_id}/mark-read")
 def mark_summary_read(summary_id: str, request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
-    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
 
@@ -5146,7 +5243,7 @@ def mark_summary_read(summary_id: str, request: Request, user_id: Optional[str] 
 @app.post("/summaries/{summary_id}/mark-done")
 def mark_summary_done(summary_id: str, payload: SummaryDoneRequest, request: Request) -> Dict[str, Any]:
     user_id = resolve_user_id(request, payload.user_id)
-    summary_path = get_user_json_summaries_dir(user_id) / f"{summary_id}.json"
+    summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
 

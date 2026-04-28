@@ -96,15 +96,10 @@
 
           <p>
             These Terms of Service (the "Terms") are an agreement between you and <strong>Discere Research</strong>, the operator
-            of the Discere email AI product ("Discere," "we," "us," or "our"). These Terms govern your access to and use of our
+            of Discere ("Discere," "we," "us," or "our"). These Terms govern your access to and use of our
             website, dashboard, email summarization tools, AI features, reporting features, and related services (collectively, the
             "Services").
           </p>
-
-          <div class="legal-callout">
-            Please read these Terms carefully. They include important provisions about your responsibilities, AI-generated output,
-            connected mailbox access, warranty disclaimers, limitations of liability, and dispute resolution.
-          </div>
 
           <section>
             <h2>1. Your Acceptance of These Terms</h2>
@@ -132,7 +127,7 @@
           <section>
             <h2>3. The Services</h2>
             <p>
-              Discere is an email summarization and reporting product. The Services may allow you to connect supported email
+              Discere is an email summarization and reporting service. The Services may allow you to connect supported email
               accounts, track selected contacts, generate AI-assisted summaries, ask questions about summarized email content,
               manage summary preferences, review attachments where enabled, and schedule recurring email reports.
             </p>
@@ -157,8 +152,12 @@
             <h2>5. Connected Mailboxes and Permissions</h2>
             <p>
               Discere only works when you authorize it to access a mailbox or provide mailbox connection details. Depending on the
-              provider, this may occur through Google OAuth, Microsoft OAuth, or direct mailbox credentials for supported non-OAuth
-              providers.
+              provider, this may occur through Google OAuth with Gmail API read-only access, Microsoft OAuth with
+              Microsoft-supported IMAP mailbox access, or direct mailbox credentials for supported non-OAuth providers.
+            </p>
+            <p>
+              Requested and scheduled report emails are sent from Discere's configured report sender address, not from your
+              connected Gmail, Microsoft, or other mailbox account.
             </p>
             <p>
               You represent that you have the legal right to connect each mailbox and to allow Discere to process the messages,
@@ -166,15 +165,23 @@
               reviewing and managing permissions granted through Google, Microsoft, or any other provider.
             </p>
             <p>
-              You may revoke provider permissions through the relevant provider account settings. Revoking permissions may limit or
-              disable mailbox-related features. Discere is not responsible for your provider's availability, permission review
-              process, policy changes, rate limits, or account restrictions.
+              You may revoke provider permissions through the relevant provider account settings, including Google Account
+              permissions, Microsoft account consent management, or Microsoft My Apps depending on the provider and account type.
+              Revoking permissions may limit or disable mailbox-related features. Discere is not responsible for your provider's
+              availability, permission review process, policy changes, rate limits, or account restrictions.
             </p>
             <p>
               For Google integrations, Discere's access, use, storage, and transfer of information received from Google APIs will
               adhere to the Google API Services User Data Policy, including the Limited Use requirements. Discere uses Google user
               data only to provide and improve user-facing features, maintain security, comply with law, and operate the Services as
               described in these Terms and the Privacy Policy.
+            </p>
+            <p>
+              For Microsoft integrations, Discere's access, use, storage, and transfer of information received through Microsoft
+              APIs or Microsoft-supported email protocols is intended to comply with applicable Microsoft API terms and policies.
+              Discere uses Microsoft user data only to provide user-facing features, maintain security, comply with law, and
+              operate the Services as described in these Terms and the Privacy Policy. Discere does not use Microsoft API data for
+              advertising or marketing purposes.
             </p>
           </section>
 
@@ -229,7 +236,7 @@
             </p>
             <ol>
               <li>provide, operate, secure, and maintain the Services;</li>
-              <li>generate summaries, reports, answers, and related product features;</li>
+              <li>generate summaries, reports, answers, and related Discere features;</li>
               <li>troubleshoot bugs and support requests;</li>
               <li>prevent abuse, fraud, security incidents, or unauthorized access;</li>
               <li>comply with law and enforce these Terms.</li>
@@ -248,10 +255,9 @@
               how we access, use, store, share, retain, and delete information.
             </p>
             <p>
-              Discere may retain processed message identifiers to avoid re-summarizing the same email. When summary content is
-              purged under our retention rules, Discere may continue retaining those identifiers so that previously processed
-              messages are not accidentally rediscovered. If you manually delete a summary, Discere may also delete the associated
-              identifier so the email can be rediscovered if it still matches your future search settings.
+              Discere may retain limited message identifiers to avoid re-summarizing the same email. If you manually delete an
+              individual summary, the email can be rediscovered if you run the summarizer again and the email still matches your
+              tracked contacts and search settings.
             </p>
             <p>
               Account deletion, provider revocation, retention limits, and legal obligations may affect what data remains available
@@ -273,9 +279,8 @@
             <h2>11. Third-Party Services</h2>
             <p>
               Discere relies on third-party services, which may include email providers, authentication providers, AI model
-              providers, cloud hosting providers, database providers, analytics tools, payment processors if paid plans are later
-              introduced, and communications vendors. Your use of those third-party services may be governed by their own terms and
-              policies.
+              providers, cloud hosting providers, database providers, analytics tools, payment processors, and communications
+              vendors. Your use of those third-party services may be governed by their own terms and policies.
             </p>
             <p>
               We are not responsible for third-party service outages, changes, security incidents, policy restrictions, pricing
@@ -308,18 +313,17 @@
           <section>
             <h2>14. Fees, Billing, and Subscriptions</h2>
             <p>
-              Discere may currently be offered without paid billing, or certain users may have access through testing, pilot, or
-              early-access arrangements. If we introduce paid plans, subscriptions, usage-based pricing, trials, renewals, refunds,
-              or premium features, the applicable commercial terms will be presented at or before purchase.
+              Discere may offer a one-week free trial before requiring a paid plan. After the trial period ends, continued access
+              to paid features may require a subscription, usage-based plan, or other paid arrangement. The applicable pricing, plan
+              limits, billing cycle, renewal terms, cancellation terms, and refund rules will be presented at or before purchase.
             </p>
             <p>
-              We will not charge you for a paid plan unless you authorize the purchase through the applicable checkout or billing
-              process. If recurring billing is introduced, we will clearly disclose material billing terms before collecting payment
-              information, obtain your authorization before charging you, and provide a reasonably simple cancellation method as
-              required by applicable law.
+              We will not charge you unless you authorize the purchase through the applicable checkout or billing process. For
+              recurring billing, we will clearly disclose material billing terms before collecting payment information, obtain your
+              authorization before charging you, and provide a reasonably simple cancellation method as required by applicable law.
             </p>
             <p>
-              Unless separate paid terms state otherwise, fees paid for future paid plans may be non-refundable to the extent
+              Unless separate paid terms state otherwise, fees paid after the trial period may be non-refundable to the extent
               permitted by law, except where a refund is required by applicable law or expressly offered by Discere.
             </p>
           </section>
@@ -341,11 +345,11 @@
             <h2>16. Suspension and Termination</h2>
             <p>
               We may suspend or terminate your access to the Services if we reasonably believe that you violated these Terms, used
-              the Services in a way that creates risk to Discere or others, failed to pay amounts owed if paid plans are later
-              introduced, or if suspension is needed to comply with law or protect security.
+              the Services in a way that creates risk to Discere or others, failed to pay amounts owed for a paid plan, or if
+              suspension is needed to comply with law or protect security.
             </p>
             <p>
-              You may stop using the Services at any time and may delete your account using available product controls. Certain
+              You may stop using the Services at any time and may delete your account using available Discere controls. Certain
               information may be retained as described in the Privacy Policy, including where retention is needed for security,
               legal compliance, abuse prevention, or to prevent accidental reprocessing of previously summarized emails.
             </p>
@@ -359,27 +363,31 @@
           <section>
             <h2>17. Warranty Disclaimers</h2>
             <p>
-              THE SERVICES ARE PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS. TO THE MAXIMUM EXTENT PERMITTED BY LAW, DISCERE
-              DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-              PURPOSE, TITLE, NON-INFRINGEMENT, AND UNINTERRUPTED OR ERROR-FREE OPERATION.
+              The Services are provided on an "as is" and "as available" basis. To the maximum extent permitted by law, Discere
+              disclaims all warranties, express or implied, including warranties of merchantability, fitness for a particular
+              purpose, title, non-infringement, and uninterrupted or error-free operation.
             </p>
             <p>
-              DISCERE DOES NOT WARRANT THAT SUMMARIES, REPORTS, AI OUTPUTS, EMAIL SEARCH RESULTS, ATTACHMENT INTERPRETATIONS, OR
-              OTHER INFORMATION PRODUCED BY THE SERVICES WILL BE ACCURATE, COMPLETE, CURRENT, OR SUITABLE FOR YOUR PURPOSE.
+              Discere does not warrant that summaries, reports, AI outputs, email search results, attachment interpretations, or
+              other information produced by the Services will be accurate, complete, current, or suitable for your purpose.
             </p>
           </section>
 
           <section>
             <h2>18. Limitation of Liability</h2>
             <p>
-              TO THE MAXIMUM EXTENT PERMITTED BY LAW, DISCERE AND ITS AFFILIATES, SERVICE PROVIDERS, OFFICERS, EMPLOYEES, AND
-              AGENTS WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR
-              LOST PROFITS, LOST REVENUE, LOST BUSINESS OPPORTUNITY, LOSS OF GOODWILL, LOSS OF DATA, OR BUSINESS INTERRUPTION.
+              To the maximum extent permitted by law, Discere and its affiliates, service providers, officers, employees, and
+              agents will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for
+              lost profits, lost revenue, lost business opportunity, loss of goodwill, loss of data, or business interruption.
             </p>
             <p>
-              TO THE MAXIMUM EXTENT PERMITTED BY LAW, DISCERE'S TOTAL LIABILITY FOR ALL CLAIMS RELATING TO THE SERVICES OR THESE
-              TERMS WILL NOT EXCEED THE GREATER OF: (A) THE AMOUNT YOU PAID TO DISCERE FOR THE SERVICES IN THE THREE MONTHS BEFORE
-              THE EVENT GIVING RISE TO THE CLAIM; OR (B) ONE HUNDRED U.S. DOLLARS ($100).
+              To the maximum extent permitted by law, Discere's total liability for all claims relating to the Services or these
+              Terms will not exceed the greater of: (a) the amount you paid to Discere for the Services in the three months before
+              the event giving rise to the claim; or (b) one hundred U.S. dollars ($100).
+            </p>
+            <p>
+              Nothing in these Terms excludes or limits liability where doing so is prohibited by law, including liability for
+              fraud, willful misconduct, or other conduct that cannot legally be limited.
             </p>
             <p>
               Some jurisdictions do not allow certain exclusions or limitations of liability. In those jurisdictions, the
