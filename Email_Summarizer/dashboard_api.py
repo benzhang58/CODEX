@@ -1501,7 +1501,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
 def auth_microsoft_start(
     next: str = "/dashboard",
     login_hint: str = "",
-    prompt: str = "",
+    prompt: str = "consent",
 ) -> RedirectResponse:
     try:
         config = get_microsoft_oauth_config()
@@ -1764,6 +1764,7 @@ def create_report_schedule(payload: ReportScheduleRequest, request: Request) -> 
     resolved_user_id = resolve_user_id(request, payload.user_id)
     enforce_subscription_access(resolved_user_id, "scheduled_report")
     profile = load_profile_or_404(resolved_user_id)
+    ensure_mailbox_access_ready(profile, resolved_user_id, request=request)
     settings = profile.get("settings") or {}
     normalized = normalize_schedule_payload(
         payload,
@@ -1837,6 +1838,7 @@ def update_report_schedule(
     resolved_user_id = resolve_user_id(request, payload.user_id)
     enforce_subscription_access(resolved_user_id, "scheduled_report")
     profile = load_profile_or_404(resolved_user_id)
+    ensure_mailbox_access_ready(profile, resolved_user_id, request=request)
     settings = profile.get("settings") or {}
     normalized = normalize_schedule_payload(
         payload,
@@ -1974,12 +1976,22 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
         merge_stored_settings(default_profile_settings(), profile.get("settings") or {}),
         profile.get("email", ""),
     )
+
+    def mark_mailbox_unconfirmed() -> None:
+        stored_settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
+        if str(stored_settings.get("MAILBOX_CONNECTION_CONFIRMED", "false")).lower() == "false":
+            return
+        stored_settings["MAILBOX_CONNECTION_CONFIRMED"] = "false"
+        profile["settings"] = stored_settings
+        save_profile(profile)
+
     email = str(settings.get("IMAP_USER", "")).strip()
     password = str(settings.get("IMAP_PASSWORD", "")).strip()
     server = str(settings.get("IMAP_SERVER", "")).strip()
     port = int(str(settings.get("IMAP_PORT", "993")).strip() or "993")
 
     if not all([email, password, server]):
+        mark_mailbox_unconfirmed()
         return {
             "connected": False,
             "status": "Not Connected",
@@ -1998,6 +2010,7 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
                 pass
             raise
     except Exception:
+        mark_mailbox_unconfirmed()
         return {
             "connected": False,
             "status": "Not Connected",
@@ -2343,6 +2356,18 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
         )
     except HTTPException as exc:
         write_monitoring_event("oauth", "microsoft_token_refresh_failed", "error", user_id=user_id, metadata={"detail": exc.detail})
+        detail = str(exc.detail or "")
+        detail_lower = detail.lower()
+        if (
+            "aadsts65001" in detail_lower
+            or "consent_required" in detail_lower
+            or "invalid_grant" in detail_lower
+        ):
+            raise reconnect_error(
+                "microsoft",
+                "consent_required",
+                "Microsoft mailbox access needs approval. Sign out, then sign in with Microsoft again and approve the requested mailbox permission.",
+            ) from exc
         raise
     new_access_token = str(token_payload.get("access_token", "")).strip()
     if not new_access_token:
@@ -2371,6 +2396,81 @@ def password_mailbox_is_configured(profile: Dict[str, Any]) -> bool:
         and str(settings.get("IMAP_USER", "")).strip()
         and str(settings.get("IMAP_PASSWORD", "")).strip()
     )
+
+
+def ensure_mailbox_access_ready(
+    profile: Dict[str, Any],
+    user_id: str,
+    request: Optional[Request] = None,
+    refresh_oauth: bool = False,
+) -> None:
+    google_oauth = profile.get("google_oauth") or {}
+    microsoft_oauth = profile.get("microsoft_oauth") or {}
+    google_connected = bool(google_oauth.get("refresh_token") or google_oauth.get("access_token"))
+    microsoft_connected = bool(microsoft_oauth.get("refresh_token") or microsoft_oauth.get("access_token"))
+
+    if google_connected:
+        if not str(google_oauth.get("refresh_token", "")).strip():
+            raise reconnect_error(
+                "google",
+                "refresh_token",
+                "Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
+            )
+        if not google_oauth_has_scope(profile, REQUIRED_GOOGLE_READ_SCOPE):
+            write_monitoring_event(
+                "oauth",
+                "google_missing_read_scope",
+                "error",
+                request=request,
+                user_id=user_id,
+                metadata={"required_scope": REQUIRED_GOOGLE_READ_SCOPE},
+            )
+            raise reconnect_error(
+                "google",
+                "read_mailbox",
+                "Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
+            )
+        if refresh_oauth:
+            refresh_google_access_token(profile)
+        return
+
+    if microsoft_connected:
+        if not str(microsoft_oauth.get("refresh_token", "")).strip():
+            raise reconnect_error(
+                "microsoft",
+                "refresh_token",
+                "Microsoft mailbox access needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant mailbox permissions.",
+            )
+        if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_IMAP_SCOPE):
+            write_monitoring_event(
+                "oauth",
+                "microsoft_missing_imap_scope",
+                "error",
+                request=request,
+                user_id=user_id,
+                metadata={"required_scope": REQUIRED_MICROSOFT_IMAP_SCOPE},
+            )
+            raise reconnect_error(
+                "microsoft",
+                "read_mailbox",
+                "Microsoft mailbox access needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant mailbox permissions.",
+            )
+        if refresh_oauth:
+            refresh_microsoft_access_token(profile)
+        return
+
+    if not password_mailbox_is_configured(profile):
+        write_monitoring_event(
+            "summarizer",
+            "password_mailbox_not_connected",
+            "warning",
+            request=request,
+            user_id=user_id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.",
+        )
 
 
 def decode_jwt_payload(token: str) -> Dict[str, Any]:
@@ -4796,6 +4896,29 @@ def send_combined_report_via_sms(user_id: str, title: str, markdown: str, phone_
     }
 
 
+def advance_report_schedule(schedule: sqlite3.Row) -> None:
+    timezone_name = str(schedule["timezone"] or "America/Los_Angeles")
+    now_dt = datetime.now(ZoneInfo(timezone_name))
+    next_run_at = compute_next_schedule_run(
+        now=now_dt,
+        timezone_name=timezone_name,
+        interval_value=int(schedule["interval_value"]),
+        interval_unit=str(schedule["interval_unit"]),
+        preferred_hour=int(schedule["preferred_hour"]),
+        preferred_minute=int(schedule["preferred_minute"]),
+        last_run_at=now_dt.isoformat(),
+    )
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE report_schedules
+            SET last_run_at = ?, next_run_at = ?, updated_at = ?
+            WHERE schedule_id = ?
+            """,
+            (now_dt.isoformat(), next_run_at, datetime.now().isoformat(), str(schedule["schedule_id"])),
+        )
+
+
 def process_due_schedule(schedule_id: str) -> None:
     with SCHEDULE_RUNNER_LOCK:
         if schedule_id in ACTIVE_SCHEDULE_RUNS:
@@ -4813,29 +4936,22 @@ def process_due_schedule(schedule_id: str) -> None:
 
         user_id = str(schedule["user_id"])
         days_back = int(schedule["days_back"])
+        if not get_contacts_for_user(user_id):
+            write_monitoring_event(
+                "scheduled_report",
+                "scheduled_report_skipped_no_contacts",
+                "info",
+                user_id=user_id,
+                metadata={"schedule_id": schedule_id},
+            )
+            advance_report_schedule(schedule)
+            return
+
         try:
             enforce_subscription_access(user_id, "scheduled_report")
             enforce_usage_limit(user_id, "scheduled_report")
         except HTTPException:
-            now_dt = datetime.now(ZoneInfo(str(schedule["timezone"] or "America/Los_Angeles")))
-            next_run_at = compute_next_schedule_run(
-                now=now_dt,
-                timezone_name=str(schedule["timezone"] or "America/Los_Angeles"),
-                interval_value=int(schedule["interval_value"]),
-                interval_unit=str(schedule["interval_unit"]),
-                preferred_hour=int(schedule["preferred_hour"]),
-                preferred_minute=int(schedule["preferred_minute"]),
-                last_run_at=now_dt.isoformat(),
-            )
-            with get_db_connection() as connection:
-                connection.execute(
-                    """
-                    UPDATE report_schedules
-                    SET last_run_at = ?, next_run_at = ?, updated_at = ?
-                    WHERE schedule_id = ?
-                    """,
-                    (now_dt.isoformat(), next_run_at, datetime.now().isoformat(), schedule_id),
-                )
+            advance_report_schedule(schedule)
             return
 
         run_result = execute_summarizer_run(user_id, days_back)
@@ -4849,25 +4965,7 @@ def process_due_schedule(schedule_id: str) -> None:
             title = str(schedule["name"] or "Scheduled Report").strip() or "Scheduled Report"
             send_combined_report_via_smtp(user_id, title, markdown)
 
-        now_dt = datetime.now(ZoneInfo(str(schedule["timezone"] or "America/Los_Angeles")))
-        next_run_at = compute_next_schedule_run(
-            now=now_dt,
-            timezone_name=str(schedule["timezone"] or "America/Los_Angeles"),
-            interval_value=int(schedule["interval_value"]),
-            interval_unit=str(schedule["interval_unit"]),
-            preferred_hour=int(schedule["preferred_hour"]),
-            preferred_minute=int(schedule["preferred_minute"]),
-            last_run_at=now_dt.isoformat(),
-        )
-        with get_db_connection() as connection:
-            connection.execute(
-                """
-                UPDATE report_schedules
-                SET last_run_at = ?, next_run_at = ?, updated_at = ?
-                WHERE schedule_id = ?
-                """,
-                (now_dt.isoformat(), next_run_at, datetime.now().isoformat(), schedule_id),
-            )
+        advance_report_schedule(schedule)
     finally:
         with SCHEDULE_RUNNER_LOCK:
             ACTIVE_SCHEDULE_RUNS.discard(schedule_id)
@@ -5199,13 +5297,13 @@ def create_bug_report(payload: BugReportRequest, request: Request) -> Dict[str, 
 
 def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
     profile = load_profile_or_404(user_id)
-    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
-    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
-    if not google_connected and not microsoft_connected and not password_mailbox_is_configured(profile):
+    try:
+        ensure_mailbox_access_ready(profile, user_id, refresh_oauth=True)
+    except HTTPException as exc:
         return {
             "returncode": 1,
             "stdout": "",
-            "stderr": "Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.",
+            "stderr": str(exc.detail or "Mailbox access is not ready."),
             "stats": {},
             "success": False,
         }
@@ -5392,52 +5490,7 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
     resolved_user_id = resolve_user_id(request, payload.user_id)
     enforce_subscription_access(resolved_user_id, "run_summarizer")
     profile = load_profile_or_404(resolved_user_id)
-    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
-    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
-    if google_connected and not google_oauth_has_scope(profile, REQUIRED_GOOGLE_READ_SCOPE):
-        write_monitoring_event(
-            "oauth",
-            "google_missing_read_scope",
-            "error",
-            request=request,
-            user_id=resolved_user_id,
-            metadata={"required_scope": REQUIRED_GOOGLE_READ_SCOPE},
-        )
-        raise reconnect_error(
-            "google",
-            "read_mailbox",
-            "Google mailbox access needs to be refreshed for this account. Sign out and sign back in with Google to grant Gmail permissions.",
-        )
-    if microsoft_connected and not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_IMAP_SCOPE):
-        write_monitoring_event(
-            "oauth",
-            "microsoft_missing_imap_scope",
-            "error",
-            request=request,
-            user_id=resolved_user_id,
-            metadata={"required_scope": REQUIRED_MICROSOFT_IMAP_SCOPE},
-        )
-        raise reconnect_error(
-            "microsoft",
-            "read_mailbox",
-            "Microsoft mailbox access needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant mailbox permissions.",
-        )
-    if google_connected:
-        refresh_google_access_token(profile)
-    elif microsoft_connected:
-        refresh_microsoft_access_token(profile)
-    elif not password_mailbox_is_configured(profile):
-        write_monitoring_event(
-            "summarizer",
-            "password_mailbox_not_connected",
-            "warning",
-            request=request,
-            user_id=resolved_user_id,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail="Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.",
-        )
+    ensure_mailbox_access_ready(profile, resolved_user_id, request=request, refresh_oauth=True)
     enforce_usage_limit(resolved_user_id, "run_summarizer")
     return launch_summarizer_job(resolved_user_id, payload.days_back)
 

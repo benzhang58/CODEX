@@ -183,6 +183,10 @@
         };
       }
 
+      function shouldForceOauthAccountPicker() {
+        return localStorage.getItem("oauth:forceAccountPicker") === "true";
+      }
+
       function setOauthAttempt(provider, mode, email = "") {
         sessionStorage.setItem("oauth:attemptProvider", provider);
         sessionStorage.setItem("oauth:attemptMode", mode);
@@ -226,13 +230,17 @@
 
       function startOauth(provider, mode = "interactive") {
         const remembered = getRememberedOauth();
-        const rememberedEmail = remembered.provider === provider ? remembered.email : "";
+        const forceAccountPicker = mode !== "silent" && shouldForceOauthAccountPicker();
+        const rememberedEmail = !forceAccountPicker && remembered.provider === provider ? remembered.email : "";
         const params = new URLSearchParams();
         if (rememberedEmail) {
           params.set("login_hint", rememberedEmail);
         }
         if (mode === "silent") {
           params.set("prompt", "none");
+        } else if (forceAccountPicker) {
+          params.set("prompt", provider === "google" ? "select_account consent" : "select_account");
+          localStorage.removeItem("oauth:forceAccountPicker");
         }
         const query = params.toString();
         setOauthAttempt(provider, mode, rememberedEmail);
@@ -241,7 +249,7 @@
 
       function beginOauth(provider) {
         const remembered = getRememberedOauth();
-        if (remembered.provider === provider && remembered.email) {
+        if (!shouldForceOauthAccountPicker() && remembered.provider === provider && remembered.email) {
           status.textContent = `Checking ${provider === "google" ? "Google" : "Microsoft"} session...`;
           startOauth(provider, "silent");
           return;

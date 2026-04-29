@@ -59,6 +59,18 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return client
 
+    def connect_standard_mailbox(self, client: TestClient, email: str) -> None:
+        response = client.put(
+            "/profile",
+            json={
+                "email": email,
+                "imap_user": email,
+                "imap_password": "MailboxPass123!",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["profile"]["settings"]["mailbox_connected"])
+
     def test_cookie_secure_defaults_on_for_https_public_base_url(self) -> None:
         self.assertTrue(dashboard_api.SESSION_COOKIE_SECURE)
 
@@ -117,6 +129,7 @@ class SecurityRegressionTests(unittest.TestCase):
             scopes = query.get("scope", [""])[0].split()
             self.assertIn(dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE, scopes)
             self.assertNotIn("User.Read", scopes)
+            self.assertEqual(query.get("prompt"), ["consent"])
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -167,6 +180,47 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(profile["email"], "outlook-user@example.com")
             self.assertEqual(profile["microsoft_oauth"]["access_token"], "outlook-imap-access-token")
             self.assertTrue(dashboard_api.microsoft_oauth_has_scope(profile, dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE))
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_microsoft_refresh_consent_required_returns_clean_reconnect_error(self) -> None:
+        client = self.signup("microsoft-consent@example.com")
+        user_id = "microsoft_consent_example_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "microsoft-consent@example.com",
+            "access_token": "old-access-token",
+            "refresh_token": "old-refresh-token",
+            "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            with patch.object(
+                dashboard_api,
+                "post_form_json",
+                side_effect=dashboard_api.HTTPException(
+                    status_code=500,
+                    detail='Microsoft token refresh failed: {"error":"invalid_grant","suberror":"consent_required","error_codes":[65001]}',
+                ),
+            ):
+                response = client.post("/run-summarizer", json={"days_back": 7})
+
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn("Microsoft mailbox access needs approval", response.json()["detail"])
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -288,6 +342,27 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertFalse(status_response.json()["connected"])
         self.assertEqual(status_response.json()["reason"], "missing_credentials")
 
+    def test_failed_password_mailbox_status_clears_connected_flag(self) -> None:
+        client = self.signup("bad-mailbox@example.com")
+        self.connect_standard_mailbox(client, "bad-mailbox@example.com")
+
+        class BadMailbox:
+            def login(self, email: str, password: str) -> None:
+                raise RuntimeError("bad credentials")
+
+            def shutdown(self) -> None:
+                return None
+
+        with patch.object(dashboard_api.imaplib, "IMAP4_SSL", return_value=BadMailbox()):
+            status_response = client.get("/mailbox/status")
+
+        self.assertEqual(status_response.status_code, 200, status_response.text)
+        self.assertFalse(status_response.json()["connected"])
+        self.assertEqual(status_response.json()["reason"], "login_failed")
+
+        profile_response = client.get("/auth/me")
+        self.assertFalse(profile_response.json()["profile"]["settings"]["mailbox_connected"])
+
     def test_password_account_cannot_run_summarizer_until_mailbox_is_connected(self) -> None:
         client = self.signup("needs-mailbox@example.com")
         whitelist_response = client.post("/whitelist", json={"contacts": ["sender@example.com"]})
@@ -300,6 +375,26 @@ class SecurityRegressionTests(unittest.TestCase):
         result = dashboard_api.execute_summarizer_run("needs_mailbox_example_com", 7)
         self.assertFalse(result["success"])
         self.assertIn("Mailbox is not connected yet", result["stderr"])
+
+    def test_password_account_cannot_create_schedule_until_mailbox_is_connected(self) -> None:
+        client = self.signup("schedule-needs-mailbox@example.com")
+        response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Mailbox is not connected yet", response.json()["detail"])
+
+    def test_invalid_contact_email_is_rejected(self) -> None:
+        client = self.signup("invalid-contact@example.com")
+        response = client.post("/whitelist", json={"contacts": ["not-an-email"]})
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["detail"], "Incorrect email.")
 
     def test_cross_account_user_id_override_is_blocked(self) -> None:
         alice = self.signup("alice@example.com")
@@ -398,6 +493,7 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def test_report_schedule_ignores_custom_recipient_email(self) -> None:
         client = self.signup("schedule-owner@example.com")
+        self.connect_standard_mailbox(client, "schedule-owner@example.com")
         response = client.post(
             "/report-schedules",
             json={
@@ -549,6 +645,7 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def test_scheduled_report_only_sends_summaries_from_current_run(self) -> None:
         client = self.signup("scheduled-run@example.com")
+        self.connect_standard_mailbox(client, "scheduled-run@example.com")
         user_id = "scheduled_run_example_com"
         contact = "sender@example.com"
         contacts_response = client.post("/whitelist", json={"contacts": [contact]})
@@ -605,6 +702,7 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def test_scheduled_report_does_not_send_when_run_has_no_new_summaries(self) -> None:
         client = self.signup("scheduled-empty@example.com")
+        self.connect_standard_mailbox(client, "scheduled-empty@example.com")
         contacts_response = client.post("/whitelist", json={"contacts": ["sender@example.com"]})
         self.assertEqual(contacts_response.status_code, 200, contacts_response.text)
         schedule_response = client.post(
@@ -628,8 +726,37 @@ class SecurityRegressionTests(unittest.TestCase):
 
         send_mock.assert_not_called()
 
+    def test_scheduled_report_with_no_contacts_skips_run_and_advances_schedule(self) -> None:
+        client = self.signup("scheduled-no-contacts@example.com")
+        self.connect_standard_mailbox(client, "scheduled-no-contacts@example.com")
+        schedule_response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.text)
+        schedule_id = schedule_response.json()["schedule"]["schedule_id"]
+
+        with patch.object(dashboard_api, "execute_summarizer_run") as run_mock, patch.object(
+            dashboard_api, "send_combined_report_via_smtp"
+        ) as send_mock:
+            dashboard_api.process_due_schedule(schedule_id)
+
+        run_mock.assert_not_called()
+        send_mock.assert_not_called()
+        schedules_response = client.get("/report-schedules")
+        self.assertEqual(schedules_response.status_code, 200, schedules_response.text)
+        schedule = schedules_response.json()["schedules"][0]
+        self.assertTrue(schedule["last_run_at"])
+        self.assertTrue(schedule["next_run_at"])
+
     def test_account_deletion_removes_account_scoped_database_rows_and_files(self) -> None:
         client = self.signup("delete@example.com")
+        self.connect_standard_mailbox(client, "delete@example.com")
         user_id = "delete_example_com"
         client.post("/bug-reports", json={"user_id": user_id, "title": "Bug", "description": "Details"})
         client.post(

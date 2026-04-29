@@ -122,10 +122,10 @@
       .section h2 {
         margin: 0;
         font-size: 14px;
-        font-weight: 700;
+        font-weight: 900;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: var(--muted);
+        color: #111111;
       }
 
       .card {
@@ -140,6 +140,8 @@
       .top-settings-card {
         min-height: 0;
         align-content: start;
+        padding: 14px 18px;
+        gap: 4px;
       }
 
       .field-grid {
@@ -427,7 +429,12 @@
 
       .profile-summary strong {
         display: block;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
+      }
+
+      #profileNameDisplay {
+        display: block;
+        line-height: 1.15;
       }
 
       .modal-shell[hidden] {
@@ -700,23 +707,22 @@
       </section>
 
       <section class="section">
-        <h2>Report Email Mode</h2>
+        <h2>Scheduled Summaries</h2>
         <div class="card">
           <p class="inline-note">
             Choose what Discere includes in report emails sent to your connected account email.
           </p>
           <div class="row" style="align-items: center; gap: 14px;">
             <div>
-              <label style="display:block; font-weight:600; margin-bottom:10px;">Email report contents</label>
-              <div class="segmented-toggle" role="group" aria-label="Report Email Mode">
+              <label style="display:block; font-weight:600; margin-bottom:10px;">Scheduled summary contents</label>
+              <div class="segmented-toggle" role="group" aria-label="Scheduled Summaries">
                 <button id="reportModeFullButton" type="button" class="active" aria-pressed="true">Full Report</button>
-                <button id="reportModePrivateButton" type="button" aria-pressed="false">Private Notification</button>
+                <button id="reportModePrivateButton" type="button" aria-pressed="false">Email Notification</button>
               </div>
             </div>
-            <button id="saveReportModeButton" type="button">Save</button>
           </div>
           <p class="inline-note" style="margin-top:14px;">
-            Private Notification sends a simple “your report is ready” email and keeps the summary content inside Discere.
+            Email Notification sends a simple “your report is ready” email and keeps the summary content inside Discere.
           </p>
           <div id="reportModeStatus" class="status"></div>
         </div>
@@ -877,7 +883,7 @@
               <summary>What are the main privacy and security risks?</summary>
               <div class="faq-answer">
                 <p>The main risks are Discere storing email-derived summary data, relevant email text being sent to OpenAI through the OpenAI API for summarization, and report emails being delivered from Discere to your connected account email.</p>
-                <p>If you do not want summary content included in report emails, use <strong>Private Notification</strong> under Report Email Mode.</p>
+                <p>If you do not want summary content included in report emails, use <strong>Email Notification</strong> under Scheduled Summaries.</p>
                 <p>This is reasonable for many normal workflows, but highly confidential legal, finance, board, or executive use should be evaluated more carefully.</p>
               </div>
             </details>
@@ -938,6 +944,7 @@
           <div class="row" style="justify-content:flex-end;">
             <button id="deleteAccountButton" type="button" class="secondary">Delete Account</button>
           </div>
+          <div id="deleteAccountStatus" class="status"></div>
         </div>
       </section>
 
@@ -987,6 +994,20 @@
           </div>
         </div>
       </div>
+
+      <div id="deleteAccountModal" class="modal-shell" hidden>
+        <div class="modal-card">
+          <div>
+            <h3>Delete Account?</h3>
+            <p>This permanently deletes your account, saved summaries, contacts, settings, schedules, source email records, attachments, analytics rows, and bug reports.</p>
+            <p>This cannot be undone.</p>
+          </div>
+          <div class="modal-actions">
+            <button id="cancelDeleteAccountButton" type="button" class="secondary">Cancel</button>
+            <button id="confirmDeleteAccountButton" type="button">Delete Account</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
@@ -1011,7 +1032,6 @@
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
       const reportModeFullButton = document.getElementById("reportModeFullButton");
       const reportModePrivateButton = document.getElementById("reportModePrivateButton");
-      const saveReportModeButton = document.getElementById("saveReportModeButton");
       const reportModeStatus = document.getElementById("reportModeStatus");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
@@ -1033,13 +1053,17 @@
       const bugReportStatus = document.getElementById("bugReportStatus");
       const logoutButton = document.getElementById("logoutButton");
       const deleteAccountButton = document.getElementById("deleteAccountButton");
+      const deleteAccountStatus = document.getElementById("deleteAccountStatus");
+      const deleteAccountModal = document.getElementById("deleteAccountModal");
+      const cancelDeleteAccountButton = document.getElementById("cancelDeleteAccountButton");
+      const confirmDeleteAccountButton = document.getElementById("confirmDeleteAccountButton");
       const subscriptionStatusTitle = document.getElementById("subscriptionStatusTitle");
       const subscriptionStatusBadge = document.getElementById("subscriptionStatusBadge");
       const subscriptionStatusMessage = document.getElementById("subscriptionStatusMessage");
       const subscriptionPriceLine = document.getElementById("subscriptionPriceLine");
       const manageSubscriptionButton = document.getElementById("manageSubscriptionButton");
       const subscriptionStatus = document.getElementById("subscriptionStatus");
-      let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+      let currentTheme = localStorage.getItem("emailDashboardTheme") || "white";
       let attachmentAiEnabled = false;
       let reportEmailMode = "full_report";
 
@@ -1275,6 +1299,17 @@
         mailboxModal.hidden = true;
       }
 
+      function openDeleteAccountModal() {
+        deleteAccountStatus.textContent = "";
+        confirmDeleteAccountButton.disabled = false;
+        deleteAccountModal.hidden = false;
+      }
+
+      function closeDeleteAccountModal() {
+        deleteAccountModal.hidden = true;
+        confirmDeleteAccountButton.disabled = false;
+      }
+
       function syncMailboxConnectionUI() {
         const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
         mailboxSection.hidden = !isPasswordBased;
@@ -1318,6 +1353,9 @@
           const data = await response.json();
           if (!response.ok) return;
           setMailboxConnectionStatus(Boolean(data.connected));
+          if (currentProfile.settings) {
+            currentProfile.settings.mailbox_connected = Boolean(data.connected);
+          }
           syncMailboxConnectionUI();
         } catch (error) {
           setMailboxConnectionStatus(false);
@@ -1390,7 +1428,8 @@
 
       async function saveReportModeSetting() {
         if (!currentProfile) return;
-        saveReportModeButton.disabled = true;
+        reportModeFullButton.disabled = true;
+        reportModePrivateButton.disabled = true;
         reportModeStatus.textContent = "Saving setting...";
         try {
           const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
@@ -1412,12 +1451,13 @@
             : "full_report";
           syncReportModeToggle();
           reportModeStatus.textContent = reportEmailMode === "private_notification"
-            ? "Private Notification mode saved."
+            ? "Email Notification mode saved."
             : "Full Report mode saved.";
         } catch (error) {
           reportModeStatus.textContent = `Failed to save report mode: ${error.message}`;
         } finally {
-          saveReportModeButton.disabled = false;
+          reportModeFullButton.disabled = false;
+          reportModePrivateButton.disabled = false;
         }
       }
 
@@ -1598,6 +1638,38 @@
         }
       }
 
+      async function deleteAccount() {
+        if (!currentProfile) {
+          deleteAccountStatus.textContent = "Account information is still loading. Try again in a moment.";
+          return;
+        }
+
+        confirmDeleteAccountButton.disabled = true;
+        deleteAccountButton.disabled = true;
+        deleteAccountStatus.textContent = "Deleting account...";
+        try {
+          const response = await fetch("/auth/account", { method: "DELETE" });
+          const data = await response.json();
+          if (!response.ok) {
+            deleteAccountStatus.textContent = data.detail || "Failed to delete account.";
+            confirmDeleteAccountButton.disabled = false;
+            deleteAccountButton.disabled = false;
+            return;
+          }
+          localStorage.removeItem("oauth:lastProvider");
+          localStorage.setItem("oauth:forceAccountPicker", "true");
+          sessionStorage.removeItem("oauth:lastEmail");
+          sessionStorage.removeItem("oauth:attemptProvider");
+          sessionStorage.removeItem("oauth:attemptMode");
+          sessionStorage.removeItem("oauth:attemptEmail");
+          window.location.href = "/login";
+        } catch (error) {
+          deleteAccountStatus.textContent = `Failed to delete account: ${error.message}`;
+          confirmDeleteAccountButton.disabled = false;
+          deleteAccountButton.disabled = false;
+        }
+      }
+
       themeChips.forEach((chip) => {
         chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
       });
@@ -1625,7 +1697,6 @@
         syncReportModeToggle();
         saveReportModeSetting();
       });
-      saveReportModeButton.addEventListener("click", saveReportModeSetting);
       manageSubscriptionButton.addEventListener("click", manageSubscription);
       submitBugReportButton.addEventListener("click", submitBugReport);
       changeMailboxButton.addEventListener("click", openMailboxModal);
@@ -1644,27 +1715,12 @@
           window.location.href = "/login";
         }
       });
-      deleteAccountButton.addEventListener("click", async () => {
-        if (!currentProfile) return;
-        if (!window.confirm("Are you sure you want to delete your account?")) return;
-        const secondWarning = window.confirm(
-          "This permanently deletes your account, saved summaries, contacts, and settings. This cannot be undone."
-        );
-        if (!secondWarning) return;
-
-        deleteAccountButton.disabled = true;
-        try {
-          const response = await fetch("/auth/account", { method: "DELETE" });
-          const data = await response.json();
-          if (!response.ok) {
-            profileNameStatus.textContent = data.detail || "Failed to delete account.";
-            deleteAccountButton.disabled = false;
-            return;
-          }
-          window.location.href = "/login";
-        } catch (error) {
-          profileNameStatus.textContent = `Failed to delete account: ${error.message}`;
-          deleteAccountButton.disabled = false;
+      deleteAccountButton.addEventListener("click", openDeleteAccountModal);
+      cancelDeleteAccountButton.addEventListener("click", closeDeleteAccountModal);
+      confirmDeleteAccountButton.addEventListener("click", deleteAccount);
+      deleteAccountModal.addEventListener("click", (event) => {
+        if (event.target === deleteAccountModal) {
+          closeDeleteAccountModal();
         }
       });
       editProfileNameButton.addEventListener("click", () => {

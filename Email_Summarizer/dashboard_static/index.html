@@ -535,6 +535,10 @@
         background: linear-gradient(180deg, rgba(233, 231, 224, 0.98), rgba(225, 222, 214, 0.98));
       }
 
+      .summary-card.is-read .summary-unread {
+        opacity: 0;
+      }
+
       .summary-card-main {
         flex: 1;
         text-align: left;
@@ -551,7 +555,10 @@
       }
 
       .summary-unread {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
         margin-bottom: 8px;
         padding: 6px 10px;
         border-radius: 999px;
@@ -604,6 +611,18 @@
         display: grid;
         gap: 20px;
         align-content: start;
+      }
+
+      .summary-view-pane {
+        min-width: 0;
+        max-width: 100%;
+        display: grid;
+        gap: 20px;
+        align-content: start;
+      }
+
+      .summary-view-pane[hidden] {
+        display: none;
       }
 
       .detail-section {
@@ -1514,11 +1533,7 @@
 
       body {
         min-height: 100vh;
-        background:
-          radial-gradient(circle at 12% 10%, rgba(29, 108, 79, 0.08), transparent 22%),
-          radial-gradient(circle at 84% 8%, rgba(183, 140, 255, 0.10), transparent 20%),
-          radial-gradient(circle at 80% 84%, rgba(0, 0, 0, 0.05), transparent 24%),
-          linear-gradient(180deg, #f6f5f1 0%, #eceae2 100%);
+        background: var(--bg);
       }
 
       .page {
@@ -2448,8 +2463,11 @@
       let currentDisplayedSummaryTitle = "";
       let currentDisplayedSummaryMarkdown = "";
       let currentDisplayedSummaryHtml = "";
+      let currentDisplayedThreadHtml = "";
       let currentDisplayedThreadAvailable = false;
       let isViewingFullThread = false;
+      const summaryDetailCache = new Map();
+      const summaryThreadCache = new Map();
       let selectedSummaryIds = [];
       let currentSummaries = [];
       let allSummaries = [];
@@ -2457,7 +2475,7 @@
       let contactsLoadedForUser = null;
       let currentContacts = [];
       let currentContactProfiles = {};
-      let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
+      let currentTheme = localStorage.getItem("emailDashboardTheme") || "white";
       let summaryViewRequestToken = 0;
       let showingDoneSummaries = false;
       let currentRunJobId = "";
@@ -2496,8 +2514,37 @@
         return Boolean(String(summary?.done_at || "").trim());
       }
 
+      function onboardingActionKey(action) {
+        return `emailDashboardOnboarding:${currentUserId || "anonymous"}:${action}`;
+      }
+
+      function markOnboardingActionComplete(action) {
+        if (!currentUserId || !action) return;
+        localStorage.setItem(onboardingActionKey(action), "true");
+      }
+
+      function hasOnboardingAction(action) {
+        if (!currentUserId || !action) return false;
+        return localStorage.getItem(onboardingActionKey(action)) === "true";
+      }
+
       function getUnreadSummaryCount() {
         return allSummaries.filter((summary) => !isSummaryRead(summary) && !isSummaryDone(summary)).length;
+      }
+
+      function summaryCacheKey(summaryId) {
+        return `${currentUserId || ""}:${summaryId || ""}`;
+      }
+
+      function clearSummaryDetailCaches() {
+        summaryDetailCache.clear();
+        summaryThreadCache.clear();
+      }
+
+      function removeSummaryDetailCache(summaryId) {
+        const key = summaryCacheKey(summaryId);
+        summaryDetailCache.delete(key);
+        summaryThreadCache.delete(key);
       }
 
       function updateSummariesHeading(unreadCount) {
@@ -3029,6 +3076,22 @@
       async function saveSchedule(payload = null, silentReload = false) {
         if (!requireSignedIn()) return false;
         if (!(await requireSubscriptionAccess())) return false;
+        if (!payload && !silentReload) {
+          await fetchContacts(true);
+          if (!Array.isArray(currentContacts) || currentContacts.length === 0) {
+            const shouldContinue = await openAppModal({
+              title: "No Contacts Added",
+              message: "You can save this schedule, but scheduled summaries will not send anything until you add at least one contact.",
+              confirmLabel: "Continue Anyway",
+              cancelLabel: "Add Contacts",
+            });
+            if (!shouldContinue) {
+              scheduleModal.hidden = true;
+              await loadWhitelist(true);
+              return false;
+            }
+          }
+        }
         const wasEditing = Boolean(editingScheduleId && !payload);
         scheduleSaveButton.disabled = true;
         scheduleStatus.textContent = editingScheduleId && !silentReload ? "Saving changes..." : "Creating schedule...";
@@ -3053,6 +3116,7 @@
             return false;
           }
           localStorage.setItem("schedulePreferredTimezone", String(data.schedule?.timezone || body.timezone || getLocalTimezone()));
+          markOnboardingActionComplete("scheduledReport");
           refreshCurrentTime();
           scheduleStatus.textContent = editingScheduleId && !silentReload ? "Schedule updated." : "Schedule created.";
           await loadSchedules();
@@ -3347,33 +3411,40 @@
       }
 
       function buildHowToActionsModalHtml() {
+        const hasDoneSummary = hasOnboardingAction("doneSummary") || (Array.isArray(allSummaries) && allSummaries.some((summary) => isSummaryDone(summary)));
+        const hasDeletedSummary = hasOnboardingAction("deletedSummary");
+        const hasEmailedSummary = hasOnboardingAction("emailedSummary");
+        const hasScheduledReport = hasOnboardingAction("scheduledReport") || (Array.isArray(scheduleItems) && scheduleItems.length > 0);
+        const hasAskedAi = hasOnboardingAction("askedAi") || chatConversation.some((entry) => entry.role === "assistant");
         const checklist = [
           {
-            complete: false,
+            complete: hasDoneSummary,
             title: "Mark summaries as done",
             copy: "When you finish handling a summary, select it and use the check button. Done summaries stay out of your way.",
           },
           {
-            complete: false,
+            complete: hasDeletedSummary,
             title: "Delete only when you want it removed",
             copy: "Deleting removes the summary. If that email still matches later, Discere can find it again.",
           },
           {
-            complete: false,
+            complete: hasEmailedSummary,
             title: "Email selected summaries",
             copy: "Select one or more summaries and use the email button to send yourself a clean report.",
           },
           {
-            complete: false,
+            complete: hasScheduledReport,
             title: "Schedule routine reports",
             copy: "Use the clock button to have Discere check your contacts and email you summaries on a schedule.",
           },
           {
-            complete: false,
+            complete: hasAskedAi,
             title: "Ask follow-up questions",
             copy: "Open AI Assistant to ask about deadlines, requests, people, attachments, or how Discere works.",
           },
         ];
+        const completedCount = checklist.filter((item) => item.complete).length;
+        const progressPercent = Math.round((completedCount / checklist.length) * 100);
         return `
           <div class="onboarding-shell">
             <div class="onboarding-intro">
@@ -3384,11 +3455,11 @@
               </div>
               <div class="onboarding-progress">
                 <div class="onboarding-progress-label">
-                  <span>Guide</span>
-                  <span>2/2</span>
+                  <span>Progress</span>
+                  <span>${completedCount}/${checklist.length}</span>
                 </div>
                 <div class="onboarding-progress-track">
-                  <div class="onboarding-progress-fill" style="--onboarding-progress:100%"></div>
+                  <div class="onboarding-progress-fill" style="--onboarding-progress:${progressPercent}%"></div>
                 </div>
               </div>
             </div>
@@ -3417,6 +3488,7 @@
             if (!next) break;
             showFirstPage = false;
           } else {
+            await loadSchedules();
             const result = await openAppModal({
               title: "Getting Started",
               messageHtml: buildHowToActionsModalHtml(),
@@ -3529,6 +3601,15 @@
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
       }
 
+      async function showInvalidContactEmailModal() {
+        await openAppModal({
+          title: "Invalid Email",
+          message: "Enter a valid email address for the contact.",
+          confirmLabel: "OK",
+          cancelLabel: "Close",
+        });
+      }
+
       function getProfileNamePromptStateKey(userId) {
         return `emailDashboardNamePromptState:${String(userId || "").trim()}`;
       }
@@ -3610,9 +3691,11 @@
           allSummaries = [];
           currentDisplayedSummaryMarkdown = "";
           currentDisplayedSummaryHtml = "";
+          currentDisplayedThreadHtml = "";
           currentDisplayedSummaryTitle = "";
           currentDisplayedThreadAvailable = false;
           isViewingFullThread = false;
+          clearSummaryDetailCaches();
           syncViewThreadButton();
           contactsLoadedForUser = null;
           currentContacts = [];
@@ -3657,6 +3740,13 @@
         selectedSummaryIds = [];
         currentSummaries = [];
         allSummaries = [];
+        currentDisplayedSummaryTitle = "";
+        currentDisplayedSummaryMarkdown = "";
+        currentDisplayedSummaryHtml = "";
+        currentDisplayedThreadHtml = "";
+        currentDisplayedThreadAvailable = false;
+        isViewingFullThread = false;
+        clearSummaryDetailCaches();
         showingDoneSummaries = false;
         contactsLoadedForUser = null;
         currentContacts = [];
@@ -4031,7 +4121,7 @@
           card.innerHTML = `
             <input class="summary-check" type="checkbox" aria-label="Select summary" />
             <div class="summary-card-main">
-              ${!showingDoneSummaries && isUnread ? '<div class="summary-unread">New</div>' : ''}
+              ${!showingDoneSummaries ? '<div class="summary-unread">New</div>' : ''}
               <h3>${escapeHtml(formatSummaryCardTitle(summary))}</h3>
               <div class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</div>
             </div>
@@ -4057,8 +4147,6 @@
             currentSummaryId = summary.summary_id;
             const justMarkedRead = markSummaryAsRead(summary.summary_id);
             if (justMarkedRead) {
-              const badge = card.querySelector(".summary-unread");
-              if (badge) badge.remove();
               card.classList.add("is-read");
             }
             syncSummaryCheckboxes();
@@ -4074,6 +4162,7 @@
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
         currentDisplayedSummaryHtml = "";
+        currentDisplayedThreadHtml = "";
         currentDisplayedThreadAvailable = false;
         isViewingFullThread = false;
         syncViewThreadButton();
@@ -4090,6 +4179,7 @@
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
         currentDisplayedSummaryHtml = "";
+        currentDisplayedThreadHtml = "";
         currentDisplayedThreadAvailable = false;
         isViewingFullThread = false;
         syncViewThreadButton();
@@ -4163,11 +4253,11 @@
         if (!requireSignedIn()) return;
         const contact = whitelistTextarea.value.trim().toLowerCase();
         if (!contact) {
-          setRunStatus("Enter a contact email first.");
+          await showInvalidContactEmailModal();
           return;
         }
         if (!looksLikeEmail(contact)) {
-          setRunStatus("Incorrect email.");
+          await showInvalidContactEmailModal();
           return;
         }
         const contacts = currentContacts.includes(contact)
@@ -4260,9 +4350,12 @@
         if (!result?.confirmed) return;
 
         const newContact = String(result.value || "").trim().toLowerCase();
-        if (!newContact) return;
+        if (!newContact) {
+          await showInvalidContactEmailModal();
+          return;
+        }
         if (!looksLikeEmail(newContact)) {
-          setRunStatus("Incorrect email.");
+          await showInvalidContactEmailModal();
           return;
         }
         if (currentContacts.includes(newContact)) {
@@ -4463,11 +4556,14 @@
           }
 
           setRunStatus(`Deleted summary. Removed ${data.removed_email_ids?.length || 0} linked email record(s).`);
+          markOnboardingActionComplete("deletedSummary");
+          removeSummaryDetailCache(summaryId);
           if (currentSummaryId === summaryId) {
             currentSummaryId = null;
             currentDisplayedSummaryTitle = "";
             currentDisplayedSummaryMarkdown = "";
             currentDisplayedSummaryHtml = "";
+            currentDisplayedThreadHtml = "";
             currentDisplayedThreadAvailable = false;
             isViewingFullThread = false;
             syncViewThreadButton();
@@ -4507,11 +4603,13 @@
             })
           );
           removedCount = results.filter((result) => result.ok).length;
+          results.filter((result) => result.ok).forEach((result) => removeSummaryDetailCache(result.summaryId));
           if (results.some((result) => result.summaryId === currentSummaryId && result.ok)) {
             currentSummaryId = null;
             currentDisplayedSummaryTitle = "";
             currentDisplayedSummaryMarkdown = "";
             currentDisplayedSummaryHtml = "";
+            currentDisplayedThreadHtml = "";
             currentDisplayedThreadAvailable = false;
             isViewingFullThread = false;
             syncViewThreadButton();
@@ -4526,6 +4624,9 @@
         }
 
         setRunStatus(`Deleted ${removedCount} selected summary item(s).`);
+        if (removedCount > 0) {
+          markOnboardingActionComplete("deletedSummary");
+        }
         selectedSummaryIds = [];
         await loadSummaries();
       }
@@ -4605,6 +4706,7 @@
             setRunStatus(extractApiError(data, "Failed to send email report."));
             return;
           }
+          markOnboardingActionComplete("emailedSummary");
           setRunStatus(`Sent email report to ${data.recipient}.`);
         } catch (error) {
           setRunStatus(`Failed to send report: ${friendlyApiMessage(error.message)}`);
@@ -4646,6 +4748,7 @@
           }
 
           appendChatMessage("assistant", data.answer || "No answer returned.", data.attachment_matches || []);
+          markOnboardingActionComplete("askedAi");
           const attachmentNote =
             data.attachment_matches && data.attachment_matches.length
               ? ` ${data.attachment_matches.length} matching attachment(s) linked below.`
@@ -4677,23 +4780,127 @@
         `;
       }
 
+      function getSummaryPane() {
+        return summaryDetail.querySelector("[data-summary-pane]");
+      }
+
+      function getThreadPane() {
+        return summaryDetail.querySelector("[data-thread-pane]");
+      }
+
+      function setSummaryDetailPanes(summaryHtml, threadHtml = "") {
+        summaryDetail.className = "";
+        summaryDetail.innerHTML = `
+          <div class="summary-view-pane" data-summary-pane>${summaryHtml || ""}</div>
+          <div class="summary-view-pane" data-thread-pane hidden>${threadHtml || ""}</div>
+        `;
+        summaryDetail.removeAttribute("aria-busy");
+      }
+
+      function updateCurrentThreadPane(threadHtml) {
+        const threadPane = getThreadPane();
+        if (threadPane) {
+          threadPane.innerHTML = threadHtml || "";
+        }
+      }
+
       function showCurrentSummaryView() {
         if (!currentDisplayedSummaryHtml) return false;
         detailStatus.textContent = "";
-        summaryDetail.className = "";
-        summaryDetail.innerHTML = currentDisplayedSummaryHtml;
+        if (!getSummaryPane()) {
+          setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
+        }
+        const summaryPane = getSummaryPane();
+        const threadPane = getThreadPane();
+        if (summaryPane) summaryPane.hidden = false;
+        if (threadPane) threadPane.hidden = true;
         summaryDetail.removeAttribute("aria-busy");
         isViewingFullThread = false;
         syncViewThreadButton();
         return true;
       }
 
+      function showCurrentThreadView() {
+        if (!currentDisplayedThreadHtml) return false;
+        detailStatus.textContent = "";
+        if (!getThreadPane()) {
+          setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
+        }
+        updateCurrentThreadPane(currentDisplayedThreadHtml);
+        const summaryPane = getSummaryPane();
+        const threadPane = getThreadPane();
+        if (summaryPane) summaryPane.hidden = true;
+        if (threadPane) threadPane.hidden = false;
+        summaryDetail.removeAttribute("aria-busy");
+        isViewingFullThread = true;
+        syncViewThreadButton();
+        return true;
+      }
+
+      async function loadSummaryThreadHtml(summaryId) {
+        const cacheKey = summaryCacheKey(summaryId);
+        const cached = summaryThreadCache.get(cacheKey);
+        if (cached?.html) return cached.html;
+        if (cached?.promise) return cached.promise;
+
+        const promise = (async () => {
+          const response = await fetch(
+            `/summaries/${encodeURIComponent(summaryId)}/thread?user_id=${encodeURIComponent(currentUserId)}`
+          );
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(extractApiError(data, "Failed to load full thread."));
+          }
+          return renderThreadView(data);
+        })();
+
+        summaryThreadCache.set(cacheKey, { promise });
+        try {
+          const html = await promise;
+          summaryThreadCache.set(cacheKey, { html });
+          return html;
+        } catch (error) {
+          summaryThreadCache.delete(cacheKey);
+          throw error;
+        }
+      }
+
+      function prefetchSummaryThread(summaryId, requestToken) {
+        if (!currentDisplayedThreadAvailable || !summaryId) return;
+        loadSummaryThreadHtml(summaryId)
+          .then((threadHtml) => {
+            if (requestToken !== summaryViewRequestToken || currentSummaryId !== summaryId) return;
+            currentDisplayedThreadHtml = threadHtml;
+            updateCurrentThreadPane(threadHtml);
+          })
+          .catch(() => {});
+      }
+
       async function loadSummaryDetail(summaryId, options = {}) {
         const { preserveSelection = false } = options;
         const requestToken = ++summaryViewRequestToken;
+        const cacheKey = summaryCacheKey(summaryId);
         currentSummaryId = summaryId;
         isViewingFullThread = false;
         syncViewThreadButton();
+
+        const cached = summaryDetailCache.get(cacheKey);
+        if (cached) {
+          currentDisplayedSummaryTitle = cached.title;
+          currentDisplayedSummaryMarkdown = cached.markdown;
+          currentDisplayedSummaryHtml = cached.html;
+          currentDisplayedThreadAvailable = cached.threadAvailable;
+          currentDisplayedThreadHtml = summaryThreadCache.get(cacheKey)?.html || "";
+          detailStatus.textContent = "";
+          sendSummaryEmailButton.hidden = false;
+          viewThreadButton.hidden = !currentDisplayedThreadAvailable;
+          setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
+          syncViewThreadButton();
+          syncSummaryCheckboxes();
+          prefetchSummaryThread(summaryId, requestToken);
+          return;
+        }
+
         detailStatus.textContent = "Loading summary...";
         summaryDetail.setAttribute("aria-busy", "true");
 
@@ -4712,6 +4919,7 @@
           currentDisplayedSummaryTitle = "";
           currentDisplayedSummaryMarkdown = "";
           currentDisplayedSummaryHtml = "";
+          currentDisplayedThreadHtml = "";
           currentDisplayedThreadAvailable = false;
           isViewingFullThread = false;
           syncViewThreadButton();
@@ -4728,13 +4936,19 @@
           buildMarkdownFromSummary(summary);
         currentDisplayedThreadAvailable = Array.isArray(summary.source_email_file_ids) && summary.source_email_file_ids.length > 0;
         currentDisplayedSummaryHtml = buildSummaryDetailHtml(summary);
+        currentDisplayedThreadHtml = summaryThreadCache.get(cacheKey)?.html || "";
+        summaryDetailCache.set(cacheKey, {
+          title: currentDisplayedSummaryTitle,
+          markdown: currentDisplayedSummaryMarkdown,
+          html: currentDisplayedSummaryHtml,
+          threadAvailable: currentDisplayedThreadAvailable,
+        });
         isViewingFullThread = false;
         syncViewThreadButton();
         sendSummaryEmailButton.hidden = false;
         viewThreadButton.hidden = !currentDisplayedThreadAvailable;
-        summaryDetail.className = "";
-        summaryDetail.innerHTML = currentDisplayedSummaryHtml;
-        summaryDetail.removeAttribute("aria-busy");
+        setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
+        prefetchSummaryThread(summaryId, requestToken);
 
         syncSummaryCheckboxes();
       }
@@ -4787,6 +5001,7 @@
             </div>
             ${renderMarkdownSummary(data.combined_markdown || "")}
           `;
+          currentDisplayedThreadHtml = "";
           currentDisplayedThreadAvailable = false;
           detailStatus.textContent = "";
           summaryDetail.className = "";
@@ -4868,6 +5083,7 @@
 
           currentDisplayedSummaryTitle = data.title || currentDisplayedSummaryTitle || "Refined Summary";
           currentDisplayedSummaryMarkdown = data.refined_markdown || "";
+          currentDisplayedThreadHtml = "";
           currentDisplayedThreadAvailable = false;
           currentDisplayedSummaryHtml = `
             <div class="detail-section">
@@ -4908,32 +5124,23 @@
           return;
         }
 
+        if (showCurrentThreadView()) {
+          return;
+        }
+
         viewThreadButton.disabled = true;
         detailStatus.textContent = "Loading full thread...";
         summaryDetail.setAttribute("aria-busy", "true");
 
         try {
-          const response = await fetch(
-            `/summaries/${encodeURIComponent(currentSummaryId)}/thread?user_id=${encodeURIComponent(currentUserId)}`
-          );
-          const data = await response.json();
-          if (!response.ok) {
-            detailStatus.textContent = "Failed to load full thread.";
-            summaryDetail.textContent = data.detail || "Unknown error.";
-            summaryDetail.removeAttribute("aria-busy");
-            return;
-          }
-
-          detailStatus.textContent = "";
-          summaryDetail.className = "";
-          summaryDetail.innerHTML = renderThreadView(data);
-          isViewingFullThread = true;
-          syncViewThreadButton();
-          summaryDetail.removeAttribute("aria-busy");
+          currentDisplayedThreadHtml = await loadSummaryThreadHtml(currentSummaryId);
+          showCurrentThreadView();
         } catch (error) {
+          if (!showCurrentSummaryView()) {
+            summaryDetail.textContent = friendlyApiMessage(error.message);
+            summaryDetail.removeAttribute("aria-busy");
+          }
           detailStatus.textContent = "Failed to load full thread.";
-          summaryDetail.textContent = error.message;
-          summaryDetail.removeAttribute("aria-busy");
         } finally {
           viewThreadButton.disabled = false;
         }
@@ -5035,6 +5242,9 @@
               ? `Marked ${selectedSummaryIds.length} summary item(s) as done.`
               : `Moved ${selectedSummaryIds.length} summary item(s) back to active.`
           );
+          if (targetDoneState) {
+            markOnboardingActionComplete("doneSummary");
+          }
         } catch (error) {
           setRunStatus(error.message || "Failed to update summary state.");
           return;
@@ -5074,6 +5284,7 @@
             setRunStatus(extractApiError(data, "Failed to send summary email."));
             return;
           }
+          markOnboardingActionComplete("emailedSummary");
           setRunStatus(`Sent summary to ${data.recipient}.`);
         } catch (error) {
           setRunStatus(`Failed to send summary email: ${friendlyApiMessage(error.message)}`);
