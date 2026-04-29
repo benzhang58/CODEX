@@ -9,8 +9,8 @@
     <style>
       :root {
         --bg: #f3f3f0;
-        --panel: rgba(255, 255, 255, 0.88);
-        --panel-strong: rgba(255, 255, 255, 0.96);
+        --panel: #ffffff;
+        --panel-strong: #ffffff;
         --border: rgba(17, 17, 17, 0.1);
         --text: #101010;
         --muted: #6e6e68;
@@ -30,10 +30,8 @@
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 26%),
-          radial-gradient(circle at top right, rgba(0, 0, 0, 0.025), transparent 22%),
-          linear-gradient(180deg, #fbfbf9 0%, var(--bg) 100%);
+        background: var(--bg);
+        min-height: 100vh;
       }
 
       .page {
@@ -101,7 +99,7 @@
       }
 
       .secondary {
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
         color: var(--text);
       }
 
@@ -133,7 +131,7 @@
       .card {
         border: 1px solid var(--border);
         border-radius: 20px;
-        background: rgba(255, 255, 255, 0.88);
+        background: #ffffff;
         padding: 16px 18px;
         display: grid;
         gap: 12px;
@@ -166,7 +164,7 @@
         padding: 12px 14px;
         border-radius: 14px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.95);
+        background: #ffffff;
         color: var(--text);
       }
 
@@ -184,7 +182,7 @@
       .faq-item {
         border: 1px solid var(--border);
         border-radius: 18px;
-        background: rgba(255, 255, 255, 0.92);
+        background: #ffffff;
         padding: 0 18px;
       }
 
@@ -270,7 +268,7 @@
         padding: 10px;
         border-radius: 14px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
         color: var(--text);
         font-size: 13px;
         font-weight: 600;
@@ -411,7 +409,7 @@
         padding: 14px 16px;
         border: 1px solid var(--border);
         border-radius: 14px;
-        background: rgba(255, 255, 255, 0.86);
+        background: #ffffff;
       }
 
       .mailbox-summary strong {
@@ -427,7 +425,7 @@
         padding: 14px 16px;
         border: 1px solid var(--border);
         border-radius: 14px;
-        background: rgba(255, 255, 255, 0.86);
+        background: #ffffff;
       }
 
       .profile-summary strong {
@@ -454,7 +452,7 @@
         width: min(100%, 460px);
         border: 1px solid var(--border);
         border-radius: 22px;
-        background: rgba(255, 255, 255, 0.96);
+        background: #ffffff;
         box-shadow: 0 30px 80px rgba(15, 15, 15, 0.18);
         padding: 18px;
         display: grid;
@@ -480,7 +478,7 @@
         padding: 6px;
         border: 1px solid var(--border);
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
       }
 
       .segmented-toggle button {
@@ -507,7 +505,7 @@
         padding: 10px 12px;
         border-radius: 14px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.86);
+        background: #ffffff;
         font-size: 14px;
         font-weight: 700;
         width: fit-content;
@@ -546,7 +544,7 @@
         padding: 12px 14px;
         border: 1px solid var(--border);
         border-radius: 14px;
-        background: rgba(255, 255, 255, 0.86);
+        background: #ffffff;
       }
 
       .preference-item span {
@@ -705,6 +703,29 @@
         </div>
       </section>
 
+      <section class="section">
+        <h2>Report Email Mode</h2>
+        <div class="card">
+          <p class="inline-note">
+            Choose what Discere includes in report emails sent to your connected account email.
+          </p>
+          <div class="row" style="align-items: center; gap: 14px;">
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:10px;">Email report contents</label>
+              <div class="segmented-toggle" role="group" aria-label="Report Email Mode">
+                <button id="reportModeFullButton" type="button" class="active" aria-pressed="true">Full Report</button>
+                <button id="reportModePrivateButton" type="button" aria-pressed="false">Private Notification</button>
+              </div>
+            </div>
+            <button id="saveReportModeButton" type="button">Save</button>
+          </div>
+          <p class="inline-note" style="margin-top:14px;">
+            Private Notification sends a simple “your report is ready” email and keeps the summary content inside Discere.
+          </p>
+          <div id="reportModeStatus" class="status"></div>
+        </div>
+      </section>
+
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
@@ -860,6 +881,7 @@
               <summary>What are the main privacy and security risks?</summary>
               <div class="faq-answer">
                 <p>The main risks are Discere storing email-derived summary data, relevant email text being sent to OpenAI through the OpenAI API for summarization, and report emails being delivered from Discere to your connected account email.</p>
+                <p>If you do not want summary content included in report emails, use <strong>Private Notification</strong> under Report Email Mode.</p>
                 <p>This is reasonable for many normal workflows, but highly confidential legal, finance, board, or executive use should be evaluated more carefully.</p>
               </div>
             </details>
@@ -992,6 +1014,10 @@
       const attachmentAiOnButton = document.getElementById("attachmentAiOnButton");
       const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
+      const reportModeFullButton = document.getElementById("reportModeFullButton");
+      const reportModePrivateButton = document.getElementById("reportModePrivateButton");
+      const saveReportModeButton = document.getElementById("saveReportModeButton");
+      const reportModeStatus = document.getElementById("reportModeStatus");
       const mailboxSection = document.getElementById("mailboxSection");
       const mailboxConnectionStatus = document.getElementById("mailboxConnectionStatus");
       const mailboxConnectionStatusText = document.getElementById("mailboxConnectionStatusText");
@@ -1020,6 +1046,7 @@
       const subscriptionStatus = document.getElementById("subscriptionStatus");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let attachmentAiEnabled = false;
+      let reportEmailMode = "full_report";
 
       function rememberOauthProvider(profile) {
         if (!profile) return;
@@ -1035,6 +1062,14 @@
         attachmentAiOffButton.setAttribute("aria-pressed", String(!attachmentAiEnabled));
         attachmentAiOnButton.classList.toggle("active", attachmentAiEnabled);
         attachmentAiOnButton.setAttribute("aria-pressed", String(attachmentAiEnabled));
+      }
+
+      function syncReportModeToggle() {
+        const isPrivate = reportEmailMode === "private_notification";
+        reportModeFullButton.classList.toggle("active", !isPrivate);
+        reportModeFullButton.setAttribute("aria-pressed", String(!isPrivate));
+        reportModePrivateButton.classList.toggle("active", isPrivate);
+        reportModePrivateButton.setAttribute("aria-pressed", String(isPrivate));
       }
 
       function applyTheme(theme) {
@@ -1313,7 +1348,11 @@
             ? "Microsoft OAuth"
             : "Standard";
         attachmentAiEnabled = Boolean(data.profile.settings?.attachment_ai_enabled);
+        reportEmailMode = data.profile.settings?.report_email_mode === "private_notification"
+          ? "private_notification"
+          : "full_report";
         syncAttachmentAiToggle();
+        syncReportModeToggle();
         syncProfileNameUI();
         renderSubscription(data.profile.subscription);
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
@@ -1349,6 +1388,39 @@
           attachmentAiStatus.textContent = `Failed to save attachment setting: ${error.message}`;
         } finally {
           saveAttachmentAiButton.disabled = false;
+        }
+      }
+
+      async function saveReportModeSetting() {
+        if (!currentProfile) return;
+        saveReportModeButton.disabled = true;
+        reportModeStatus.textContent = "Saving setting...";
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || "",
+              report_email_mode: reportEmailMode,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            reportModeStatus.textContent = data.detail || "Failed to save report mode.";
+            return;
+          }
+          currentProfile = data.profile;
+          reportEmailMode = data.profile.settings?.report_email_mode === "private_notification"
+            ? "private_notification"
+            : "full_report";
+          syncReportModeToggle();
+          reportModeStatus.textContent = reportEmailMode === "private_notification"
+            ? "Private Notification mode saved."
+            : "Full Report mode saved.";
+        } catch (error) {
+          reportModeStatus.textContent = `Failed to save report mode: ${error.message}`;
+        } finally {
+          saveReportModeButton.disabled = false;
         }
       }
 
@@ -1545,6 +1617,19 @@
         saveAttachmentAiSetting();
       });
       saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
+      reportModeFullButton.addEventListener("click", () => {
+        if (reportEmailMode === "full_report") return;
+        reportEmailMode = "full_report";
+        syncReportModeToggle();
+        saveReportModeSetting();
+      });
+      reportModePrivateButton.addEventListener("click", () => {
+        if (reportEmailMode === "private_notification") return;
+        reportEmailMode = "private_notification";
+        syncReportModeToggle();
+        saveReportModeSetting();
+      });
+      saveReportModeButton.addEventListener("click", saveReportModeSetting);
       manageSubscriptionButton.addEventListener("click", manageSubscription);
       submitBugReportButton.addEventListener("click", submitBugReport);
       changeMailboxButton.addEventListener("click", openMailboxModal);

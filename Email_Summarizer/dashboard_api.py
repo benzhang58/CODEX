@@ -404,6 +404,9 @@ DEFAULT_BILLING_EXEMPT_EMAILS = {
     "bnnzhang2001@outlook.com",
     "peter@yj-semitech.com",
 }
+REPORT_EMAIL_MODE_FULL = "full_report"
+REPORT_EMAIL_MODE_PRIVATE = "private_notification"
+REPORT_EMAIL_MODES = {REPORT_EMAIL_MODE_FULL, REPORT_EMAIL_MODE_PRIVATE}
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
 GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
@@ -454,6 +457,7 @@ ACCOUNT_SCOPED_SETTING_KEYS = {
     "LAST_NAME",
     "BIRTHDAY",
     "GENDER",
+    "REPORT_EMAIL_MODE",
     "SUBSCRIPTION_STATUS",
     "SUBSCRIPTION_TRIAL_STARTED_AT",
     "SUBSCRIPTION_TRIAL_ENDS_AT",
@@ -836,6 +840,7 @@ class ProfileUpdateRequest(BaseModel):
     first_name: str = ""
     last_name: str = ""
     attachment_ai_enabled: Optional[bool] = None
+    report_email_mode: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-5.1"
     imap_server: str = ""
@@ -2416,6 +2421,7 @@ def default_profile_settings() -> Dict[str, str]:
         "TERMS_VERSION_ACCEPTED": "",
         "PRIVACY_VERSION_ACCEPTED": "",
         "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM": "false",
+        "REPORT_EMAIL_MODE": REPORT_EMAIL_MODE_FULL,
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
         "OPENAI_MODEL": "gpt-5.1",
         "WHITELIST_SENDERS": "",
@@ -2600,6 +2606,11 @@ def normalize_openai_model(value: Any) -> str:
     return model
 
 
+def normalize_report_email_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    return mode if mode in REPORT_EMAIL_MODES else REPORT_EMAIL_MODE_FULL
+
+
 def parse_summary_style_preferences(settings_or_raw: Any) -> List[str]:
     if isinstance(settings_or_raw, dict):
         raw = str(settings_or_raw.get("SUMMARY_STYLE_PREFERENCES", "") or "").strip()
@@ -2775,6 +2786,7 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "terms_version": settings.get("TERMS_VERSION_ACCEPTED", "") or TERMS_VERSION,
         "privacy_version": settings.get("PRIVACY_VERSION_ACCEPTED", "") or PRIVACY_VERSION,
         "attachment_ai_enabled": str(settings.get("EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM", "false")).lower() == "true",
+        "report_email_mode": normalize_report_email_mode(settings.get("REPORT_EMAIL_MODE", REPORT_EMAIL_MODE_FULL)),
         "openai_model": normalize_openai_model(settings.get("OPENAI_MODEL", "gpt-5.1")),
         "summary_style_preferences": parse_summary_style_preferences(settings),
         "imap_user": settings.get("IMAP_USER", ""),
@@ -2792,6 +2804,8 @@ def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str,
         settings["LAST_NAME"] = update.last_name.strip()
     if update.attachment_ai_enabled is not None:
         settings["EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM"] = "true" if update.attachment_ai_enabled else "false"
+    if update.report_email_mode.strip():
+        settings["REPORT_EMAIL_MODE"] = normalize_report_email_mode(update.report_email_mode)
     if update.openai_model.strip():
         settings["OPENAI_MODEL"] = normalize_openai_model(update.openai_model.strip())
     if update.imap_server.strip():
@@ -3759,8 +3773,9 @@ Read, done, delete, and re-summarization:
 - A new email in the same thread has a new message ID and can create a fresh summary if it matches a tracked contact and the scan window.
 
 Reports and scheduled reports:
-- Manual and scheduled email reports are sent from Discere's configured report sender address, intended to be Discere <discereresearch@gmail.com>, not from the user's connected Gmail, Microsoft, or mailbox account.
-- Scheduled reports always create a fresh summarizer run first, then email the full formatted report to the user's connected account email.
+- Manual and scheduled email reports are sent from Discere's configured report sender address, not from the user's connected Gmail, Microsoft, or mailbox account.
+- Users can choose Full Report, which includes summary content in report emails, or Private Notification, which sends a generic "ready" email that links back to the dashboard without including summary content.
+- Scheduled reports always create a fresh summarizer run first, then email the chosen report format to the user's connected account email.
 - Saved schedules can be viewed, edited, deleted, and toggled on/off.
 - Phone/SMS report delivery is not part of the current launch flow unless explicitly re-enabled later.
 
@@ -4148,6 +4163,59 @@ def get_report_sender_config() -> Dict[str, Any]:
     }
 
 
+def get_report_email_mode(settings: Dict[str, str]) -> str:
+    return normalize_report_email_mode(settings.get("REPORT_EMAIL_MODE", REPORT_EMAIL_MODE_FULL))
+
+
+def dashboard_url() -> str:
+    if PUBLIC_BASE_URL:
+        return f"{PUBLIC_BASE_URL}/dashboard"
+    return "/dashboard"
+
+
+def render_private_report_notification_html(report_label: str = "report") -> str:
+    link = dashboard_url()
+    link_html = (
+        f"<p style='margin:20px 0 0 0;'>"
+        f"<a href='{escape(link)}' style='display:inline-block; background:#111; color:#fff; text-decoration:none; "
+        f"border-radius:14px; padding:12px 18px; font-weight:700;'>Open Discere</a>"
+        f"</p>"
+        if link.startswith("http")
+        else ""
+    )
+    return (
+        "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
+        "max-width:640px; margin:0 auto; padding:24px; background:#fff;'>"
+        f"<h1 style='margin:0 0 12px 0; font-size:28px; letter-spacing:-0.04em;'>Your Discere {escape(report_label)} is ready</h1>"
+        "<p style='margin:0; color:#555; line-height:1.6;'>"
+        "You chose Private Notification mode, so this email does not include summary content. "
+        "Open Discere to read the report inside your dashboard."
+        "</p>"
+        f"{link_html}"
+        "<p style='margin:24px 0 0 0; color:#777; font-size:13px; line-height:1.5;'>"
+        "This notification was sent by Discere to your connected account email because you requested or scheduled a report."
+        "</p>"
+        "</body></html>"
+    )
+
+
+def render_private_report_notification_text(report_label: str = "report") -> str:
+    lines = [
+        f"Your Discere {report_label} is ready.",
+        "",
+        "You chose Private Notification mode, so this email does not include summary content.",
+        "Open Discere to read the report inside your dashboard.",
+    ]
+    link = dashboard_url()
+    if link.startswith("http"):
+        lines.extend(["", f"Open Discere: {link}"])
+    lines.extend([
+        "",
+        "This notification was sent by Discere to your connected account email because you requested or scheduled a report.",
+    ])
+    return "\n".join(lines)
+
+
 def send_report_email_from_discere(
     user_id: str,
     recipient: str,
@@ -4222,6 +4290,17 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
 
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
+
+    report_email_mode = get_report_email_mode(settings)
+    if report_email_mode == REPORT_EMAIL_MODE_PRIVATE:
+        return send_report_email_from_discere(
+            user_id=user_id,
+            recipient=recipient,
+            subject="Your Discere summary is ready",
+            html_body=render_private_report_notification_html("summary"),
+            text_body=render_private_report_notification_text("summary"),
+            event_name="discere_summary_email_failed",
+        )
 
     subject = summary.get("title", f"Summary: {summary.get('summary_id', '')}")
     html_body = render_summary_email_html(summary)
@@ -4454,20 +4533,31 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Di
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
 
-    html_body = render_markdown_report_email_html(title, markdown)
-    delivery = send_report_email_from_discere(
-        user_id=user_id,
-        recipient=recipient,
-        subject=title,
-        html_body=html_body,
-        text_body=render_markdown_report_text(title, markdown, max_chars=20000),
-        event_name="discere_combined_report_email_failed",
-    )
+    report_email_mode = get_report_email_mode(settings)
+    if report_email_mode == REPORT_EMAIL_MODE_PRIVATE:
+        delivery = send_report_email_from_discere(
+            user_id=user_id,
+            recipient=recipient,
+            subject="Your Discere report is ready",
+            html_body=render_private_report_notification_html("report"),
+            text_body=render_private_report_notification_text("report"),
+            event_name="discere_combined_report_email_failed",
+        )
+    else:
+        html_body = render_markdown_report_email_html(title, markdown)
+        delivery = send_report_email_from_discere(
+            user_id=user_id,
+            recipient=recipient,
+            subject=title,
+            html_body=html_body,
+            text_body=render_markdown_report_text(title, markdown, max_chars=20000),
+            event_name="discere_combined_report_email_failed",
+        )
 
     track_analytics_event(
         user_id,
         "report_delivered",
-        {"delivery_channel": "email", "recipient": recipient, "title": title},
+        {"delivery_channel": "email", "recipient": recipient, "title": title, "report_email_mode": report_email_mode},
     )
     return delivery
 

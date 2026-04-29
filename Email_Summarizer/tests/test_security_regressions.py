@@ -302,6 +302,79 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["schedule"]["recipient_email"], "schedule-owner@example.com")
 
+    def test_profile_update_persists_report_email_mode(self) -> None:
+        client = self.signup("report-mode@example.com")
+
+        response = client.put(
+            "/profile",
+            json={"email": "report-mode@example.com", "report_email_mode": "private_notification"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["profile"]["settings"]["report_email_mode"], "private_notification")
+
+        response = client.put(
+            "/profile",
+            json={"email": "report-mode@example.com", "report_email_mode": "unexpected-mode"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["profile"]["settings"]["report_email_mode"], "full_report")
+
+    def test_private_report_email_mode_omits_summary_content(self) -> None:
+        client = self.signup("private-report@example.com")
+        response = client.put(
+            "/profile",
+            json={"email": "private-report@example.com", "report_email_mode": "private_notification"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        secret_summary = {
+            "summary_id": "secret_summary",
+            "title": "Confidential merger update",
+            "sender": "ceo@example.com",
+            "executive_summary": "Acquire Project Falcon next Friday.",
+            "bottom_line": "Do not leak this.",
+        }
+        with patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "private-report@example.com", "subject": "Your Discere summary is ready"},
+        ) as send_mock:
+            dashboard_api.send_summary_via_smtp("private_report_example_com", secret_summary)
+
+        send_kwargs = send_mock.call_args.kwargs
+        serialized = json.dumps(send_kwargs)
+        self.assertEqual(send_kwargs["subject"], "Your Discere summary is ready")
+        self.assertNotIn("Confidential merger update", serialized)
+        self.assertNotIn("Acquire Project Falcon", serialized)
+        self.assertNotIn("Do not leak this", serialized)
+        self.assertIn("Private Notification", serialized)
+
+    def test_private_combined_report_mode_omits_report_content(self) -> None:
+        client = self.signup("private-combined@example.com")
+        response = client.put(
+            "/profile",
+            json={"email": "private-combined@example.com", "report_email_mode": "private_notification"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        with patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "private-combined@example.com", "subject": "Your Discere report is ready"},
+        ) as send_mock:
+            dashboard_api.send_combined_report_via_smtp(
+                "private_combined_example_com",
+                "Board acquisition report",
+                "## Secret section\nProject Falcon closes Friday.",
+            )
+
+        send_kwargs = send_mock.call_args.kwargs
+        serialized = json.dumps(send_kwargs)
+        self.assertEqual(send_kwargs["subject"], "Your Discere report is ready")
+        self.assertNotIn("Board acquisition report", serialized)
+        self.assertNotIn("Project Falcon", serialized)
+        self.assertIn("Private Notification", serialized)
+
     def test_new_accounts_start_with_no_card_free_trial(self) -> None:
         client = self.signup("trial@example.com")
         response = client.get("/billing/status")

@@ -9,8 +9,8 @@
     <style>
       :root {
         --bg: #f3f3f0;
-        --panel: rgba(255, 255, 255, 0.88);
-        --panel-strong: rgba(255, 255, 255, 0.96);
+        --panel: #ffffff;
+        --panel-strong: #ffffff;
         --border: rgba(17, 17, 17, 0.1);
         --border-strong: rgba(17, 17, 17, 0.18);
         --text: #101010;
@@ -35,10 +35,8 @@
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(0, 0, 0, 0.04), transparent 26%),
-          radial-gradient(circle at top right, rgba(0, 0, 0, 0.025), transparent 22%),
-          linear-gradient(180deg, #fbfbf9 0%, var(--bg) 100%);
+        background: var(--bg);
+        min-height: 100vh;
       }
 
       .page {
@@ -269,7 +267,7 @@
         padding: 11px 14px;
         border-radius: 16px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
         color: var(--text);
         text-decoration: none;
         font-weight: 600;
@@ -424,7 +422,7 @@
       }
 
       .panel-toggle {
-        background: rgba(255, 255, 255, 0.78);
+        background: #ffffff;
         color: var(--text);
         border: 1px solid var(--border);
         width: 34px;
@@ -486,7 +484,7 @@
 
       .mode-button {
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.84);
+        background: #ffffff;
         color: var(--text);
         border-radius: 14px;
         height: 42px;
@@ -701,7 +699,7 @@
       }
 
       .thread-message-card {
-        background: var(--surface-soft);
+        background: #ffffff;
         border: 1px solid var(--border);
         border-radius: 20px;
         padding: 16px 18px;
@@ -748,7 +746,7 @@
         width: 100%;
         max-width: 240px;
         height: 8px;
-        background: var(--surface-soft-2);
+        background: #e7e7e2;
         border-radius: 999px;
         overflow: hidden;
         margin-top: 6px;
@@ -830,7 +828,7 @@
         border: 1px solid var(--border);
         border-radius: 18px;
         padding: 14px 16px;
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
       }
 
       .chat-message.user {
@@ -840,7 +838,7 @@
       }
 
       .chat-message.assistant {
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
       }
 
       .chat-role {
@@ -1219,7 +1217,7 @@
         padding: 14px 16px;
         border: 1px solid var(--border);
         border-radius: 16px;
-        background: rgba(255, 255, 255, 0.84);
+        background: #ffffff;
       }
 
       .toggle-copy {
@@ -1447,7 +1445,7 @@
         padding: 14px 16px;
         border: 1px solid var(--border);
         border-radius: 18px;
-        background: rgba(255, 255, 255, 0.82);
+        background: #ffffff;
       }
 
       .contacts-modal-copy {
@@ -1477,7 +1475,7 @@
       }
 
       .glass {
-        background: rgba(255, 255, 255, 0.76);
+        background: #ffffff;
         border: 1px solid rgba(18, 18, 18, 0.08);
         box-shadow: 0 28px 80px rgba(15, 15, 15, 0.08);
         backdrop-filter: blur(20px);
@@ -1598,7 +1596,7 @@
         min-height: 86px;
         padding: 12px 14px;
         border-radius: 16px;
-        background: rgba(255, 255, 255, 0.92);
+        background: #ffffff;
         border: 1px solid var(--border);
         display: grid;
         gap: 4px;
@@ -1662,13 +1660,13 @@
       }
 
       .hero-schedule-button {
-        background: rgba(255, 255, 255, 0.92);
+        background: #ffffff;
         color: var(--text);
         border: 1px solid var(--border);
       }
 
       .hero-schedule-button:hover {
-        background: rgba(255, 255, 255, 1);
+        background: #ffffff;
         border-color: var(--border-strong);
       }
 
@@ -1699,7 +1697,7 @@
 
       .stat-card,
       .pulse-card {
-        background: rgba(255, 255, 255, 0.72);
+        background: #ffffff;
         border: 1px solid rgba(18, 18, 18, 0.07);
         border-radius: 22px;
         padding: 16px 16px 14px;
@@ -1725,7 +1723,7 @@
       .stat-card-button:hover {
         transform: translateY(-1px);
         border-color: rgba(18, 18, 18, 0.14);
-        background: rgba(255, 255, 255, 0.9);
+        background: #ffffff;
         box-shadow: 0 22px 44px rgba(15, 15, 15, 0.09);
       }
 
@@ -1750,7 +1748,7 @@
         align-items: center;
         justify-content: center;
         color: var(--muted);
-        background: rgba(255, 255, 255, 0.86);
+        background: #ffffff;
         font-size: 14px;
         line-height: 1;
       }
@@ -1884,7 +1882,7 @@
       .account-bar,
       #profilePanel,
       .panel {
-        background: rgba(255, 255, 255, 0.92);
+        background: #ffffff;
         box-shadow: 0 18px 48px rgba(15, 15, 15, 0.07);
       }
 
@@ -1910,7 +1908,7 @@
         align-items: center;
         padding: 16px;
         border-radius: 20px;
-        background: rgba(255, 255, 255, 0.86);
+        background: #ffffff;
         border: 1px solid var(--border);
       }
 
@@ -2246,7 +2244,7 @@
             <div class="schedule-section-header">
               <div class="schedule-section-label">Delivery</div>
               <div class="schedule-section-title">Send to your account email</div>
-              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then Discere emails the full report from discereresearch@gmail.com to your connected account email.</div>
+              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then Discere emails your chosen report format to your connected account email.</div>
             </div>
             <div class="schedule-grid">
               <div class="field field-wide">
@@ -2418,7 +2416,9 @@
       let currentSummaryId = null;
       let currentDisplayedSummaryTitle = "";
       let currentDisplayedSummaryMarkdown = "";
+      let currentDisplayedSummaryHtml = "";
       let currentDisplayedThreadAvailable = false;
+      let isViewingFullThread = false;
       let selectedSummaryIds = [];
       let currentSummaries = [];
       let allSummaries = [];
@@ -2504,6 +2504,27 @@
           : `
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m5 12 4 4L19 6"></path>
+            </svg>
+          `;
+      }
+
+      function syncViewThreadButton() {
+        const label = isViewingFullThread ? "View Summary" : "View Full Thread";
+        viewThreadButton.setAttribute("aria-label", label);
+        viewThreadButton.parentElement.dataset.tooltip = label;
+        viewThreadButton.innerHTML = isViewingFullThread
+          ? `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"></path>
+              <path d="M8 9h8"></path>
+              <path d="M8 13h8"></path>
+              <path d="M8 17h5"></path>
+            </svg>
+          `
+          : `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+              <circle cx="12" cy="12" r="3.2"></circle>
             </svg>
           `;
       }
@@ -3554,8 +3575,11 @@
           currentSummaries = [];
           allSummaries = [];
           currentDisplayedSummaryMarkdown = "";
+          currentDisplayedSummaryHtml = "";
           currentDisplayedSummaryTitle = "";
           currentDisplayedThreadAvailable = false;
+          isViewingFullThread = false;
+          syncViewThreadButton();
           contactsLoadedForUser = null;
           currentContacts = [];
           currentContactProfiles = {};
@@ -4015,7 +4039,10 @@
         currentSummaryId = null;
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
+        currentDisplayedSummaryHtml = "";
         currentDisplayedThreadAvailable = false;
+        isViewingFullThread = false;
+        syncViewThreadButton();
         detailStatus.textContent = "Select a summary to view it.";
         summaryDetail.className = "";
         summaryDetail.innerHTML = "No summary selected yet.";
@@ -4028,7 +4055,10 @@
         currentSummaryId = null;
         currentDisplayedSummaryTitle = "";
         currentDisplayedSummaryMarkdown = "";
+        currentDisplayedSummaryHtml = "";
         currentDisplayedThreadAvailable = false;
+        isViewingFullThread = false;
+        syncViewThreadButton();
         selectedSummaryIds = [];
         currentSummaries = [];
         allSummaries = [];
@@ -4401,8 +4431,15 @@
           setRunStatus(`Deleted summary. Removed ${data.removed_email_ids?.length || 0} linked email record(s).`);
           if (currentSummaryId === summaryId) {
             currentSummaryId = null;
+            currentDisplayedSummaryTitle = "";
+            currentDisplayedSummaryMarkdown = "";
+            currentDisplayedSummaryHtml = "";
+            currentDisplayedThreadAvailable = false;
+            isViewingFullThread = false;
+            syncViewThreadButton();
             summaryDetail.innerHTML = "No summary selected yet.";
             sendSummaryEmailButton.hidden = true;
+            viewThreadButton.hidden = true;
             detailStatus.textContent = "Select a summary to view it.";
           }
           await loadSummaries();
@@ -4438,8 +4475,15 @@
           removedCount = results.filter((result) => result.ok).length;
           if (results.some((result) => result.summaryId === currentSummaryId && result.ok)) {
             currentSummaryId = null;
+            currentDisplayedSummaryTitle = "";
+            currentDisplayedSummaryMarkdown = "";
+            currentDisplayedSummaryHtml = "";
+            currentDisplayedThreadAvailable = false;
+            isViewingFullThread = false;
+            syncViewThreadButton();
             summaryDetail.innerHTML = "No summary selected yet.";
             sendSummaryEmailButton.hidden = true;
+            viewThreadButton.hidden = true;
             detailStatus.textContent = "Select a summary to view it.";
           }
         } catch (error) {
@@ -4583,10 +4627,39 @@
         }
       }
 
+      function buildSummaryDetailHtml(summary) {
+        return `
+          <div class="detail-section">
+            <h3>${escapeHtml(summary.title)}</h3>
+            <p class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</p>
+          </div>
+          ${renderSection("Executive Summary", summary.executive_summary)}
+          ${renderSection("Main Topics", summary.main_topics)}
+          ${renderSection("New Developments", summary.new_developments)}
+          ${renderSection("Action Items / Asks", summary.action_items)}
+          ${renderSection("Deadlines / Dates / Meetings", summary.deadlines)}
+          ${renderSection("Attachment Summary", summary.attachment_summary)}
+          ${renderSection("Bottom Line", summary.bottom_line)}
+        `;
+      }
+
+      function showCurrentSummaryView() {
+        if (!currentDisplayedSummaryHtml) return false;
+        detailStatus.textContent = "";
+        summaryDetail.className = "";
+        summaryDetail.innerHTML = currentDisplayedSummaryHtml;
+        summaryDetail.removeAttribute("aria-busy");
+        isViewingFullThread = false;
+        syncViewThreadButton();
+        return true;
+      }
+
       async function loadSummaryDetail(summaryId, options = {}) {
         const { preserveSelection = false } = options;
         const requestToken = ++summaryViewRequestToken;
         currentSummaryId = summaryId;
+        isViewingFullThread = false;
+        syncViewThreadButton();
         detailStatus.textContent = "Loading summary...";
         summaryDetail.setAttribute("aria-busy", "true");
 
@@ -4602,6 +4675,12 @@
           detailStatus.textContent = "Failed to load summary detail.";
           sendSummaryEmailButton.hidden = true;
           viewThreadButton.hidden = true;
+          currentDisplayedSummaryTitle = "";
+          currentDisplayedSummaryMarkdown = "";
+          currentDisplayedSummaryHtml = "";
+          currentDisplayedThreadAvailable = false;
+          isViewingFullThread = false;
+          syncViewThreadButton();
           summaryDetail.textContent = summary.detail || "Unknown error.";
           summaryDetail.removeAttribute("aria-busy");
           return;
@@ -4614,22 +4693,13 @@
           summary.content_markdown ||
           buildMarkdownFromSummary(summary);
         currentDisplayedThreadAvailable = Array.isArray(summary.source_email_file_ids) && summary.source_email_file_ids.length > 0;
+        currentDisplayedSummaryHtml = buildSummaryDetailHtml(summary);
+        isViewingFullThread = false;
+        syncViewThreadButton();
         sendSummaryEmailButton.hidden = false;
         viewThreadButton.hidden = !currentDisplayedThreadAvailable;
         summaryDetail.className = "";
-        summaryDetail.innerHTML = `
-          <div class="detail-section">
-            <h3>${escapeHtml(summary.title)}</h3>
-            <p class="meta">Updated: ${escapeHtml(formatDate(summary.updated_at))}</p>
-          </div>
-          ${renderSection("Executive Summary", summary.executive_summary)}
-          ${renderSection("Main Topics", summary.main_topics)}
-          ${renderSection("New Developments", summary.new_developments)}
-          ${renderSection("Action Items / Asks", summary.action_items)}
-          ${renderSection("Deadlines / Dates / Meetings", summary.deadlines)}
-          ${renderSection("Attachment Summary", summary.attachment_summary)}
-          ${renderSection("Bottom Line", summary.bottom_line)}
-        `;
+        summaryDetail.innerHTML = currentDisplayedSummaryHtml;
         summaryDetail.removeAttribute("aria-busy");
 
         syncSummaryCheckboxes();
@@ -4647,6 +4717,8 @@
         const requestToken = ++summaryViewRequestToken;
         sendSummaryEmailButton.hidden = true;
         viewThreadButton.hidden = true;
+        isViewingFullThread = false;
+        syncViewThreadButton();
         detailStatus.textContent = `Building report from ${summaryIds.length} selected summaries...`;
         summaryDetail.setAttribute("aria-busy", "true");
         setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
@@ -4675,15 +4747,16 @@
           currentSummaryId = null;
           currentDisplayedSummaryTitle = data.title || "Combined Report";
           currentDisplayedSummaryMarkdown = data.combined_markdown || "";
-          currentDisplayedThreadAvailable = false;
-          detailStatus.textContent = "";
-          summaryDetail.className = "";
-          summaryDetail.innerHTML = `
+          currentDisplayedSummaryHtml = `
             <div class="detail-section">
               <h3>${escapeHtml(data.title || "Combined Summary")}</h3>
             </div>
             ${renderMarkdownSummary(data.combined_markdown || "")}
           `;
+          currentDisplayedThreadAvailable = false;
+          detailStatus.textContent = "";
+          summaryDetail.className = "";
+          summaryDetail.innerHTML = currentDisplayedSummaryHtml;
           summaryDetail.removeAttribute("aria-busy");
           setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
         } catch (error) {
@@ -4732,6 +4805,8 @@
         refineSummaryButton.disabled = true;
         sendSummaryEmailButton.hidden = true;
         viewThreadButton.hidden = true;
+        isViewingFullThread = false;
+        syncViewThreadButton();
         detailStatus.textContent = "Refining summary...";
         summaryDetail.setAttribute("aria-busy", "true");
         setRunStatus("Refining the current summary...", true);
@@ -4760,18 +4835,19 @@
           currentDisplayedSummaryTitle = data.title || currentDisplayedSummaryTitle || "Refined Summary";
           currentDisplayedSummaryMarkdown = data.refined_markdown || "";
           currentDisplayedThreadAvailable = false;
-          if (currentProfile?.settings) {
-            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
-          }
-          detailStatus.textContent = "Refined summary ready.";
-          summaryDetail.className = "";
-          summaryDetail.innerHTML = `
+          currentDisplayedSummaryHtml = `
             <div class="detail-section">
               <h3>${escapeHtml(currentDisplayedSummaryTitle)}</h3>
               <p class="meta">Refined for your preferred focus and organization.</p>
             </div>
             ${renderMarkdownSummary(currentDisplayedSummaryMarkdown)}
           `;
+          if (currentProfile?.settings) {
+            currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
+          }
+          detailStatus.textContent = "Refined summary ready.";
+          summaryDetail.className = "";
+          summaryDetail.innerHTML = currentDisplayedSummaryHtml;
           summaryDetail.removeAttribute("aria-busy");
           setRunStatus("Refined summary ready.");
         } catch (error) {
@@ -4788,6 +4864,13 @@
         if (!requireSignedIn()) return;
         if (!currentSummaryId) {
           setRunStatus("Select a summary first.");
+          return;
+        }
+
+        if (isViewingFullThread) {
+          if (!showCurrentSummaryView()) {
+            await loadSummaryDetail(currentSummaryId, { preserveSelection: true });
+          }
           return;
         }
 
@@ -4810,6 +4893,8 @@
           detailStatus.textContent = "";
           summaryDetail.className = "";
           summaryDetail.innerHTML = renderThreadView(data);
+          isViewingFullThread = true;
+          syncViewThreadButton();
           summaryDetail.removeAttribute("aria-busy");
         } catch (error) {
           detailStatus.textContent = "Failed to load full thread.";

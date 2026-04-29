@@ -159,6 +159,28 @@ Discere report sender setup:
 - [ ] Confirm the report arrives from `Discere <discereresearch@gmail.com>`.
 - [ ] Confirm app errors appear through the internal admin monitoring API.
 
+Future transactional email provider upgrade:
+
+- [ ] Decide whether to replace Gmail SMTP with a transactional email provider before public launch.
+- [ ] Recommended first choices: Resend for fastest/simple developer setup, or Postmark for strong transactional-email positioning.
+- [ ] Other viable options: SendGrid, Mailgun, or Amazon SES.
+- [ ] Verify a Discere-owned sending domain, for example `discere-ai.com`.
+- [ ] Configure SPF, DKIM, and DMARC for the sending domain.
+- [ ] Add the provider API key to Render as an environment variable, not GitHub.
+- [ ] Update the report sender code to send through the provider API instead of a normal Gmail SMTP account.
+- [ ] Confirm sent reports are not stored in a normal Gmail Sent folder.
+- [ ] Confirm bounces, delivery failures, and provider errors appear in monitoring.
+- [ ] Keep Private Notification mode available for users who do not want summary content in report emails.
+
+Security/trust framing for transactional email:
+
+- [ ] Be precise: a transactional provider improves deliverability, access control, logging, and avoids storing report copies in a normal Gmail Sent folder.
+- [ ] Do not claim that Discere never touches report content. Discere generates report content before sending it.
+- [ ] Explain the two modes clearly:
+  - Full Report: the email contains the summary/report content and is delivered through Discere's email delivery system.
+  - Private Notification: the email only says the report is ready and links back to Discere; summary content stays inside the dashboard.
+- [ ] Use wording like: `Discere sends report emails through a professional transactional email provider. If you choose Full Report mode, the email contains your summary. If you choose Private Notification mode, the email does not contain summary content and only links you back to Discere.`
+
 ## 9. Admin, Monitoring, Analytics, And Bug Reports
 
 - [ ] Confirm `/admin` does not open as a user-facing page in production.
@@ -295,6 +317,8 @@ Do not publicly launch until all critical items are checked:
 - [ ] Summarizer only processes tracked contacts.
 - [ ] Account isolation is confirmed with two real accounts.
 - [ ] Email report delivery works.
+- [ ] If using Gmail SMTP, confirm that is an intentional temporary choice.
+- [ ] If using a transactional email provider, confirm domain authentication and provider monitoring are working.
 - [ ] Scheduled reports work.
 - [ ] Delete account works.
 - [ ] Backup and restore work.
