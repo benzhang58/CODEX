@@ -422,10 +422,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        padding: 14px 16px;
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        background: #ffffff;
+        padding: 0;
       }
 
       .profile-summary strong {
@@ -697,7 +694,6 @@
                 <button id="attachmentAiOnButton" type="button" aria-pressed="false">On</button>
               </div>
             </div>
-            <button id="saveAttachmentAiButton" type="button">Save</button>
           </div>
           <div id="attachmentAiStatus" class="status"></div>
         </div>
@@ -1012,7 +1008,6 @@
       const summaryPreferenceStatus = document.getElementById("summaryPreferenceStatus");
       const attachmentAiOffButton = document.getElementById("attachmentAiOffButton");
       const attachmentAiOnButton = document.getElementById("attachmentAiOnButton");
-      const saveAttachmentAiButton = document.getElementById("saveAttachmentAiButton");
       const attachmentAiStatus = document.getElementById("attachmentAiStatus");
       const reportModeFullButton = document.getElementById("reportModeFullButton");
       const reportModePrivateButton = document.getElementById("reportModePrivateButton");
@@ -1362,8 +1357,9 @@
 
       async function saveAttachmentAiSetting() {
         if (!currentProfile) return;
-        saveAttachmentAiButton.disabled = true;
-        attachmentAiStatus.textContent = "Saving setting...";
+        attachmentAiOffButton.disabled = true;
+        attachmentAiOnButton.disabled = true;
+        attachmentAiStatus.textContent = "Saving preference...";
         try {
           const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
             method: "PUT",
@@ -1382,12 +1378,13 @@
           attachmentAiEnabled = Boolean(data.profile.settings?.attachment_ai_enabled);
           syncAttachmentAiToggle();
           attachmentAiStatus.textContent = attachmentAiEnabled
-            ? "AI attachment access enabled."
-            : "AI attachment access disabled.";
+            ? "AI attachment access is on."
+            : "AI attachment access is off.";
         } catch (error) {
           attachmentAiStatus.textContent = `Failed to save attachment setting: ${error.message}`;
         } finally {
-          saveAttachmentAiButton.disabled = false;
+          attachmentAiOffButton.disabled = false;
+          attachmentAiOnButton.disabled = false;
         }
       }
 
@@ -1616,7 +1613,6 @@
         syncAttachmentAiToggle();
         saveAttachmentAiSetting();
       });
-      saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
       reportModeFullButton.addEventListener("click", () => {
         if (reportEmailMode === "full_report") return;
         reportEmailMode = "full_report";

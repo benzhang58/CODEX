@@ -596,6 +596,7 @@ class EmailSummarizer:
         maybe_refresh_token = str(payload.get("refresh_token", "")).strip()
         if maybe_refresh_token:
             self.microsoft_oauth["refresh_token"] = maybe_refresh_token
+        self.microsoft_oauth["scope"] = payload.get("scope") or self.microsoft_oauth.get("scope", "") or "https://outlook.office.com/IMAP.AccessAsUser.All offline_access"
         self.microsoft_oauth["updated_at"] = datetime.now().isoformat()
         self._save_oauth_payload("microsoft_oauth_json", self.microsoft_oauth)
         return new_access_token

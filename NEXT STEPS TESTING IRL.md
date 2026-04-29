@@ -263,7 +263,6 @@ Microsoft setup:
   - `email`
   - `profile`
   - `offline_access`
-  - `User.Read`
   - `https://outlook.office.com/IMAP.AccessAsUser.All`
 - [ ] If the Azure app registration still has old send permissions, remove them unless a future feature truly needs connected-account sending.
 - [ ] If pursuing Microsoft publisher verification, confirm you have Partner Center / Microsoft AI Cloud Partner Program requirements ready.

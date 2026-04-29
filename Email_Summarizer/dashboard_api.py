@@ -428,8 +428,11 @@ MICROSOFT_OAUTH_SCOPES = [
     "email",
     "profile",
     "offline_access",
-    "User.Read",
     "https://outlook.office.com/IMAP.AccessAsUser.All",
+]
+MICROSOFT_MAILBOX_TOKEN_SCOPES = [
+    "https://outlook.office.com/IMAP.AccessAsUser.All",
+    "offline_access",
 ]
 REQUIRED_PRODUCTION_ENV_VARS = [
     "EMAIL_SUMMARIZER_PUBLIC_BASE_URL",
@@ -1239,11 +1242,11 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
         pass
 
     settings["IMAP_USER"] = settings.get("IMAP_USER") or email
-    settings["IMAP_PASSWORD"] = settings.get("IMAP_PASSWORD") or request.password
+    settings["IMAP_PASSWORD"] = settings.get("IMAP_PASSWORD") or ""
     settings["SMTP_USER"] = settings.get("SMTP_USER") or email
-    settings["SMTP_PASSWORD"] = settings.get("SMTP_PASSWORD") or request.password
+    settings["SMTP_PASSWORD"] = settings.get("SMTP_PASSWORD") or ""
     settings["SUMMARY_RECIPIENT"] = settings.get("SUMMARY_RECIPIENT") or email
-    settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
+    settings["MAILBOX_CONNECTION_CONFIRMED"] = "true" if str(settings.get("IMAP_PASSWORD", "")).strip() else "false"
     settings["BIRTHDAY"] = str(request.birthday or "").strip()
     settings["GENDER"] = str(request.gender or "").strip()
     mark_legal_acceptance(settings)
@@ -1599,19 +1602,12 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         return response
 
-    try:
-        userinfo = get_json_with_bearer(
-            "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName,displayName",
-            access_token,
-            error_prefix="Microsoft userinfo request failed",
-        )
-    except HTTPException:
-        write_monitoring_event("oauth", "microsoft_userinfo_failed", "error", request=request)
-        response = RedirectResponse("/dashboard?microsoft_error=userinfo_failed")
-        response.delete_cookie(MICROSOFT_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
-        response.delete_cookie(MICROSOFT_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
-        return response
-
+    claims = decode_jwt_payload(str(token_payload.get("id_token", "")))
+    userinfo = {
+        "mail": str(claims.get("email") or claims.get("preferred_username") or claims.get("upn") or "").strip(),
+        "userPrincipalName": str(claims.get("preferred_username") or claims.get("upn") or claims.get("email") or "").strip(),
+        "displayName": str(claims.get("name") or "").strip(),
+    }
     fallback_email = str(userinfo.get("mail") or userinfo.get("userPrincipalName") or "").strip().lower()
     display_name = str(userinfo.get("displayName", "") or "").strip()
     email = resolve_microsoft_account_email(userinfo, token_payload) or fallback_email
@@ -1671,7 +1667,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         "access_token": token_payload.get("access_token", ""),
         "refresh_token": microsoft_refresh_token,
         "token_type": token_payload.get("token_type", ""),
-        "scope": token_payload.get("scope", ""),
+        "scope": token_payload.get("scope", "") or " ".join(MICROSOFT_OAUTH_SCOPES),
         "expires_in": token_payload.get("expires_in", 0),
         "id_token": token_payload.get("id_token", ""),
         "updated_at": datetime.now().isoformat(),
@@ -1719,7 +1715,8 @@ def get_profile(request: Request, user_id: Optional[str] = Query(None)) -> Dict[
 def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
     profile = load_profile_or_404(resolved_user_id)
-    profile["email"] = payload.email.strip()
+    if payload.email.strip():
+        profile["email"] = payload.email.strip()
     profile["settings"] = profile_update_to_settings(payload, {**default_profile_settings(), **(profile.get("settings") or {})})
     save_profile(profile)
     return {"success": True, "profile": profile_response(profile)}
@@ -2314,7 +2311,9 @@ def google_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> bool
 def microsoft_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> bool:
     microsoft_oauth = profile.get("microsoft_oauth") or {}
     scopes = {scope.lower() for scope in parse_oauth_scope_text(microsoft_oauth.get("scope", ""))}
-    return required_scope.lower() in scopes
+    required = required_scope.lower()
+    required_short = required.rsplit("/", 1)[-1]
+    return required in scopes or required_short in {scope.rsplit("/", 1)[-1] for scope in scopes}
 
 
 def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
@@ -2338,7 +2337,7 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
                 "client_secret": config["client_secret"],
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token",
-                "scope": " ".join(MICROSOFT_OAUTH_SCOPES),
+                "scope": " ".join(MICROSOFT_MAILBOX_TOKEN_SCOPES),
             },
             error_prefix="Microsoft token refresh failed",
         )
@@ -2354,11 +2353,24 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
     maybe_refresh_token = str(token_payload.get("refresh_token", "")).strip()
     if maybe_refresh_token:
         microsoft_oauth["refresh_token"] = maybe_refresh_token
-    microsoft_oauth["scope"] = token_payload.get("scope", microsoft_oauth.get("scope", ""))
+    microsoft_oauth["scope"] = token_payload.get("scope") or microsoft_oauth.get("scope") or " ".join(MICROSOFT_MAILBOX_TOKEN_SCOPES)
     microsoft_oauth["updated_at"] = datetime.now().isoformat()
     profile["microsoft_oauth"] = microsoft_oauth
     save_profile(profile)
     return new_access_token
+
+
+def password_mailbox_is_configured(profile: Dict[str, Any]) -> bool:
+    settings = apply_provider_defaults(
+        merge_stored_settings(default_profile_settings(), profile.get("settings") or {}),
+        str(profile.get("email", "") or ""),
+    )
+    return bool(
+        str(settings.get("MAILBOX_CONNECTION_CONFIRMED", "false")).strip().lower() == "true"
+        and str(settings.get("IMAP_SERVER", "")).strip()
+        and str(settings.get("IMAP_USER", "")).strip()
+        and str(settings.get("IMAP_PASSWORD", "")).strip()
+    )
 
 
 def decode_jwt_payload(token: str) -> Dict[str, Any]:
@@ -2404,9 +2416,10 @@ def resolve_microsoft_account_email(userinfo: Dict[str, Any], token_payload: Dic
     ]
     candidates = [candidate for candidate in candidates if candidate and "@" in candidate]
     for candidate in candidates:
-        if not is_microsoft_guest_upn(candidate):
-            return candidate
-    return candidates[0] if candidates else ""
+        normalized = normalize_microsoft_display_email(candidate)
+        if normalized and not is_microsoft_guest_upn(normalized):
+            return normalized
+    return normalize_microsoft_display_email(candidates[0]) if candidates else ""
 
 
 def default_profile_settings() -> Dict[str, str]:
@@ -5185,6 +5198,18 @@ def create_bug_report(payload: BugReportRequest, request: Request) -> Dict[str, 
 
 
 def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
+    profile = load_profile_or_404(user_id)
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
+    if not google_connected and not microsoft_connected and not password_mailbox_is_configured(profile):
+        return {
+            "returncode": 1,
+            "stdout": "",
+            "stderr": "Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.",
+            "stats": {},
+            "success": False,
+        }
+
     before_count = len(load_all_current_summaries_for_user(user_id))
     env = os.environ.copy()
     env["CLIENT_NAME"] = user_id
@@ -5401,6 +5426,18 @@ def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str,
         refresh_google_access_token(profile)
     elif microsoft_connected:
         refresh_microsoft_access_token(profile)
+    elif not password_mailbox_is_configured(profile):
+        write_monitoring_event(
+            "summarizer",
+            "password_mailbox_not_connected",
+            "warning",
+            request=request,
+            user_id=resolved_user_id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.",
+        )
     enforce_usage_limit(resolved_user_id, "run_summarizer")
     return launch_summarizer_job(resolved_user_id, payload.days_back)
 

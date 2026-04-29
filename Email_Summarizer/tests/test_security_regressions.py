@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import shutil
@@ -27,6 +28,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 
 import dashboard_api
+
+
+def make_unsigned_id_token(claims: dict) -> str:
+    def encode(segment: dict) -> str:
+        raw = json.dumps(segment, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+    return f"{encode({'alg': 'none'})}.{encode(claims)}."
 
 
 class SecurityRegressionTests(unittest.TestCase):
@@ -83,6 +92,81 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(query.get("access_type"), ["offline"])
             self.assertEqual(query.get("prompt"), ["consent"])
             self.assertEqual(query.get("include_granted_scopes"), ["true"])
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_microsoft_oauth_start_requests_outlook_imap_scope_without_graph_user_read(self) -> None:
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_REDIRECT_URI": os.environ.get("MICROSOFT_REDIRECT_URI"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_REDIRECT_URI"] = "https://discere-test.example/auth/microsoft/callback"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            response = self.client.get("/auth/microsoft/start", follow_redirects=False)
+            self.assertEqual(response.status_code, 307, response.text)
+            query = parse_qs(urlparse(response.headers["location"]).query)
+            scopes = query.get("scope", [""])[0].split()
+            self.assertIn(dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE, scopes)
+            self.assertNotIn("User.Read", scopes)
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_microsoft_oauth_callback_uses_id_token_without_graph_userinfo(self) -> None:
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_REDIRECT_URI": os.environ.get("MICROSOFT_REDIRECT_URI"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_REDIRECT_URI"] = "https://discere-test.example/auth/microsoft/callback"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            start_response = self.client.get("/auth/microsoft/start", follow_redirects=False)
+            state = parse_qs(urlparse(start_response.headers["location"]).query)["state"][0]
+            id_token = make_unsigned_id_token(
+                {
+                    "preferred_username": "outlook-user@example.com",
+                    "email": "outlook-user@example.com",
+                    "name": "Outlook User",
+                }
+            )
+            token_payload = {
+                "access_token": "outlook-imap-access-token",
+                "refresh_token": "outlook-refresh-token",
+                "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+                "id_token": id_token,
+            }
+            with patch.object(dashboard_api, "post_form_json", return_value=token_payload), patch.object(
+                dashboard_api,
+                "get_json_with_bearer",
+                side_effect=AssertionError("Microsoft callback should not call Graph /me"),
+            ):
+                response = self.client.get(
+                    f"/auth/microsoft/callback?code=test-code&state={state}",
+                    follow_redirects=False,
+                )
+
+            self.assertEqual(response.status_code, 307, response.text)
+            self.assertEqual(response.headers.get("location"), "/dashboard")
+            profile = dashboard_api.load_profile_or_404("outlook_user_example_com")
+            self.assertEqual(profile["email"], "outlook-user@example.com")
+            self.assertEqual(profile["microsoft_oauth"]["access_token"], "outlook-imap-access-token")
+            self.assertTrue(dashboard_api.microsoft_oauth_has_scope(profile, dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE))
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -191,6 +275,31 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("global-smtp@example.com", json.dumps(payload))
         self.assertNotIn("global-recipient@example.com", json.dumps(payload))
         self.assertNotIn("should-not-leak@example.com", json.dumps(payload))
+
+    def test_password_signup_does_not_auto_connect_mailbox_with_dashboard_password(self) -> None:
+        client = self.signup("standard-mailbox@example.com")
+        profile_response = client.get("/auth/me")
+        self.assertEqual(profile_response.status_code, 200, profile_response.text)
+        payload = profile_response.json()["profile"]
+        self.assertFalse(payload["settings"]["mailbox_connected"])
+
+        status_response = client.get("/mailbox/status")
+        self.assertEqual(status_response.status_code, 200, status_response.text)
+        self.assertFalse(status_response.json()["connected"])
+        self.assertEqual(status_response.json()["reason"], "missing_credentials")
+
+    def test_password_account_cannot_run_summarizer_until_mailbox_is_connected(self) -> None:
+        client = self.signup("needs-mailbox@example.com")
+        whitelist_response = client.post("/whitelist", json={"contacts": ["sender@example.com"]})
+        self.assertEqual(whitelist_response.status_code, 200, whitelist_response.text)
+
+        response = client.post("/run-summarizer", json={"days_back": 7})
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Mailbox is not connected yet", response.json()["detail"])
+
+        result = dashboard_api.execute_summarizer_run("needs_mailbox_example_com", 7)
+        self.assertFalse(result["success"])
+        self.assertIn("Mailbox is not connected yet", result["stderr"])
 
     def test_cross_account_user_id_override_is_blocked(self) -> None:
         alice = self.signup("alice@example.com")

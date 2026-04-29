@@ -2722,6 +2722,9 @@
         if (lower.includes("email sending is not configured") || lower.includes("discere report email sending is not configured")) {
           return "Discere report email sending is not configured yet. Add the Discere report sender SMTP settings on Render.";
         }
+        if (lower.includes("mailbox is not connected yet") || lower.includes("missing imap credentials")) {
+          return "Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.";
+        }
         return message;
       }
 
