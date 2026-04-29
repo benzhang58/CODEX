@@ -41,8 +41,8 @@
           </p>
           <p>
             TLDR (Too long, didn't read): Discere reads the email data needed to summarize messages from contacts you choose, stores the account
-            and summary data needed to operate Discere, sends relevant summary inputs to AI, and lets you export or delete your
-            account data.
+            and summary data needed to operate Discere, sends relevant summary inputs to AI, and lets you delete your account
+            data.
           </p>
         </section>
 
@@ -86,8 +86,8 @@
           </p>
           <p>
             Discere also uses information to support user settings such as tracked contacts, AI attachment access, summary
-            preferences, and scheduled report settings. Requested and scheduled email reports are sent from Discere to the
-            recipient you choose. Operational information is used to operate, secure, debug, monitor, and improve Discere.
+            preferences, and scheduled report settings. Requested and scheduled email reports are sent from Discere to your
+            connected account email. Operational information is used to operate, secure, debug, monitor, and improve Discere.
           </p>
         </section>
 
@@ -141,8 +141,8 @@
         <section class="content-card">
           <h2>5. AI processing</h2>
           <p>
-            Discere uses the OpenAI API to generate summaries and related AI output. Email thread content is sent to the AI
-            provider for that purpose.
+            Discere uses the OpenAI API to generate summaries, refinements, AI Assistant answers, and related AI output. Email
+            thread content is sent to OpenAI through the OpenAI API for that purpose.
           </p>
           <p>
             According to OpenAI’s published API data controls, data sent to the OpenAI API is not used to train or improve
@@ -176,7 +176,7 @@
           <h2>6. Sharing and service providers</h2>
           <p>
             Discere may share information with service providers strictly as needed to operate Discere. This includes OpenAI
-            for AI summarization and related model output, Render or comparable infrastructure providers for hosting and
+            through the OpenAI API for AI summarization and related model output, Render or comparable infrastructure providers for hosting and
             storage, email delivery providers for requested and scheduled report emails sent from Discere, and Google or
             Microsoft for OAuth and mailbox-related access where you choose to connect those providers.
           </p>
@@ -194,7 +194,7 @@
             you can reopen them in the dashboard.
           </p>
           <p>
-            Read or done summaries have source email bodies and saved attachments purged after the retention period, while
+            Read or done summaries have source email bodies and saved attachments purged after 20 days, while
             summarized email IDs remain to prevent accidental duplicate summaries. If you manually delete a summary, Discere
             removes the related saved summary data. Bug reports, analytics events, and service logs may be retained for
             operational, support, or security purposes.
@@ -217,9 +217,7 @@
         <section class="content-card">
           <h2>9. Your choices and rights</h2>
           <p>
-            You can update tracked contacts, summary preferences, schedule settings, and AI attachment access in Discere. You
-            can export your account data from Settings, and exports exclude passwords, OAuth tokens, mailbox passwords, and API
-            keys.
+            You can update tracked contacts, summary preferences, schedule settings, and AI attachment access in Discere.
           </p>
           <p>
             You can delete summaries from the dashboard, and you can delete your account from Settings. Account deletion
@@ -229,7 +227,7 @@
             Microsoft account.
           </p>
           <p>
-            For deletion help, export assistance, or privacy requests, contact <strong>discereresearch@gmail.com</strong>.
+            For deletion help or privacy requests, contact <strong>discereresearch@gmail.com</strong>.
           </p>
         </section>
 

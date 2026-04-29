@@ -111,6 +111,11 @@
         gap: 22px;
       }
 
+      .settings-stack {
+        display: grid;
+        gap: 22px;
+      }
+
       .section {
         display: grid;
         gap: 14px;
@@ -135,7 +140,7 @@
       }
 
       .top-settings-card {
-        min-height: 220px;
+        min-height: 0;
         align-content: start;
       }
 
@@ -254,19 +259,23 @@
 
       .theme-options {
         display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
+        gap: 8px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scrollbar-width: thin;
       }
 
       .theme-chip {
-        padding: 10px 12px;
+        padding: 10px;
         border-radius: 14px;
         border: 1px solid var(--border);
         background: rgba(255, 255, 255, 0.9);
         color: var(--text);
         font-size: 13px;
         font-weight: 600;
-        min-width: 78px;
+        flex: 1 1 0;
+        min-width: 66px;
       }
 
       .theme-chip.active {
@@ -283,6 +292,66 @@
 
       .legal-links a {
         flex: 1 1 180px;
+      }
+
+      .subscription-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: center;
+      }
+
+      .subscription-copy {
+        display: grid;
+        gap: 8px;
+      }
+
+      .subscription-title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .subscription-title-row strong {
+        font-size: clamp(24px, 4vw, 34px);
+        letter-spacing: -0.05em;
+      }
+
+      .subscription-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #eaf4ed;
+        color: #15563f;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .subscription-badge.expired {
+        background: #fdecec;
+        color: #a23a31;
+      }
+
+      .subscription-price {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .subscription-actions {
+        display: grid;
+        gap: 8px;
+        justify-items: stretch;
+        min-width: 240px;
+      }
+
+      .subscription-actions button {
+        min-width: 100%;
       }
 
       .modal-actions > button {
@@ -504,6 +573,14 @@
           grid-template-columns: 1fr;
         }
 
+        .subscription-card {
+          grid-template-columns: 1fr;
+        }
+
+        .subscription-actions {
+          min-width: 0;
+        }
+
         .topbar {
           flex-direction: column;
           align-items: flex-start;
@@ -523,7 +600,7 @@
         </div>
       </section>
 
-      <section class="grid">
+      <section class="settings-stack">
         <div class="section">
           <h2>Profile Name</h2>
           <div class="card top-settings-card">
@@ -535,6 +612,20 @@
               <button id="editProfileNameButton" type="button" class="secondary">Add Name</button>
             </div>
             <div id="profileNameStatus" class="status"></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Login Info</h2>
+          <div class="card">
+            <div class="row">
+              <strong>Email</strong>
+              <span id="settingsLoginEmail">Loading...</span>
+            </div>
+            <div class="row">
+              <strong>Sign-In</strong>
+              <span id="settingsLoginMethod">Loading...</span>
+            </div>
           </div>
         </div>
 
@@ -558,28 +649,22 @@
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="section">
-          <h2>Login Info</h2>
-          <div class="card">
-            <div class="row">
-              <strong>Email</strong>
-              <span id="settingsLoginEmail">Loading...</span>
+      <section id="subscriptionSection" class="section">
+        <h2>Subscription</h2>
+        <div class="card subscription-card">
+          <div class="subscription-copy">
+            <div class="subscription-title-row">
+              <strong id="subscriptionStatusTitle">Loading...</strong>
+              <span id="subscriptionStatusBadge" class="subscription-badge">Loading</span>
             </div>
-            <div class="row">
-              <strong>Sign-In</strong>
-              <span id="settingsLoginMethod">Loading...</span>
-            </div>
-            <p class="inline-note">Export gives you a JSON copy of your account data. It excludes passwords, OAuth tokens, mailbox passwords, and API keys.</p>
-            <div class="row">
-              <span></span>
-              <button id="exportDataButton" type="button" class="secondary">Export My Data</button>
-            </div>
-            <div class="row">
-              <span></span>
-              <button id="deleteAccountButton" type="button" class="secondary">Delete Account</button>
-            </div>
-            <p class="inline-note">Delete Account permanently removes your account, saved contacts, summaries, source email records, attachments, schedules, analytics rows, and bug reports.</p>
+            <p id="subscriptionStatusMessage" class="inline-note">Checking subscription status...</p>
+            <p class="subscription-price" id="subscriptionPriceLine">$4.99/month after a 7-day free trial.</p>
+          </div>
+          <div class="subscription-actions">
+            <button id="manageSubscriptionButton" type="button">Manage Subscription</button>
+            <span id="subscriptionStatus" class="status"></span>
           </div>
         </div>
       </section>
@@ -646,56 +731,80 @@
             <div class="howto-card">
               <div class="howto-step">1</div>
               <div class="howto-copy">
-                <strong>Sign in the right way</strong>
-                <p>Log in via Gmail/Outlook, or create an account.</p>
+                <strong>Connect your mailbox</strong>
+                <p>Gmail and Outlook are connected by login. Other email providers connect in Settings.</p>
               </div>
             </div>
 
             <div class="howto-card">
               <div class="howto-step">2</div>
               <div class="howto-copy">
-                <strong>Set mailbox access if needed</strong>
-                <p>If your email is not Gmail or Outlook, open Mailbox Connection in Settings and enter your real email login details there.</p>
+                <strong>Add your name</strong>
+                <p>This personalizes the dashboard greeting and can be changed later.</p>
               </div>
             </div>
 
             <div class="howto-card">
               <div class="howto-step">3</div>
               <div class="howto-copy">
-                <strong>Add contacts</strong>
-                <p>Add the people you want to track in Contacts. You can add them one by one or review the saved list in the popup.</p>
+                <strong>Add key contacts</strong>
+                <p>Track the people whose emails matter most.</p>
               </div>
             </div>
 
             <div class="howto-card">
               <div class="howto-step">4</div>
               <div class="howto-copy">
-                <strong>Run the summarizer</strong>
-                <p>Click Run Summarizer to check recent emails from those contacts. New summaries will appear on the left side of the dashboard.</p>
+                <strong>Run your first summary</strong>
+                <p>Use the play button to check recent emails from your contacts.</p>
               </div>
             </div>
 
             <div class="howto-card">
               <div class="howto-step">5</div>
               <div class="howto-copy">
-                <strong>Read and combine</strong>
-                <p>Click a summary to open it. Check more than one summary if you want the right side to combine them automatically.</p>
+                <strong>Open a summary</strong>
+                <p>Unread summaries become read when you click and review them.</p>
               </div>
             </div>
 
             <div class="howto-card">
               <div class="howto-step">6</div>
               <div class="howto-copy">
-                <strong>Ask follow-up questions</strong>
-                <p>Use AI Assistant to ask about deadlines, asks, attachments, saved summaries, or how Discere works.</p>
+                <strong>Mark summaries as done</strong>
+                <p>When you finish handling a summary, select it and use the check button. Done summaries stay out of your way.</p>
               </div>
             </div>
 
             <div class="howto-card">
               <div class="howto-step">7</div>
               <div class="howto-copy">
-                <strong>Refine the writing style</strong>
-                <p>Use Refine Summary when you want the summaries to be shorter, clearer, more deadline-focused, or better organized for you.</p>
+                <strong>Delete only when you want it removed</strong>
+                <p>Deleting removes the summary. If that email still matches later, Discere can find it again.</p>
+              </div>
+            </div>
+
+            <div class="howto-card">
+              <div class="howto-step">8</div>
+              <div class="howto-copy">
+                <strong>Email selected summaries</strong>
+                <p>Select one or more summaries and use the email button to send yourself a clean report.</p>
+              </div>
+            </div>
+
+            <div class="howto-card">
+              <div class="howto-step">9</div>
+              <div class="howto-copy">
+                <strong>Schedule routine reports</strong>
+                <p>Use the clock button to have Discere check your contacts and email you summaries on a schedule.</p>
+              </div>
+            </div>
+
+            <div class="howto-card">
+              <div class="howto-step">10</div>
+              <div class="howto-copy">
+                <strong>Ask follow-up questions</strong>
+                <p>Open AI Assistant to ask about deadlines, requests, people, attachments, or how Discere works.</p>
               </div>
             </div>
           </div>
@@ -711,8 +820,8 @@
               <summary>Where does my email data go?</summary>
               <div class="faq-answer">
                 <p>Your mailbox is accessed by Discere so we can find emails from the contacts you track and generate summaries from those threads.</p>
-                <p>To generate summaries, the relevant email content is sent to the AI provider through the API. If AI attachment access is turned on, attachment content can be included too.</p>
-                <p>OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data for abuse monitoring and safety under its published API data controls.</p>
+                <p>To generate summaries, relevant email content is sent to OpenAI through the OpenAI API. If AI attachment access is turned on, attachment content can be included too.</p>
+                <p>OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data, including prompts and responses, for abuse monitoring and safety under its published API data controls.</p>
               </div>
             </details>
 
@@ -720,7 +829,7 @@
               <summary>Who can see my data?</summary>
               <div class="faq-answer">
                 <p>Your saved summaries, thread data, and attachments are scoped to your account inside Discere.</p>
-                <p>Discere processes the data, and the AI provider receives the content needed to generate summaries. Other users should not be able to see your account data through Discere.</p>
+                <p>Other Discere users cannot see your account data. Discere processes and stores the data needed to run your account, and OpenAI receives the content needed to generate summaries through the OpenAI API.</p>
               </div>
             </details>
 
@@ -728,14 +837,14 @@
               <summary>Are attachments sent to AI?</summary>
               <div class="faq-answer">
                 <p>Only if you turn on <strong>AI Attachment Access</strong>.</p>
-                <p>If it is off, Discere withholds attachment contents from the AI and only uses the email thread plus basic attachment references.</p>
+                <p>If it is off, Discere does not send attachment contents to AI. Discere only sends the email thread text and basic attachment names, such as filenames.</p>
               </div>
             </details>
 
             <details class="faq-item">
               <summary>How long is source email data kept?</summary>
               <div class="faq-answer">
-                <p>Read or done summaries have source email bodies and saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental duplicate summaries.</p>
+                <p>Read or done summaries have source email bodies and saved attachments purged after 20 days, while summarized email IDs remain to prevent accidental duplicate summaries.</p>
               </div>
             </details>
 
@@ -750,7 +859,7 @@
             <details class="faq-item">
               <summary>What are the main privacy and security risks?</summary>
               <div class="faq-answer">
-                <p>The main risks are Discere storing email-derived summary data, relevant email text being sent to the AI provider for summarization, and report emails being delivered from Discere to the recipient you choose.</p>
+                <p>The main risks are Discere storing email-derived summary data, relevant email text being sent to OpenAI through the OpenAI API for summarization, and report emails being delivered from Discere to your connected account email.</p>
                 <p>This is reasonable for many normal workflows, but highly confidential legal, finance, board, or executive use should be evaluated more carefully.</p>
               </div>
             </details>
@@ -781,7 +890,6 @@
           <div class="legal-links">
             <a class="button secondary" href="/terms" target="_blank" rel="noopener">Terms of Service</a>
             <a class="button secondary" href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>
-            <a class="button secondary" href="/admin">Admin Dashboard</a>
           </div>
         </div>
       </section>
@@ -802,6 +910,16 @@
             <button id="submitBugReportButton" type="button">Submit Bug Report</button>
           </div>
           <div id="bugReportStatus" class="status"></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Delete Account</h2>
+        <div class="card">
+          <p class="inline-note">Delete Account permanently removes your account, saved contacts, summaries, source email records, attachments, schedules, analytics rows, and bug reports.</p>
+          <div class="row" style="justify-content:flex-end;">
+            <button id="deleteAccountButton" type="button" class="secondary">Delete Account</button>
+          </div>
         </div>
       </section>
 
@@ -893,8 +1011,13 @@
       const submitBugReportButton = document.getElementById("submitBugReportButton");
       const bugReportStatus = document.getElementById("bugReportStatus");
       const logoutButton = document.getElementById("logoutButton");
-      const exportDataButton = document.getElementById("exportDataButton");
       const deleteAccountButton = document.getElementById("deleteAccountButton");
+      const subscriptionStatusTitle = document.getElementById("subscriptionStatusTitle");
+      const subscriptionStatusBadge = document.getElementById("subscriptionStatusBadge");
+      const subscriptionStatusMessage = document.getElementById("subscriptionStatusMessage");
+      const subscriptionPriceLine = document.getElementById("subscriptionPriceLine");
+      const manageSubscriptionButton = document.getElementById("manageSubscriptionButton");
+      const subscriptionStatus = document.getElementById("subscriptionStatus");
       let currentTheme = localStorage.getItem("emailDashboardTheme") || "default";
       let attachmentAiEnabled = false;
 
@@ -1027,6 +1150,76 @@
         editProfileNameButton.textContent = fullName ? "Edit" : "Add Name";
       }
 
+      function formatSubscriptionDate(value) {
+        if (!value) return "";
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return "";
+        return parsed.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+      }
+
+      function renderSubscription(subscription) {
+        const status = subscription || {};
+        const label = status.label || "Free Trial";
+        const price = status.price_label || "$4.99";
+        const trialDays = status.trial_days || 7;
+        const trialEnd = formatSubscriptionDate(status.trial_ends_at);
+        const isExpired = Boolean(status.requires_subscription);
+        subscriptionStatusTitle.textContent = label;
+        subscriptionStatusBadge.textContent = label;
+        subscriptionStatusBadge.classList.toggle("expired", isExpired);
+        subscriptionPriceLine.textContent = `${price}/month after a ${trialDays}-day free trial.`;
+
+        if (status.is_exempt) {
+          subscriptionStatusMessage.textContent = "Testing account. Full access is enabled and no billing is required.";
+          subscriptionPriceLine.textContent = "No billing required for this account.";
+          manageSubscriptionButton.textContent = "No Billing Needed";
+          manageSubscriptionButton.disabled = true;
+        } else if (status.status === "member") {
+          subscriptionStatusMessage.textContent = status.message || "Your Discere subscription is active.";
+          subscriptionPriceLine.textContent = `Plan: ${price}/month.`;
+          manageSubscriptionButton.textContent = "Manage Subscription";
+          manageSubscriptionButton.disabled = false;
+        } else if (isExpired) {
+          subscriptionStatusMessage.textContent = "Your free trial has ended. Subscribe to continue using Discere.";
+          manageSubscriptionButton.textContent = `Subscribe for ${price}/month`;
+          manageSubscriptionButton.disabled = false;
+        } else {
+          const remaining = status.days_remaining ? `${status.days_remaining} day${status.days_remaining === 1 ? "" : "s"} left` : "Trial active";
+          subscriptionStatusMessage.textContent = trialEnd
+            ? `Free trial active. ${remaining}. Trial ends ${trialEnd}. No payment info is needed during the trial.`
+            : `Free trial active. ${remaining}. No payment info is needed during the trial.`;
+          manageSubscriptionButton.textContent = `Start Membership`;
+          manageSubscriptionButton.disabled = false;
+        }
+      }
+
+      async function manageSubscription() {
+        if (!currentProfile) return;
+        manageSubscriptionButton.disabled = true;
+        subscriptionStatus.textContent = "Opening subscription options...";
+        try {
+          const response = await fetch("/billing/checkout", { method: "POST" });
+          const data = await response.json();
+          if (data.subscription) {
+            currentProfile.subscription = data.subscription;
+            renderSubscription(data.subscription);
+          }
+          if (data.checkout_url) {
+            window.location.href = data.checkout_url;
+            return;
+          }
+          subscriptionStatus.textContent = data.message || "Stripe checkout is not connected yet.";
+        } catch (error) {
+          subscriptionStatus.textContent = `Failed to open subscription options: ${error.message}`;
+        } finally {
+          manageSubscriptionButton.disabled = false;
+        }
+      }
+
       function openProfileNameModal() {
         const { firstName, lastName } = getProfileNameParts(currentProfile);
         profileModalFirstNameInput.value = firstName;
@@ -1122,6 +1315,7 @@
         attachmentAiEnabled = Boolean(data.profile.settings?.attachment_ai_enabled);
         syncAttachmentAiToggle();
         syncProfileNameUI();
+        renderSubscription(data.profile.subscription);
         renderSummaryPreferences(data.profile.settings?.summary_style_preferences || []);
         syncMailboxConnectionUI();
         await refreshMailboxConnectionStatus();
@@ -1351,6 +1545,7 @@
         saveAttachmentAiSetting();
       });
       saveAttachmentAiButton.addEventListener("click", saveAttachmentAiSetting);
+      manageSubscriptionButton.addEventListener("click", manageSubscription);
       submitBugReportButton.addEventListener("click", submitBugReport);
       changeMailboxButton.addEventListener("click", openMailboxModal);
       cancelMailboxModalButton.addEventListener("click", closeMailboxModal);
@@ -1367,9 +1562,6 @@
           sessionStorage.removeItem("oauth:attemptEmail");
           window.location.href = "/login";
         }
-      });
-      exportDataButton.addEventListener("click", () => {
-        window.location.href = "/auth/account/export";
       });
       deleteAccountButton.addEventListener("click", async () => {
         if (!currentProfile) return;

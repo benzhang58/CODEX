@@ -230,7 +230,7 @@ def classify_error_detail(detail: Any) -> str:
         return "server_error"
     if "twilio" in text or "sms" in text or "email sending" in text or "send" in text:
         return "report_delivery"
-    if "delete" in text or "export" in text or "purge" in text:
+    if "delete" in text or "purge" in text:
         return "retention"
     return "server_error"
 
@@ -395,6 +395,15 @@ PUBLIC_REPORTS_DIR = APP_STORAGE_DIR / "public_reports"
 SESSION_COOKIE_NAME = "email_dashboard_session"
 SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 READ_RETENTION_DAYS = 20
+SUBSCRIPTION_TRIAL_DAYS = int(os.getenv("EMAIL_SUMMARIZER_SUBSCRIPTION_TRIAL_DAYS", "7"))
+SUBSCRIPTION_PRICE_CENTS = int(os.getenv("EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_CENTS", "499"))
+SUBSCRIPTION_PRICE_LABEL = os.getenv("EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_LABEL", "$4.99").strip() or "$4.99"
+SUBSCRIPTION_PLAN_NAME = os.getenv("EMAIL_SUMMARIZER_SUBSCRIPTION_PLAN_NAME", "Discere Member").strip() or "Discere Member"
+DEFAULT_BILLING_EXEMPT_EMAILS = {
+    "bnzhang2001@gmail.com",
+    "bnnzhang2001@outlook.com",
+    "peter@yj-semitech.com",
+}
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
 GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
@@ -445,6 +454,12 @@ ACCOUNT_SCOPED_SETTING_KEYS = {
     "LAST_NAME",
     "BIRTHDAY",
     "GENDER",
+    "SUBSCRIPTION_STATUS",
+    "SUBSCRIPTION_TRIAL_STARTED_AT",
+    "SUBSCRIPTION_TRIAL_ENDS_AT",
+    "SUBSCRIPTION_ACTIVATED_AT",
+    "STRIPE_CUSTOMER_ID",
+    "STRIPE_SUBSCRIPTION_ID",
 }
 USAGE_LIMIT_ENV_KEYS = {
     "run_summarizer": ("EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY", 10),
@@ -1085,6 +1100,54 @@ def current_usage(request: Request, user_id: Optional[str] = Query(None)) -> Dic
     return get_usage_snapshot(resolved_user_id)
 
 
+@app.get("/billing/status")
+def billing_status(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    return {"user_id": resolved_user_id, "subscription": subscription_status_for_profile(profile, persist=True)}
+
+
+@app.post("/billing/checkout")
+def billing_checkout(request: Request, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    subscription = subscription_status_for_profile(profile, persist=True)
+    if subscription.get("is_exempt"):
+        return {
+            "success": True,
+            "checkout_configured": False,
+            "checkout_url": "",
+            "message": "No billing is required for this testing account.",
+            "subscription": subscription,
+        }
+    if not subscription.get("requires_subscription") and subscription.get("status") == "member":
+        portal_url = os.getenv("EMAIL_SUMMARIZER_STRIPE_CUSTOMER_PORTAL_URL", "").strip()
+        return {
+            "success": bool(portal_url),
+            "checkout_configured": bool(portal_url),
+            "checkout_url": portal_url,
+            "message": "Opening subscription management." if portal_url else "Subscription management is not connected yet.",
+            "subscription": subscription,
+        }
+
+    checkout_url = os.getenv("EMAIL_SUMMARIZER_STRIPE_CHECKOUT_URL", "").strip()
+    if checkout_url:
+        return {
+            "success": True,
+            "checkout_configured": True,
+            "checkout_url": checkout_url,
+            "message": "Opening secure checkout.",
+            "subscription": subscription,
+        }
+    return {
+        "success": False,
+        "checkout_configured": False,
+        "checkout_url": "",
+        "message": "Stripe checkout is not connected yet. Add Stripe checkout settings before accepting paid subscriptions.",
+        "subscription": subscription,
+    }
+
+
 @app.on_event("startup")
 def startup_configuration_check() -> None:
     validate_startup_configuration()
@@ -1120,11 +1183,6 @@ def dashboard_done_preview() -> FileResponse:
 @app.get("/settings")
 def settings_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "settings.html")
-
-
-@app.get("/admin")
-def admin_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "admin.html")
 
 
 @app.get("/signup")
@@ -1247,78 +1305,6 @@ def delete_account(request: Request, response: Response) -> Dict[str, Any]:
 
     clear_session(response, request)
     return {"success": True, "user_id": profile["user_id"], "email": profile.get("email", "")}
-
-
-@app.get("/auth/account/export")
-def export_account_data(request: Request) -> JSONResponse:
-    user_id = resolve_user_id(request)
-    profile = load_profile_or_404(user_id)
-    settings = profile.get("settings") or {}
-    redacted_settings = {
-        key: value
-        for key, value in settings.items()
-        if key not in {"IMAP_PASSWORD", "SMTP_PASSWORD", "OPENAI_API_KEY"}
-    }
-
-    with get_db_connection() as connection:
-        schedules = [
-            dict(row)
-            for row in connection.execute(
-                "SELECT * FROM report_schedules WHERE user_id = ? ORDER BY lower(name), created_at",
-                (user_id,),
-            ).fetchall()
-        ]
-        analytics_events = [
-            dict(row)
-            for row in connection.execute(
-                "SELECT event_id, event_name, created_at, metadata_json FROM analytics_events WHERE user_id = ? ORDER BY created_at",
-                (user_id,),
-            ).fetchall()
-        ]
-        bug_reports = [
-            dict(row)
-            for row in connection.execute(
-                """
-                SELECT bug_id, email, title, description, page_url, user_agent, created_at, metadata_json
-                FROM bug_reports
-                WHERE user_id = ?
-                ORDER BY created_at
-                """,
-                (user_id,),
-            ).fetchall()
-        ]
-
-    summaries = []
-    summaries_dir = get_user_json_summaries_dir(user_id)
-    if summaries_dir.exists():
-        for summary_path in sorted(summaries_dir.glob("*.json")):
-            try:
-                summaries.append(json.loads(summary_path.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError):
-                continue
-
-    export_payload = {
-        "exported_at": datetime.now().isoformat(),
-        "user": {
-            "user_id": profile.get("user_id", ""),
-            "email": profile.get("email", ""),
-            "created_at": profile.get("created_at", ""),
-            "updated_at": profile.get("updated_at", ""),
-            "google_connected": bool(profile.get("google_oauth")),
-            "microsoft_connected": bool(profile.get("microsoft_oauth")),
-        },
-        "settings": redacted_settings,
-        "contacts": get_contacts_for_user(user_id),
-        "contact_profiles": parse_contact_profiles(get_settings_for_user(user_id)),
-        "schedules": schedules,
-        "summaries": summaries,
-        "analytics_events": analytics_events,
-        "bug_reports": bug_reports,
-        "note": "Export excludes passwords, OAuth tokens, mailbox passwords, and API keys.",
-    }
-    response = JSONResponse(export_payload)
-    response.headers["Content-Disposition"] = f'attachment; filename="discere-data-export-{user_id}.json"'
-    return response
 
 
 @app.get("/auth/google/start")
@@ -1774,10 +1760,12 @@ def list_report_schedules(request: Request, user_id: Optional[str] = Query(None)
 @app.post("/report-schedules")
 def create_report_schedule(payload: ReportScheduleRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "scheduled_report")
     profile = load_profile_or_404(resolved_user_id)
+    settings = profile.get("settings") or {}
     normalized = normalize_schedule_payload(
         payload,
-        fallback_recipient=(profile.get("settings") or {}).get("SUMMARY_RECIPIENT") or profile.get("email", ""),
+        fallback_recipient=default_report_recipient(profile, settings),
     )
     now_iso = datetime.now().isoformat()
     schedule_id = secrets.token_hex(12)
@@ -1845,10 +1833,12 @@ def update_report_schedule(
     request: Request,
 ) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "scheduled_report")
     profile = load_profile_or_404(resolved_user_id)
+    settings = profile.get("settings") or {}
     normalized = normalize_schedule_payload(
         payload,
-        fallback_recipient=(profile.get("settings") or {}).get("SUMMARY_RECIPIENT") or profile.get("email", ""),
+        fallback_recipient=default_report_recipient(profile, settings),
     )
     with get_db_connection() as connection:
         existing = connection.execute(
@@ -2066,16 +2056,12 @@ def normalize_schedule_payload(
     if preferred_minute < 0 or preferred_minute > 59:
         raise HTTPException(status_code=400, detail="preferred_minute must be between 0 and 59.")
 
-    delivery_channel = str(payload.delivery_channel or "email").strip().lower()
-    if delivery_channel not in {"email", "sms"}:
-        raise HTTPException(status_code=400, detail="delivery_channel must be either 'email' or 'sms'.")
+    delivery_channel = "email"
 
-    recipient_email = str(payload.recipient_email or "").strip() or str(fallback_recipient or "").strip()
-    recipient_phone = str(payload.recipient_phone or "").strip()
-    if delivery_channel == "email" and not is_valid_email(recipient_email):
+    recipient_email = str(fallback_recipient or "").strip()
+    recipient_phone = ""
+    if not is_valid_email(recipient_email):
         raise HTTPException(status_code=400, detail="A valid recipient_email is required for email delivery.")
-    if delivery_channel == "sms" and not is_valid_e164_phone(recipient_phone):
-        raise HTTPException(status_code=400, detail="A valid E.164 recipient_phone is required for SMS delivery.")
 
     return {
         "name": str(payload.name or "").strip() or "Scheduled Report",
@@ -2436,6 +2422,12 @@ def default_profile_settings() -> Dict[str, str]:
         "CONTACT_PROFILES": "{}",
         "MAILBOX_CONNECTION_CONFIRMED": "false",
         "SUMMARY_STYLE_PREFERENCES": "[]",
+        "SUBSCRIPTION_STATUS": "",
+        "SUBSCRIPTION_TRIAL_STARTED_AT": "",
+        "SUBSCRIPTION_TRIAL_ENDS_AT": "",
+        "SUBSCRIPTION_ACTIVATED_AT": "",
+        "STRIPE_CUSTOMER_ID": "",
+        "STRIPE_SUBSCRIPTION_ID": "",
         "IMAP_SERVER": os.getenv("IMAP_SERVER", ""),
         "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
         "IMAP_USER": "",
@@ -2456,6 +2448,148 @@ def default_profile_settings() -> Dict[str, str]:
             if not settings.get(key):
                 settings[key] = value
     return settings
+
+
+def billing_exempt_emails() -> set[str]:
+    configured = {
+        item.strip().lower()
+        for item in os.getenv("EMAIL_SUMMARIZER_BILLING_EXEMPT_EMAILS", "").split(",")
+        if item.strip()
+    }
+    return DEFAULT_BILLING_EXEMPT_EMAILS | configured
+
+
+def _parse_subscription_datetime(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except Exception:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    return parsed
+
+
+def _profile_billing_emails(profile: Dict[str, Any]) -> set[str]:
+    candidates = {
+        str(profile.get("email", "") or "").strip().lower(),
+        str((profile.get("google_oauth") or {}).get("email", "") or "").strip().lower(),
+        str((profile.get("microsoft_oauth") or {}).get("email", "") or "").strip().lower(),
+    }
+    normalized_microsoft = normalize_microsoft_display_email(str((profile.get("microsoft_oauth") or {}).get("email", "") or ""))
+    if normalized_microsoft:
+        candidates.add(normalized_microsoft.strip().lower())
+    return {email for email in candidates if email}
+
+
+def is_billing_exempt_profile(profile: Dict[str, Any]) -> bool:
+    return bool(_profile_billing_emails(profile) & billing_exempt_emails())
+
+
+def ensure_subscription_settings(profile: Dict[str, Any]) -> bool:
+    settings = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
+    now = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    changed = settings != (profile.get("settings") or {})
+
+    if not str(settings.get("SUBSCRIPTION_TRIAL_STARTED_AT", "") or "").strip():
+        settings["SUBSCRIPTION_TRIAL_STARTED_AT"] = now.isoformat()
+        changed = True
+    if not str(settings.get("SUBSCRIPTION_TRIAL_ENDS_AT", "") or "").strip():
+        trial_start = _parse_subscription_datetime(settings.get("SUBSCRIPTION_TRIAL_STARTED_AT")) or now
+        settings["SUBSCRIPTION_TRIAL_ENDS_AT"] = (trial_start + timedelta(days=SUBSCRIPTION_TRIAL_DAYS)).isoformat()
+        changed = True
+    if not str(settings.get("SUBSCRIPTION_STATUS", "") or "").strip():
+        settings["SUBSCRIPTION_STATUS"] = "trialing"
+        changed = True
+
+    profile["settings"] = settings
+    return changed
+
+
+def subscription_status_for_profile(profile: Dict[str, Any], *, persist: bool = False) -> Dict[str, Any]:
+    changed = ensure_subscription_settings(profile)
+    settings = profile.get("settings") or {}
+    now = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    raw_status = str(settings.get("SUBSCRIPTION_STATUS", "") or "trialing").strip().lower()
+    trial_started_at = _parse_subscription_datetime(settings.get("SUBSCRIPTION_TRIAL_STARTED_AT"))
+    trial_ends_at = _parse_subscription_datetime(settings.get("SUBSCRIPTION_TRIAL_ENDS_AT"))
+    exempt = is_billing_exempt_profile(profile)
+
+    active_statuses = {"active", "member", "paid", "trial_exempt"}
+    if exempt:
+        normalized_status = "member"
+        label = "Member"
+        requires_subscription = False
+        days_remaining = None
+        message = "You have full access to Discere for testing."
+    elif raw_status in active_statuses:
+        normalized_status = "member"
+        label = "Member"
+        requires_subscription = False
+        days_remaining = None
+        message = "Your Discere subscription is active."
+    elif trial_ends_at and trial_ends_at > now:
+        normalized_status = "trialing"
+        label = "Free Trial"
+        requires_subscription = False
+        remaining_seconds = max(0, int((trial_ends_at - now).total_seconds()))
+        days_remaining = max(1, (remaining_seconds + 86399) // 86400)
+        message = f"Your free trial has {days_remaining} day{'s' if days_remaining != 1 else ''} remaining."
+    else:
+        normalized_status = "expired"
+        label = "Trial Ended"
+        requires_subscription = True
+        days_remaining = 0
+        message = "Your free trial has ended. Subscribe to continue using Discere."
+
+    if raw_status != normalized_status and normalized_status in {"expired", "member"}:
+        settings["SUBSCRIPTION_STATUS"] = normalized_status
+        changed = True
+
+    if persist and changed:
+        save_profile(profile)
+
+    return {
+        "status": normalized_status,
+        "label": label,
+        "is_exempt": exempt,
+        "requires_subscription": requires_subscription,
+        "trial_started_at": trial_started_at.isoformat() if trial_started_at else "",
+        "trial_ends_at": trial_ends_at.isoformat() if trial_ends_at else "",
+        "trial_days": SUBSCRIPTION_TRIAL_DAYS,
+        "days_remaining": days_remaining,
+        "plan_name": SUBSCRIPTION_PLAN_NAME,
+        "price_cents": SUBSCRIPTION_PRICE_CENTS,
+        "price_label": SUBSCRIPTION_PRICE_LABEL,
+        "billing_interval": "month",
+        "checkout_configured": bool(os.getenv("EMAIL_SUMMARIZER_STRIPE_CHECKOUT_URL", "").strip()),
+        "portal_configured": bool(os.getenv("EMAIL_SUMMARIZER_STRIPE_CUSTOMER_PORTAL_URL", "").strip()),
+        "message": message,
+    }
+
+
+def enforce_subscription_access(user_id: str, feature: str = "feature") -> Dict[str, Any]:
+    profile = load_profile_or_404(user_id)
+    subscription = subscription_status_for_profile(profile, persist=True)
+    if subscription.get("requires_subscription"):
+        write_monitoring_event(
+            "abuse",
+            "subscription_required",
+            "warning",
+            user_id=user_id,
+            metadata={"feature": feature, "status": subscription.get("status")},
+        )
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "subscription_required",
+                "message": "Your free trial has ended. Subscribe to continue using Discere.",
+                "subscription": subscription,
+            },
+        )
+    return subscription
 
 
 def normalize_openai_model(value: Any) -> str:
@@ -2886,6 +3020,8 @@ def save_profile(profile: Dict[str, Any]) -> None:
 
 def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
     settings = profile.get("settings") or {}
+    subscription = subscription_status_for_profile(profile, persist=True)
+    settings = profile.get("settings") or settings
     contacts = [item.strip() for item in settings.get("WHITELIST_SENDERS", "").split(",") if item.strip()]
     contact_profiles = build_contact_profile_items(settings)
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
@@ -2910,6 +3046,7 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
         "google_connected": google_connected,
         "microsoft_connected": microsoft_connected,
         "auth_provider": auth_provider,
+        "subscription": subscription,
         "settings": response_settings,
     }
 
@@ -3015,19 +3152,7 @@ def require_admin(request: Request) -> None:
     if configured_key and hmac.compare_digest(configured_key, provided_key):
         return
 
-    admin_emails = {
-        email.strip().lower()
-        for email in os.getenv("EMAIL_SUMMARIZER_ADMIN_EMAILS", "").split(",")
-        if email.strip()
-    }
-    session_user_id = get_session_user_id(request)
-    if admin_emails and session_user_id:
-        profile = load_profile(session_user_id)
-        profile_email = str((profile or {}).get("email", "")).strip().lower()
-        if profile_email in admin_emails:
-            return
-
-    raise HTTPException(status_code=403, detail="Admin access is not configured or you are not allowed.")
+    raise HTTPException(status_code=403, detail="Admin access requires the internal admin key.")
 
 
 def get_env_path_for_user(user_id: str) -> Path:
@@ -3195,6 +3320,10 @@ def get_user_json_emails_dir(user_id: str) -> Path:
     return DATA_DIR / user_id / "emails"
 
 
+def get_user_metadata_path(user_id: str) -> Path:
+    return DATA_DIR / user_id / "metadata.json"
+
+
 def get_user_processed_state_path(user_id: str) -> Path:
     return OUTPUT_ROOT_DIR / user_id / "processed_state.json"
 
@@ -3320,6 +3449,40 @@ def load_all_current_summaries_for_user(user_id: str) -> List[Dict[str, Any]]:
         ]
 
     return []
+
+
+def load_last_run_summary_ids_for_user(user_id: str) -> List[str]:
+    metadata_path = get_user_metadata_path(user_id)
+    if not metadata_path.exists():
+        return []
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [
+        str(summary_id).strip()
+        for summary_id in payload.get("last_summary_ids", [])
+        if str(summary_id).strip() and not str(summary_id).strip().startswith("overall_master_")
+    ]
+
+
+def load_summaries_by_ids_for_user(user_id: str, summary_ids: List[str]) -> List[Dict[str, Any]]:
+    tracked_contacts = {contact.strip().lower() for contact in get_contacts_for_user(user_id) if contact.strip()}
+    summaries: List[Dict[str, Any]] = []
+    json_summaries_dir = get_user_json_summaries_dir(user_id)
+    for summary_id in summary_ids:
+        clean_id = str(summary_id or "").strip()
+        if not clean_id or clean_id.startswith("overall_master_"):
+            continue
+        summary_path = safe_user_file_path(json_summaries_dir, clean_id, ".json", "summary")
+        if not summary_path.exists():
+            continue
+        summary = load_summary_json(summary_path)
+        sender = str(summary.get("sender", "") or "").strip().lower()
+        if tracked_contacts and sender not in tracked_contacts:
+            continue
+        summaries.append(summary)
+    return summaries
 
 
 def apply_contact_profile_to_summary(summary: Dict[str, Any], profiles: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
@@ -3590,29 +3753,35 @@ Contacts and summarization behavior:
 Read, done, delete, and re-summarization:
 - New/unread summaries become read when the user opens and reviews them.
 - Marking a summary as done keeps the summarized email IDs so Discere avoids accidentally summarizing the same email again.
-- Read or done summaries have source email bodies and saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental duplicate summaries.
+- Read or done summaries have source email bodies and saved attachments purged after 20 days, while summarized email IDs remain to prevent accidental duplicate summaries.
 - Deleting an individual summary removes the saved summary and related processed identifiers for emails only tied to that summary. That means the email can be rediscovered and summarized again if it still matches the user's contacts and search window.
 - If a user says deleted emails keep coming back, explain that deletion is intentionally rediscovery-friendly. They should mark summaries as done instead of deleting them when they want Discere to remember that the email was already handled.
 - A new email in the same thread has a new message ID and can create a fresh summary if it matches a tracked contact and the scan window.
 
 Reports and scheduled reports:
 - Manual and scheduled email reports are sent from Discere's configured report sender address, intended to be Discere <discereresearch@gmail.com>, not from the user's connected Gmail, Microsoft, or mailbox account.
-- Scheduled reports always create a fresh summarizer run first, then email the full formatted report to the recipient chosen in the schedule.
+- Scheduled reports always create a fresh summarizer run first, then email the full formatted report to the user's connected account email.
 - Saved schedules can be viewed, edited, deleted, and toggled on/off.
 - Phone/SMS report delivery is not part of the current launch flow unless explicitly re-enabled later.
+
+Subscription and billing:
+- New accounts receive a 7-day free trial without entering payment information.
+- After the free trial ends, summarization, AI Assistant, report delivery, and scheduled report features require a paid subscription.
+- The current introductory plan is $4.99 per month.
+- Users can see trial or member status in Settings under Subscription.
+- Testing accounts configured by Discere can be exempt from subscription enforcement.
 
 Privacy and AI processing:
 - Discere reads mailbox data needed to find emails from tracked contacts and generate summaries.
 - Discere stores account settings, contacts, schedules, summaries, summarized email IDs, and limited source email data needed to operate Discere.
-- Relevant email text and thread context are sent to the OpenAI API to generate summaries and AI answers. Attachment contents are sent to AI only if AI attachment access is enabled; otherwise Discere limits attachment use to metadata such as filenames.
-- OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data for abuse monitoring, safety, legal compliance, and API operation under its published API data controls.
+- Relevant email text and thread context are sent to OpenAI through the OpenAI API to generate summaries and AI answers. Attachment contents are sent to OpenAI only if AI attachment access is enabled; otherwise Discere limits attachment use to metadata such as filenames.
+- OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data, which can include prompts and responses, for abuse monitoring, safety, legal compliance, and API operation under its published API data controls.
 - OpenAI's published API data controls say abuse-monitoring logs may include customer content such as prompts and responses and are retained for up to 30 days by default, unless longer retention is required by law or needed to protect OpenAI's services or others from harm.
 - Discere does not sell Google or Microsoft user data and does not use mailbox data for advertising.
 
 Security and account controls:
 - OAuth tokens and mailbox credentials are encrypted and stored where needed.
 - Discere uses account isolation so users should only access their own summaries, contacts, settings, attachments, schedules, and related account data.
-- Users can export account data from Settings. Exports exclude passwords, OAuth tokens, mailbox passwords, and API keys.
 - Users can delete individual summaries from the dashboard.
 - Users can delete their account from Settings. Account deletion removes account data, contacts, schedules, summaries, source email data, attachments, and related user records.
 - Users can revoke Google or Microsoft OAuth access from their provider account settings.
@@ -3659,9 +3828,14 @@ def is_discere_product_question(question: str) -> bool:
         "scheduled",
         "report",
         "sender",
+        "subscription",
+        "trial",
+        "billing",
+        "payment",
+        "price",
+        "pricing",
         "mailbox connection",
         "attachment",
-        "export",
         "account",
         "contact",
         "contacts",
@@ -3929,14 +4103,12 @@ def render_summary_email_html(summary: Dict[str, Any]) -> str:
     )
 
 
-def default_report_recipient(profile: Dict[str, Any], settings: Dict[str, str], recipient_override: Optional[str] = None) -> str:
+def default_report_recipient(profile: Dict[str, Any], settings: Dict[str, str]) -> str:
     return (
-        str(recipient_override or "").strip()
-        or str((profile.get("google_oauth") or {}).get("email") or "").strip()
+        str((profile.get("google_oauth") or {}).get("email") or "").strip()
         or str((profile.get("microsoft_oauth") or {}).get("email") or "").strip()
         or str(settings.get("IMAP_USER") or "").strip()
         or str(profile.get("email") or "").strip()
-        or str(settings.get("SUMMARY_RECIPIENT") or "").strip()
     )
 
 
@@ -4274,10 +4446,10 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
     )
 
 
-def send_combined_report_via_smtp(user_id: str, title: str, markdown: str, recipient_override: Optional[str] = None) -> Dict[str, str]:
+def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
-    recipient = default_report_recipient(profile, settings, recipient_override)
+    recipient = default_report_recipient(profile, settings)
 
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
@@ -4538,11 +4710,8 @@ def process_due_schedule(schedule_id: str) -> None:
 
         user_id = str(schedule["user_id"])
         days_back = int(schedule["days_back"])
-        delivery_channel = str(schedule["delivery_channel"] or "email")
-        recipient_email = str(schedule["recipient_email"] or "").strip()
-        recipient_phone = str(schedule["recipient_phone"] or "").strip()
-
         try:
+            enforce_subscription_access(user_id, "scheduled_report")
             enforce_usage_limit(user_id, "scheduled_report")
         except HTTPException:
             now_dt = datetime.now(ZoneInfo(str(schedule["timezone"] or "America/Los_Angeles")))
@@ -4566,16 +4735,16 @@ def process_due_schedule(schedule_id: str) -> None:
                 )
             return
 
-        execute_summarizer_run(user_id, days_back)
-
-        summaries = load_all_current_summaries_for_user(user_id)
+        run_result = execute_summarizer_run(user_id, days_back)
+        summaries = (
+            load_summaries_by_ids_for_user(user_id, run_result.get("new_summary_ids") or [])
+            if run_result.get("success")
+            else []
+        )
         if summaries:
             markdown = build_scheduled_report_markdown(summaries)
             title = str(schedule["name"] or "Scheduled Report").strip() or "Scheduled Report"
-            if delivery_channel == "sms" and recipient_phone:
-                send_combined_report_via_sms(user_id, title, markdown, recipient_phone)
-            elif recipient_email:
-                send_combined_report_via_smtp(user_id, title, markdown, recipient_override=recipient_email)
+            send_combined_report_via_smtp(user_id, title, markdown)
 
         now_dt = datetime.now(ZoneInfo(str(schedule["timezone"] or "America/Los_Angeles")))
         next_run_at = compute_next_schedule_run(
@@ -4634,6 +4803,7 @@ threading.Thread(target=schedule_runner_loop, daemon=True).start()
 @app.post("/chat")
 def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "chat")
     enforce_usage_limit(resolved_user_id, "chat")
     question = enforce_text_limit(payload.question, "Question", MAX_CHAT_QUESTION_CHARS)
     if not question:
@@ -4720,6 +4890,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
 @app.post("/summaries/combined")
 def combined_summary(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "combined_summary")
     enforce_summary_id_limit(payload.summary_ids)
     return generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
 
@@ -4727,6 +4898,7 @@ def combined_summary(payload: CombinedSummaryRequest, request: Request) -> Dict[
 @app.post("/summaries/combined/send-email")
 def send_combined_summary_email(payload: CombinedSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "report_delivery")
     enforce_summary_id_limit(payload.summary_ids)
     enforce_usage_limit(resolved_user_id, "report_delivery")
     combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
@@ -4747,6 +4919,7 @@ def send_combined_summary_email(payload: CombinedSummaryRequest, request: Reques
 @app.post("/summaries/combined/send-text")
 def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "report_delivery")
     enforce_summary_id_limit(payload.summary_ids)
     enforce_usage_limit(resolved_user_id, "report_delivery")
     combined = generate_combined_summary_content(resolved_user_id, payload.summary_ids, request)
@@ -4779,6 +4952,7 @@ def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Req
 @app.post("/summaries/refine")
 def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "refine")
     enforce_usage_limit(resolved_user_id, "refine")
     markdown = enforce_text_limit(payload.markdown, "Summary content", MAX_REFINE_MARKDOWN_CHARS)
     instructions = enforce_text_limit(payload.instructions, "Refinement instructions", MAX_REFINE_INSTRUCTIONS_CHARS)
@@ -4956,6 +5130,8 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
         "stats": parsed_stats,
         "success": result.returncode == 0,
     }
+    if result_payload["success"]:
+        result_payload["new_summary_ids"] = load_last_run_summary_ids_for_user(user_id)
     after_count = len(load_all_current_summaries_for_user(user_id))
     if result_payload["success"] and before_count == 0 and after_count > 0 and not analytics_event_exists(user_id, "first_summary_generated"):
         track_analytics_event(
@@ -5099,6 +5275,7 @@ def get_active_run_summarizer_job(request: Request, user_id: Optional[str] = Que
 @app.post("/run-summarizer")
 def run_summarizer(payload: RunSummarizerRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "run_summarizer")
     profile = load_profile_or_404(resolved_user_id)
     google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
     microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
@@ -5292,6 +5469,7 @@ def mark_summary_done(summary_id: str, payload: SummaryDoneRequest, request: Req
 @app.post("/summaries/{summary_id}/send-email")
 def send_summary_email(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
+    enforce_subscription_access(user_id, "report_delivery")
     enforce_usage_limit(user_id, "report_delivery")
     summary = get_summary(summary_id, request, user_id)
     delivery = send_summary_via_smtp(user_id, summary)

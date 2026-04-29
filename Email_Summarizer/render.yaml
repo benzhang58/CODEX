@@ -17,8 +17,6 @@ services:
         sync: false
       - key: EMAIL_SUMMARIZER_ENCRYPTION_KEY
         sync: false
-      - key: EMAIL_SUMMARIZER_ADMIN_EMAILS
-        sync: false
       - key: EMAIL_SUMMARIZER_ADMIN_KEY
         sync: false
       - key: EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED
@@ -35,6 +33,18 @@ services:
         value: "30"
       - key: EMAIL_SUMMARIZER_LIMIT_REPORT_DELIVERY_PER_DAY
         value: "50"
+      - key: EMAIL_SUMMARIZER_SUBSCRIPTION_TRIAL_DAYS
+        value: "7"
+      - key: EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_CENTS
+        value: "499"
+      - key: EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_LABEL
+        value: "$4.99"
+      - key: EMAIL_SUMMARIZER_BILLING_EXEMPT_EMAILS
+        value: bnzhang2001@gmail.com,bnnzhang2001@outlook.com,peter@yj-semitech.com
+      - key: EMAIL_SUMMARIZER_STRIPE_CHECKOUT_URL
+        sync: false
+      - key: EMAIL_SUMMARIZER_STRIPE_CUSTOMER_PORTAL_URL
+        sync: false
       - key: EMAIL_SUMMARIZER_CORS_ORIGINS
         sync: false
       - key: EMAIL_SUMMARIZER_COOKIE_DOMAIN

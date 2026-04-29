@@ -1185,6 +1185,20 @@
         box-shadow: none;
       }
 
+      .schedule-recipient-display {
+        width: 100%;
+        min-height: 64px;
+        padding: 13px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: #f7f6f1;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
       .schedule-inline {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2231,13 +2245,13 @@
           <section class="schedule-section">
             <div class="schedule-section-header">
               <div class="schedule-section-label">Delivery</div>
-              <div class="schedule-section-title">Choose where the report goes</div>
-              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then Discere emails the full report from discereresearch@gmail.com to the address you choose.</div>
+              <div class="schedule-section-title">Send to your account email</div>
+              <div class="schedule-section-note">Every scheduled run creates a fresh inbox check, then Discere emails the full report from discereresearch@gmail.com to your connected account email.</div>
             </div>
             <div class="schedule-grid">
-              <div class="field">
-                <label for="scheduleEmailInput">Recipient Email</label>
-                <input id="scheduleEmailInput" type="email" placeholder="you@example.com" />
+              <div class="field field-wide">
+                <label>Report recipient</label>
+                <div id="scheduleRecipientDisplay" class="schedule-recipient-display">Connected account email</div>
               </div>
             </div>
           </section>
@@ -2384,7 +2398,7 @@
       const savedSchedulesCloseTopButton = document.getElementById("savedSchedulesCloseTopButton");
       const savedSchedulesAddButton = document.getElementById("savedSchedulesAddButton");
       const scheduleNameInput = document.getElementById("scheduleNameInput");
-      const scheduleEmailInput = document.getElementById("scheduleEmailInput");
+      const scheduleRecipientDisplay = document.getElementById("scheduleRecipientDisplay");
       const scheduleIntervalValueInput = document.getElementById("scheduleIntervalValueInput");
       const scheduleIntervalUnitInput = document.getElementById("scheduleIntervalUnitInput");
       const scheduleTimeInput = document.getElementById("scheduleTimeInput");
@@ -2422,6 +2436,7 @@
       let editingScheduleActive = true;
       let currentTimeTimer = null;
       let chatConversation = [];
+      let subscriptionModalShown = false;
       const SCHEDULE_TIMEZONE_LABELS = {
         "America/Los_Angeles": "Pacific Time",
         "America/Denver": "Mountain Time",
@@ -2621,6 +2636,9 @@
         const message = String(rawMessage || "").trim();
         const lower = message.toLowerCase();
         if (!message) return "Something went wrong. Please try again.";
+        if (lower.includes("subscription_required") || lower.includes("free trial has ended")) {
+          return "Your free trial has ended. Subscribe to continue using Discere.";
+        }
         if (
           lower.includes("access_token_scope_insufficient") ||
           lower.includes("insufficient authentication scopes") ||
@@ -2659,6 +2677,15 @@
         const detail = data?.detail ?? data;
         if (typeof detail === "string") return friendlyApiMessage(detail || fallback);
         if (detail && typeof detail === "object") {
+          if (detail.code === "subscription_required") {
+            if (detail.subscription && currentProfile) {
+              currentProfile.subscription = detail.subscription;
+            }
+            setTimeout(() => {
+              showSubscriptionRequiredModal();
+            }, 0);
+            return friendlyApiMessage(detail.message || fallback);
+          }
           return friendlyApiMessage(detail.stderr || detail.stdout || detail.message || JSON.stringify(detail) || fallback);
         }
         return friendlyApiMessage(fallback);
@@ -2780,11 +2807,26 @@
         }
       }
 
+      function getAccountReportEmail() {
+        return (
+          currentProfile?.google_oauth?.email ||
+          currentProfile?.microsoft_oauth?.email ||
+          currentProfile?.settings?.imap_user ||
+          currentProfile?.email ||
+          ""
+        );
+      }
+
+      function updateScheduleRecipientDisplay(email = "") {
+        if (!scheduleRecipientDisplay) return;
+        scheduleRecipientDisplay.textContent = email || getAccountReportEmail() || "Connected account email";
+      }
+
       function resetScheduleForm() {
         editingScheduleId = "";
         editingScheduleActive = true;
         scheduleNameInput.value = "";
-        scheduleEmailInput.value = currentProfile?.email || "";
+        updateScheduleRecipientDisplay();
         scheduleIntervalValueInput.value = "1";
         scheduleIntervalUnitInput.value = "days";
         scheduleTimeInput.value = "08:00";
@@ -2800,7 +2842,7 @@
         editingScheduleId = schedule.schedule_id || "";
         editingScheduleActive = Boolean(schedule.active);
         scheduleNameInput.value = schedule.name || "";
-        scheduleEmailInput.value = schedule.recipient_email || currentProfile?.email || "";
+        updateScheduleRecipientDisplay(schedule.recipient_email);
         scheduleIntervalValueInput.value = String(schedule.interval_value || 1);
         scheduleIntervalUnitInput.value = schedule.interval_unit || "days";
         scheduleTimeInput.value = `${String(schedule.preferred_hour || 0).padStart(2, "0")}:${String(schedule.preferred_minute || 0).padStart(2, "0")}`;
@@ -2818,8 +2860,8 @@
       }
 
       function formatScheduleMeta(schedule) {
-        const channelLabel = schedule.delivery_channel === "sms" ? "Phone" : "Email";
-        const recipient = schedule.delivery_channel === "sms" ? (schedule.recipient_phone || "No phone set") : (schedule.recipient_email || "No email set");
+        const channelLabel = "Email";
+        const recipient = schedule.recipient_email || getAccountReportEmail() || "Connected account email";
         const nextRun = formatScheduleNextRun(schedule);
         return [
           `Every ${schedule.interval_value} ${schedule.interval_unit} at ${formatScheduleTime(schedule)}`,
@@ -2843,7 +2885,7 @@
                 <h4>${escapeHtml(schedule.name || "Scheduled Report")}</h4>
                 <div class="schedule-pill-row">
                   <span class="schedule-pill ${schedule.active ? "active" : "inactive"}">${schedule.active ? "Active" : "Paused"}</span>
-                  <span class="schedule-pill">${escapeHtml(schedule.delivery_channel === "sms" ? "Phone" : "Email")}</span>
+                  <span class="schedule-pill">Email</span>
                 </div>
               </div>
             </div>
@@ -2917,7 +2959,7 @@
           interval_value: Number(scheduleIntervalValueInput.value || 1),
           interval_unit: scheduleIntervalUnitInput.value,
           days_back: Number(scheduleDaysBackInput.value || 7),
-          recipient_email: scheduleEmailInput.value.trim(),
+          recipient_email: getAccountReportEmail(),
           recipient_phone: "",
           delivery_channel: "email",
           run_summarizer_first: true,
@@ -2931,15 +2973,12 @@
 
       async function saveSchedule(payload = null, silentReload = false) {
         if (!requireSignedIn()) return false;
+        if (!(await requireSubscriptionAccess())) return false;
         const wasEditing = Boolean(editingScheduleId && !payload);
         scheduleSaveButton.disabled = true;
         scheduleStatus.textContent = editingScheduleId && !silentReload ? "Saving changes..." : "Creating schedule...";
         try {
           const body = payload || buildSchedulePayload();
-          if (!body.recipient_email) {
-            scheduleStatus.textContent = "Enter a recipient email first.";
-            return false;
-          }
           const url = editingScheduleId && !payload
             ? `/report-schedules/${encodeURIComponent(editingScheduleId)}`
             : payload?.schedule_id
@@ -2953,8 +2992,9 @@
           });
           const data = await response.json();
           if (!response.ok) {
-            scheduleStatus.textContent = data.detail || "Failed to save schedule.";
-            savedSchedulesStatus.textContent = data.detail || "Failed to save schedule.";
+            const errorText = extractApiError(data, "Failed to save schedule.");
+            scheduleStatus.textContent = errorText;
+            savedSchedulesStatus.textContent = errorText;
             return false;
           }
           localStorage.setItem("schedulePreferredTimezone", String(data.schedule?.timezone || body.timezone || getLocalTimezone()));
@@ -3008,6 +3048,7 @@
 
       async function openScheduleModal() {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         await loadSchedules();
         if (scheduleItems.length) {
           scheduleModal.hidden = true;
@@ -3403,6 +3444,32 @@
         return false;
       }
 
+      async function openBillingPage() {
+        window.location.href = "/settings#subscription";
+      }
+
+      async function showSubscriptionRequiredModal() {
+        if (!currentProfile?.subscription?.requires_subscription) return;
+        const price = currentProfile.subscription.price_label || "$4.99";
+        const result = await openAppModal({
+          title: "Subscription Required",
+          message: `Your free trial has ended. Subscribe for ${price}/month to keep using Discere.`,
+          confirmLabel: "Manage Subscription",
+          cancelLabel: "Not Now",
+        });
+        if (result) {
+          await openBillingPage();
+        }
+      }
+
+      async function requireSubscriptionAccess() {
+        if (!requireSignedIn()) return false;
+        if (!currentProfile?.subscription?.requires_subscription) return true;
+        setRunStatus("Your free trial has ended. Subscribe to continue using Discere.");
+        await showSubscriptionRequiredModal();
+        return false;
+      }
+
       function looksLikeEmail(value) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
       }
@@ -3622,6 +3689,12 @@
           applyProfileToForm(data.profile);
           if (!(await showLegalAcceptanceIfNeeded())) {
             return false;
+          }
+          if (currentProfile?.subscription?.requires_subscription && !subscriptionModalShown) {
+            subscriptionModalShown = true;
+            setTimeout(() => {
+              showSubscriptionRequiredModal();
+            }, 250);
           }
           await fetchContacts();
           await loadSummaries();
@@ -4207,6 +4280,7 @@
 
       async function runSummarizer() {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         if (!Array.isArray(currentContacts) || currentContacts.length === 0) {
           await openAppModal({
             title: "Add Contacts First",
@@ -4380,6 +4454,7 @@
 
       async function sendCombinedReportEmail() {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         const summaryIds = [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
@@ -4462,6 +4537,7 @@
 
       async function sendChat() {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         const question = chatInput.value.trim();
         if (!question) return;
 
@@ -4561,6 +4637,7 @@
 
       async function generateCombinedSummary(options = {}) {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         const summaryIds = options.summaryIds || [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
@@ -4623,6 +4700,7 @@
 
       async function refineCurrentSummary() {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         if (!currentDisplayedSummaryMarkdown) {
           setRunStatus("Select or build a summary first.");
           return;
@@ -4852,6 +4930,7 @@
 
       async function sendCurrentSummaryEmail() {
         if (!requireSignedIn()) return;
+        if (!(await requireSubscriptionAccess())) return;
         if (!currentSummaryId) {
           setRunStatus("Select a summary first.");
           return;

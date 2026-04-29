@@ -180,13 +180,16 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["contacts"], [])
 
-        export_response = client.get("/auth/account/export")
-        self.assertEqual(export_response.status_code, 200, export_response.text)
-        payload = export_response.json()
-        self.assertEqual(payload["settings"].get("IMAP_USER"), "fresh@example.com")
-        self.assertEqual(payload["settings"].get("SMTP_USER"), "fresh@example.com")
-        self.assertEqual(payload["settings"].get("SUMMARY_RECIPIENT"), "fresh@example.com")
+        profile_response = client.get("/auth/me")
+        self.assertEqual(profile_response.status_code, 200, profile_response.text)
+        payload = profile_response.json()["profile"]
+        settings = payload["settings"]
+        self.assertEqual(settings.get("imap_user"), "fresh@example.com")
+        self.assertNotIn("smtp_user", settings)
+        self.assertNotIn("summary_recipient", settings)
         self.assertNotIn("global-imap@example.com", json.dumps(payload))
+        self.assertNotIn("global-smtp@example.com", json.dumps(payload))
+        self.assertNotIn("global-recipient@example.com", json.dumps(payload))
         self.assertNotIn("should-not-leak@example.com", json.dumps(payload))
 
     def test_cross_account_user_id_override_is_blocked(self) -> None:
@@ -264,15 +267,184 @@ class SecurityRegressionTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403, response.text)
 
-    def test_export_redacts_sensitive_values(self) -> None:
-        client = self.signup("export@example.com")
+    def test_account_export_endpoint_is_not_available(self) -> None:
+        client = self.signup("no-export@example.com")
         response = client.get("/auth/account/export")
+        self.assertEqual(response.status_code, 404, response.text)
+
+    def test_report_recipient_uses_connected_account_email(self) -> None:
+        profile = {
+            "email": "profile@example.com",
+            "google_oauth": {"email": "google-account@example.com"},
+            "microsoft_oauth": {"email": "microsoft-account@example.com"},
+        }
+        settings = {
+            "IMAP_USER": "imap-mailbox@example.com",
+            "SUMMARY_RECIPIENT": "old-custom-recipient@example.com",
+        }
+        self.assertEqual(dashboard_api.default_report_recipient(profile, settings), "google-account@example.com")
+
+        manual_profile = {"email": "profile@example.com"}
+        self.assertEqual(dashboard_api.default_report_recipient(manual_profile, settings), "imap-mailbox@example.com")
+
+    def test_report_schedule_ignores_custom_recipient_email(self) -> None:
+        client = self.signup("schedule-owner@example.com")
+        response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "recipient_email": "outside-recipient@example.com",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
         self.assertEqual(response.status_code, 200, response.text)
-        settings = response.json()["settings"]
-        self.assertNotIn("IMAP_PASSWORD", settings)
-        self.assertNotIn("SMTP_PASSWORD", settings)
-        self.assertNotIn("OPENAI_API_KEY", settings)
-        self.assertIn("Content-Disposition", response.headers)
+        self.assertEqual(response.json()["schedule"]["recipient_email"], "schedule-owner@example.com")
+
+    def test_new_accounts_start_with_no_card_free_trial(self) -> None:
+        client = self.signup("trial@example.com")
+        response = client.get("/billing/status")
+        self.assertEqual(response.status_code, 200, response.text)
+        subscription = response.json()["subscription"]
+        self.assertEqual(subscription["status"], "trialing")
+        self.assertFalse(subscription["requires_subscription"])
+        self.assertEqual(subscription["price_cents"], 499)
+        self.assertEqual(subscription["trial_days"], 7)
+        self.assertNotIn("stripe_customer_id", subscription)
+        self.assertNotIn("stripe_subscription_id", subscription)
+
+    def test_expired_trial_blocks_paid_features_without_blocking_exempt_accounts(self) -> None:
+        client = self.signup("expired@example.com")
+        user_id = "expired_example_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["settings"]["SUBSCRIPTION_STATUS"] = "trialing"
+        profile["settings"]["SUBSCRIPTION_TRIAL_STARTED_AT"] = (
+            dashboard_api.datetime.now() - dashboard_api.timedelta(days=10)
+        ).isoformat()
+        profile["settings"]["SUBSCRIPTION_TRIAL_ENDS_AT"] = (
+            dashboard_api.datetime.now() - dashboard_api.timedelta(days=3)
+        ).isoformat()
+        dashboard_api.save_profile(profile)
+
+        response = client.post("/chat", json={"question": "How does Discere work?"})
+        self.assertEqual(response.status_code, 402, response.text)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["code"], "subscription_required")
+        self.assertTrue(detail["subscription"]["requires_subscription"])
+
+        exempt_client = self.signup("bnzhang2001@gmail.com")
+        exempt_user_id = "bnzhang2001_gmail_com"
+        exempt_profile = dashboard_api.load_profile_or_404(exempt_user_id)
+        exempt_profile["settings"]["SUBSCRIPTION_STATUS"] = "trialing"
+        exempt_profile["settings"]["SUBSCRIPTION_TRIAL_STARTED_AT"] = (
+            dashboard_api.datetime.now() - dashboard_api.timedelta(days=10)
+        ).isoformat()
+        exempt_profile["settings"]["SUBSCRIPTION_TRIAL_ENDS_AT"] = (
+            dashboard_api.datetime.now() - dashboard_api.timedelta(days=3)
+        ).isoformat()
+        dashboard_api.save_profile(exempt_profile)
+
+        exempt_status = exempt_client.get("/billing/status")
+        self.assertEqual(exempt_status.status_code, 200, exempt_status.text)
+        subscription = exempt_status.json()["subscription"]
+        self.assertEqual(subscription["status"], "member")
+        self.assertTrue(subscription["is_exempt"])
+        self.assertFalse(subscription["requires_subscription"])
+
+        exempt_checkout = exempt_client.post("/billing/checkout")
+        self.assertEqual(exempt_checkout.status_code, 200, exempt_checkout.text)
+        self.assertIn("No billing is required", exempt_checkout.json()["message"])
+
+    def test_billing_checkout_is_stripe_ready_without_fake_success(self) -> None:
+        client = self.signup("checkout@example.com")
+        response = client.post("/billing/checkout")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertFalse(payload["checkout_configured"])
+        self.assertFalse(payload["success"])
+        self.assertIn("Stripe checkout", payload["message"])
+
+    def test_scheduled_report_only_sends_summaries_from_current_run(self) -> None:
+        client = self.signup("scheduled-run@example.com")
+        user_id = "scheduled_run_example_com"
+        contact = "sender@example.com"
+        contacts_response = client.post("/whitelist", json={"contacts": [contact]})
+        self.assertEqual(contacts_response.status_code, 200, contacts_response.text)
+
+        summaries_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+        summaries_dir.mkdir(parents=True, exist_ok=True)
+        old_summary = {
+            "summary_id": "old_summary",
+            "sender": contact,
+            "title": "Old summary",
+            "executive_summary": "This should not be emailed again.",
+            "created_at": "2026-04-01T08:00:00",
+        }
+        new_summary = {
+            "summary_id": "new_summary",
+            "sender": contact,
+            "title": "New summary",
+            "executive_summary": "This was created by the scheduled run.",
+            "created_at": "2026-04-28T08:00:00",
+        }
+        (summaries_dir / "old_summary.json").write_text(json.dumps(old_summary), encoding="utf-8")
+        (summaries_dir / "new_summary.json").write_text(json.dumps(new_summary), encoding="utf-8")
+
+        schedule_response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.text)
+        schedule_id = schedule_response.json()["schedule"]["schedule_id"]
+
+        with patch.object(
+            dashboard_api,
+            "execute_summarizer_run",
+            return_value={"success": True, "new_summary_ids": ["new_summary"]},
+        ), patch.object(
+            dashboard_api,
+            "send_combined_report_via_smtp",
+            return_value={"recipient": "scheduled-run@example.com"},
+        ) as send_mock:
+            dashboard_api.process_due_schedule(schedule_id)
+
+        send_mock.assert_called_once()
+        markdown = send_mock.call_args.args[2]
+        self.assertIn("New summary", markdown)
+        self.assertIn("This was created by the scheduled run.", markdown)
+        self.assertNotIn("Old summary", markdown)
+        self.assertNotIn("This should not be emailed again.", markdown)
+
+    def test_scheduled_report_does_not_send_when_run_has_no_new_summaries(self) -> None:
+        client = self.signup("scheduled-empty@example.com")
+        contacts_response = client.post("/whitelist", json={"contacts": ["sender@example.com"]})
+        self.assertEqual(contacts_response.status_code, 200, contacts_response.text)
+        schedule_response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.text)
+        schedule_id = schedule_response.json()["schedule"]["schedule_id"]
+
+        with patch.object(
+            dashboard_api,
+            "execute_summarizer_run",
+            return_value={"success": True, "new_summary_ids": []},
+        ), patch.object(dashboard_api, "send_combined_report_via_smtp") as send_mock:
+            dashboard_api.process_due_schedule(schedule_id)
+
+        send_mock.assert_not_called()
 
     def test_account_deletion_removes_account_scoped_database_rows_and_files(self) -> None:
         client = self.signup("delete@example.com")
@@ -375,17 +547,25 @@ class SecurityRegressionTests(unittest.TestCase):
             if original:
                 os.environ["EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES"] = original
 
-    def test_admin_page_loads_and_admin_endpoints_require_access(self) -> None:
+    def test_admin_ui_is_not_user_accessible_and_endpoints_require_key(self) -> None:
         page_response = self.client.get("/admin")
-        self.assertEqual(page_response.status_code, 200, page_response.text)
-        self.assertIn("Discere Admin", page_response.text)
+        self.assertEqual(page_response.status_code, 404, page_response.text)
+
+        static_page_response = self.client.get("/dashboard_static/admin.html")
+        self.assertEqual(static_page_response.status_code, 404, static_page_response.text)
 
         blocked_response = self.client.get("/admin/analytics")
         self.assertEqual(blocked_response.status_code, 403, blocked_response.text)
 
         original_key = os.environ.get("EMAIL_SUMMARIZER_ADMIN_KEY", "")
+        original_admin_emails = os.environ.get("EMAIL_SUMMARIZER_ADMIN_EMAILS", "")
         os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = "test-admin-key"
+        os.environ["EMAIL_SUMMARIZER_ADMIN_EMAILS"] = "admin@example.com"
         try:
+            admin_client = self.signup("admin@example.com")
+            email_based_response = admin_client.get("/admin/analytics")
+            self.assertEqual(email_based_response.status_code, 403, email_based_response.text)
+
             allowed_response = self.client.get(
                 "/admin/analytics",
                 headers={"x-discere-admin-key": "test-admin-key"},
@@ -404,6 +584,10 @@ class SecurityRegressionTests(unittest.TestCase):
                 os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = original_key
             else:
                 os.environ.pop("EMAIL_SUMMARIZER_ADMIN_KEY", None)
+            if original_admin_emails:
+                os.environ["EMAIL_SUMMARIZER_ADMIN_EMAILS"] = original_admin_emails
+            else:
+                os.environ.pop("EMAIL_SUMMARIZER_ADMIN_EMAILS", None)
 
     def test_daily_usage_limits_are_enforced_per_account(self) -> None:
         client = self.signup("usage@example.com")

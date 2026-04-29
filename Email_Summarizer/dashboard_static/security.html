@@ -66,7 +66,7 @@
         <section class="content-card">
           <h2>What gets sent to AI?</h2>
           <p>
-            To generate summaries, Discere sends relevant email text and thread context to the AI provider. This can include
+            To generate summaries, Discere sends relevant email text and thread context to OpenAI through the OpenAI API. This can include
             sender, recipient, subject, message date, body text, and summary preferences.
           </p>
           <p>
@@ -75,8 +75,10 @@
           </p>
           <p>
             OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API
-            organization explicitly opts in. OpenAI may still retain limited API data for abuse monitoring and safety purposes
-            under its published API data controls.
+            organization explicitly opts in. OpenAI may still retain limited API data, which can include prompts and responses,
+            for abuse monitoring, safety, legal compliance, and API operation under its published API data controls. OpenAI’s
+            published API data controls say abuse-monitoring logs are retained for up to 30 days by default unless a longer
+            period is required by law or needed to protect OpenAI’s services or others from harm.
           </p>
         </section>
 
@@ -107,10 +109,9 @@
         <section class="content-card">
           <h2>How does deletion work?</h2>
           <ul>
-            <li>Users can export their account data from Settings.</li>
             <li>Users can delete individual summaries. This means that the email will be rediscovered if you run the summarizer again.</li>
             <li>Users can delete their account from Settings. This removes account data, summaries, source email files, attachments, schedules, and related user records.</li>
-            <li>Read or done summaries have source email bodies and saved attachments purged after the retention period, while summarized email IDs remain to prevent accidental duplicate summaries.</li>
+            <li>Read or done summaries have source email bodies and saved attachments purged after 20 days, while summarized email IDs remain to prevent accidental duplicate summaries.</li>
             <li>Provider access can also be revoked directly from Google Account permissions, Microsoft account consent management, or Microsoft My Apps, depending on the provider and account type.</li>
           </ul>
         </section>
@@ -125,7 +126,7 @@
           <p>
             For everyday business email, this may be reasonable. For very sensitive inboxes, such as legal, medical, financial,
             government, board-level, or confidential customer data, review your own company rules before connecting that inbox.
-            Discere uses safeguards such as account separation, encrypted credentials, secure cookies, rate limits, export/delete
+            Discere uses safeguards such as account separation, encrypted credentials, secure cookies, rate limits, deletion
             controls, and backups, but no internet service can remove every risk.
           </p>
         </section>

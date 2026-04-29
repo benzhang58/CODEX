@@ -38,7 +38,6 @@ Use a real Gmail account with test emails available.
 - [ ] Use Refine Summary and confirm it returns a refined version.
 - [ ] Toggle AI Attachment Access on, leave Settings, return to Settings, and confirm it stays on.
 - [ ] Toggle AI Attachment Access off and confirm it stays off.
-- [ ] Export account data from Settings.
 - [ ] Delete the account from Settings after testing, or keep it as a test account.
 
 ## 3. Microsoft / Outlook Account Test
@@ -63,7 +62,6 @@ Use a real Outlook/Microsoft account.
 - [ ] Turn the schedule back on.
 - [ ] Edit the schedule.
 - [ ] Delete the schedule.
-- [ ] Export account data from Settings.
 - [ ] Delete the account from Settings after testing, or keep it as a test account.
 
 ## 4. Standard / 263 / Password Account Test
@@ -85,7 +83,6 @@ Use this for non-Gmail/non-Microsoft mailbox users.
 - [ ] Run Summarizer.
 - [ ] Confirm only emails from tracked contacts are summarized.
 - [ ] Send a report by email if SMTP is configured.
-- [ ] Export account data.
 - [ ] Delete the account after testing, or keep it as a test account.
 
 ## 5. Scheduled Reports Test
@@ -96,7 +93,7 @@ Run this after Gmail or Microsoft is working.
 - [ ] If no schedules exist, confirm it opens the New Schedule form.
 - [ ] Create a schedule with a clear name.
 - [ ] Confirm it immediately takes you to Saved Schedules.
-- [ ] Confirm the schedule card shows name, active status, delivery method, cadence, timezone, recipient, days back, and next run.
+- [ ] Confirm the schedule card shows name, active status, delivery method, cadence, timezone, connected account email, days back, and next run.
 - [ ] Use the plus button in Saved Schedules to create another schedule.
 - [ ] Turn a schedule off.
 - [ ] Turn it back on.
@@ -125,7 +122,7 @@ Use two real accounts in two separate browsers or incognito windows.
 - [ ] Account B cannot see Account A attachments.
 - [ ] While logged into Account B, manually try a URL/API request using Account A's `user_id`.
 - [ ] Confirm the app blocks cross-account access.
-- [ ] Confirm the cross-account attempt appears in Admin Monitoring.
+- [ ] Confirm the cross-account attempt appears through the internal admin monitoring API.
 
 ## 7. Data Retention And Deletion Test
 
@@ -137,7 +134,6 @@ Use two real accounts in two separate browsers or incognito windows.
 - [ ] Confirm processed email IDs remain after purge so the same old email is not summarized again.
 - [ ] Confirm deleting a summary manually removes the processed email ID so it can be rediscovered if scanned again.
 - [ ] Delete an account and confirm contacts, summaries, email source records, attachments, schedules, analytics rows, and bug reports are removed.
-- [ ] Export account data before deletion and confirm sensitive secrets are excluded.
 
 ## 8. Error Handling Test
 
@@ -161,16 +157,16 @@ Discere report sender setup:
 - [ ] Add `EMAIL_SUMMARIZER_REPORT_FROM_NAME=Discere` in Render.
 - [ ] Redeploy Render and send a manual report.
 - [ ] Confirm the report arrives from `Discere <discereresearch@gmail.com>`.
-- [ ] Confirm app errors appear in Admin Monitoring.
+- [ ] Confirm app errors appear through the internal admin monitoring API.
 
 ## 9. Admin, Monitoring, Analytics, And Bug Reports
 
-- [ ] Confirm `/admin` opens in production.
-- [ ] Confirm admin access works using admin email or admin key.
-- [ ] Confirm Readiness panel loads.
-- [ ] Confirm Analytics panel loads.
-- [ ] Confirm Bug Reports panel loads.
-- [ ] Confirm Monitoring panel loads.
+- [ ] Confirm `/admin` does not open as a user-facing page in production.
+- [ ] Confirm `/dashboard_static/admin.html` returns 404 in production.
+- [ ] Confirm admin APIs are blocked without `x-discere-admin-key`.
+- [ ] Confirm admin APIs work only when called with `x-discere-admin-key`.
+- [ ] Confirm Readiness data is accessible through `/health/readiness`.
+- [ ] Confirm Analytics, Bug Reports, and Monitoring data are accessible only through the internal admin APIs.
 - [ ] Trigger a harmless failed login.
 - [ ] Confirm failed login/rate-limit events appear in Monitoring.
 - [ ] Submit a bug report from Settings.
@@ -203,7 +199,7 @@ python3 scripts/backup_persistent_data.py \
 - [ ] Confirm restored contacts load.
 - [ ] Confirm restored summaries load.
 - [ ] Confirm restored schedules load.
-- [ ] Confirm restored admin views load.
+- [ ] Confirm restored internal admin monitoring API data loads with the admin key.
 - [ ] Document where backups are stored and who can access them.
 
 ## 11. OAuth Verification Readiness
@@ -233,7 +229,7 @@ Google setup:
   - `email`
   - `profile`
   - `https://www.googleapis.com/auth/gmail.readonly`
-- [ ] Google demo video shows homepage, login, consent screen, add contact, run summarizer, open summary, send report, Settings privacy controls, export, and delete account.
+- [ ] Google demo video shows homepage, login, consent screen, add contact, run summarizer, open summary, send report, Settings privacy controls, and delete account.
 
 Microsoft setup:
 
@@ -271,21 +267,18 @@ Do this only when ready to charge.
 - [ ] Create or finish Stripe account.
 - [ ] Confirm the Stripe business/legal name matches the business name in Terms/Privacy.
 - [ ] Create product: `Discere Early Access`.
-- [ ] Create monthly price, suggested starting point: `$9/month`.
-- [ ] Decide trial policy:
-  - no-card trial for easier growth
-  - card-required trial for cleaner conversion and less abuse
+- [ ] Create monthly price: `$4.99/month`.
+- [ ] Use the current trial policy: 7-day no-card trial for easier growth.
 - [ ] Add Render env vars when payment code is added:
-  - `STRIPE_SECRET_KEY`
-  - `STRIPE_WEBHOOK_SECRET`
-  - `STRIPE_PRICE_EARLY_ACCESS_MONTHLY`
-  - optional `STRIPE_CUSTOMER_PORTAL_RETURN_URL`
-- [ ] Add checkout-session endpoint.
-- [ ] Add customer-portal endpoint.
+  - `EMAIL_SUMMARIZER_STRIPE_CHECKOUT_URL`
+  - `EMAIL_SUMMARIZER_STRIPE_CUSTOMER_PORTAL_URL`
+  - later, when using Stripe webhooks/API directly: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the Stripe price ID.
+- [ ] Replace the placeholder billing checkout endpoint with a real Stripe Checkout Session endpoint.
+- [ ] Replace the placeholder billing portal URL with a real Stripe Customer Portal endpoint.
 - [ ] Add Stripe webhook endpoint.
-- [ ] Store subscription state on the backend.
+- [ ] Confirm subscription state updates from Stripe webhooks into the backend settings fields.
 - [ ] Add plan-based limits.
-- [ ] Update Terms with billing, cancellation, renewal, failed payment, refund, and trial language.
+- [ ] Terms now include the 7-day trial and `$4.99/month` plan; have the final billing language reviewed before charging users.
 - [ ] Test checkout in Stripe test mode.
 - [ ] Test cancellation in Stripe customer portal.
 - [ ] Test failed payment behavior.
@@ -303,7 +296,6 @@ Do not publicly launch until all critical items are checked:
 - [ ] Account isolation is confirmed with two real accounts.
 - [ ] Email report delivery works.
 - [ ] Scheduled reports work.
-- [ ] Export works.
 - [ ] Delete account works.
 - [ ] Backup and restore work.
 - [ ] Admin monitoring works.

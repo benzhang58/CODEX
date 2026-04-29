@@ -56,7 +56,7 @@ Recommended environment variables:
 - `EMAIL_SUMMARIZER_OUTPUT_DIR`
 - `EMAIL_SUMMARIZER_PUBLIC_BASE_URL`
 - `EMAIL_SUMMARIZER_ENCRYPTION_KEY`
-- `EMAIL_SUMMARIZER_ADMIN_EMAILS` or `EMAIL_SUMMARIZER_ADMIN_KEY` if using admin views
+- `EMAIL_SUMMARIZER_ADMIN_KEY` for internal admin/monitoring API access
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` if enabling Google sign-in
 - `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` if enabling Microsoft sign-in
 - `EMAIL_SUMMARIZER_REPORT_SMTP_HOST=smtp.gmail.com`
@@ -78,6 +78,29 @@ This app now separates code from runtime data.
   - `EMAIL_SUMMARIZER_OUTPUT_DIR/...`
 
 If you deploy this to Render, Railway, Fly, etc., mount persistent storage and point those two env vars at that mounted path.
+
+## Subscription and billing scaffold
+
+Discere currently includes a Stripe-ready billing scaffold:
+
+- New accounts receive a 7-day no-card free trial.
+- The first paid plan is shown as `$4.99/month`.
+- Paid feature routes are enforced server-side after the trial ends.
+- Testing/admin emails can be exempted with `EMAIL_SUMMARIZER_BILLING_EXEMPT_EMAILS`.
+- Settings includes a Subscription card and a Manage Subscription action.
+
+Current billing env vars:
+
+```bash
+EMAIL_SUMMARIZER_SUBSCRIPTION_TRIAL_DAYS=7
+EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_CENTS=499
+EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_LABEL="$4.99"
+EMAIL_SUMMARIZER_BILLING_EXEMPT_EMAILS=bnzhang2001@gmail.com,bnnzhang2001@outlook.com,peter@yj-semitech.com
+EMAIL_SUMMARIZER_STRIPE_CHECKOUT_URL=
+EMAIL_SUMMARIZER_STRIPE_CUSTOMER_PORTAL_URL=
+```
+
+`EMAIL_SUMMARIZER_STRIPE_CHECKOUT_URL` and `EMAIL_SUMMARIZER_STRIPE_CUSTOMER_PORTAL_URL` are placeholders for the later Stripe integration. Until they are configured, the UI explains that checkout is not connected rather than pretending a payment succeeded.
 
 ## Backup and restore plan
 
@@ -178,7 +201,7 @@ Before sending real users to the app:
 2. Set a long random `EMAIL_SUMMARIZER_ENCRYPTION_KEY` in Render and do not change it after users exist.
 3. Set `EMAIL_SUMMARIZER_COOKIE_SECURE=true`.
 4. Set `EMAIL_SUMMARIZER_RATE_LIMIT_ENABLED=true`.
-5. Set either `EMAIL_SUMMARIZER_ADMIN_EMAILS` or `EMAIL_SUMMARIZER_ADMIN_KEY`.
+5. Set `EMAIL_SUMMARIZER_ADMIN_KEY` to a long random secret for internal admin/monitoring API access.
 6. Set `OPENAI_API_KEY` and `OPENAI_MODEL=gpt-5.1`.
 7. Confirm usage limit env vars match the beta/free tier you want.
 8. Add `https://discere-ai.com/auth/google/callback` in Google OAuth credentials.
@@ -202,7 +225,7 @@ Admin inspection endpoints:
 - `/admin/bug-reports`
 - `/admin/monitoring`
 
-Set `EMAIL_SUMMARIZER_ADMIN_EMAILS` to comma-separated admin login emails, or use `EMAIL_SUMMARIZER_ADMIN_KEY` and send it as the `x-discere-admin-key` header.
+Set `EMAIL_SUMMARIZER_ADMIN_KEY` and send it as the `x-discere-admin-key` header. There is no user-facing admin dashboard link or login-email-based admin access.
 
 ## Production monitoring
 
@@ -220,9 +243,9 @@ Monitoring records:
 - report delivery failures for email, PDFs, and the Discere report sender SMTP account
 - rate-limit hits, oversized requests, and invalid request headers
 - unhandled server exceptions and OpenAI chat/refine failures
-- deletion/export/purge-related failures when surfaced as server errors
+- deletion/purge-related failures when surfaced as server errors
 
-Admins can review events at `/admin` or directly through `/admin/monitoring`. The readiness endpoint includes `recent_monitoring_alerts` from the last 24 hours. Metadata is redacted for sensitive-looking keys such as tokens, secrets, passwords, authorization headers, cookies, and API keys.
+Admins can review events through the internal `/admin/monitoring` API using the `x-discere-admin-key` header. The readiness endpoint includes `recent_monitoring_alerts` from the last 24 hours. Metadata is redacted for sensitive-looking keys such as tokens, secrets, passwords, authorization headers, cookies, and API keys.
 
 For later scale, add Sentry or another hosted error monitor for stack traces, alert routing, and uptime checks. Keep this internal monitoring anyway because it is product-aware and stores events alongside app state.
 

@@ -63,7 +63,7 @@ Minimum before paid users:
 - Attorney review of Terms/Privacy.
 - Add payment terms once Stripe/pricing exists.
 - Finalize OAuth consent wording.
-- Confirm account deletion/export works.
+- Confirm account deletion works.
 - Confirm backup/restore works.
 - Confirm account isolation with two real accounts.
 - Add breach response checklist.
