@@ -2,10 +2,11 @@ import base64
 import json
 import os
 import shutil
+import smtplib
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"] = "/tmp/discere-test-storage"
@@ -74,11 +75,11 @@ class SecurityRegressionTests(unittest.TestCase):
     def test_cookie_secure_defaults_on_for_https_public_base_url(self) -> None:
         self.assertTrue(dashboard_api.SESSION_COOKIE_SECURE)
 
-    def test_home_redirects_to_dashboard_when_session_is_valid(self) -> None:
+    def test_home_remains_public_when_session_is_valid(self) -> None:
         client = self.signup("home-redirect@example.com")
         response = client.get("/", follow_redirects=False)
-        self.assertEqual(response.status_code, 307, response.text)
-        self.assertEqual(response.headers.get("location"), "/dashboard")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("Discere", response.text)
 
     def test_home_stays_public_after_logout(self) -> None:
         client = self.signup("home-logout@example.com")
@@ -87,6 +88,70 @@ class SecurityRegressionTests(unittest.TestCase):
 
         response = client.get("/", follow_redirects=False)
         self.assertEqual(response.status_code, 200, response.text)
+
+    def test_login_redirects_valid_session_to_dashboard(self) -> None:
+        client = self.signup("login-redirect@example.com")
+        response = client.get("/login", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(response.headers.get("location"), "/dashboard")
+
+    def test_login_redirects_valid_session_to_safe_next_destination(self) -> None:
+        client = self.signup("login-next@example.com")
+        response = client.get("/login?next=/dashboard", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(response.headers.get("location"), "/dashboard")
+
+    def test_login_rejects_external_next_redirects(self) -> None:
+        client = self.signup("login-safe-next@example.com")
+        response = client.get("/login?next=https://evil.example/dashboard", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(response.headers.get("location"), "/dashboard")
+
+    def test_dashboard_requires_session_and_preserves_next_destination(self) -> None:
+        response = self.client.get("/dashboard", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(response.headers.get("location"), "/login?next=%2Fdashboard")
+
+    def test_dashboard_serves_logged_in_session(self) -> None:
+        client = self.signup("dashboard-auth@example.com")
+        response = client.get("/dashboard", follow_redirects=False)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("Email Dashboard", response.text)
+
+    def test_report_email_dashboard_link_points_to_dashboard(self) -> None:
+        self.assertEqual(dashboard_api.dashboard_url(), "https://discere-test.example/dashboard")
+
+    def test_session_cookie_uses_seven_day_default_and_refreshes(self) -> None:
+        client = self.signup("remember-session@example.com")
+        response = client.get("/auth/me")
+        self.assertEqual(response.status_code, 200, response.text)
+        set_cookie = response.headers.get("set-cookie", "")
+        self.assertIn(dashboard_api.SESSION_COOKIE_NAME, set_cookie)
+        self.assertIn(f"Max-Age={dashboard_api.SESSION_COOKIE_MAX_AGE_SECONDS}", set_cookie)
+        self.assertEqual(dashboard_api.SESSION_COOKIE_MAX_AGE_SECONDS, 60 * 60 * 24 * 7)
+
+    def test_manual_account_keeps_legal_and_how_to_flags_after_later_login(self) -> None:
+        client = self.signup("manual-lifecycle@example.com")
+        user_id = "manual_lifecycle_example_com"
+
+        response = client.post(f"/profile/how-to-seen?user_id={user_id}")
+        self.assertEqual(response.status_code, 200, response.text)
+        profile = response.json()["profile"]
+        self.assertTrue(profile["settings"]["terms_accepted"])
+        self.assertTrue(profile["settings"]["privacy_accepted"])
+        self.assertTrue(profile["settings"]["how_to_seen"])
+
+        logout_response = client.post("/auth/logout")
+        self.assertEqual(logout_response.status_code, 200, logout_response.text)
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "manual-lifecycle@example.com", "password": "StrongPass123!"},
+        )
+        self.assertEqual(login_response.status_code, 200, login_response.text)
+        login_profile = login_response.json()["profile"]
+        self.assertTrue(login_profile["settings"]["terms_accepted"])
+        self.assertTrue(login_profile["settings"]["privacy_accepted"])
+        self.assertTrue(login_profile["settings"]["how_to_seen"])
 
     def test_google_oauth_start_requests_offline_consent_for_refresh_token(self) -> None:
         originals = {
@@ -104,6 +169,58 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(query.get("access_type"), ["offline"])
             self.assertEqual(query.get("prompt"), ["consent"])
             self.assertEqual(query.get("include_granted_scopes"), ["true"])
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_google_oauth_account_keeps_legal_and_how_to_flags_after_relogin(self) -> None:
+        originals = {
+            "GOOGLE_CLIENT_ID": os.environ.get("GOOGLE_CLIENT_ID"),
+            "GOOGLE_CLIENT_SECRET": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "GOOGLE_REDIRECT_URI": os.environ.get("GOOGLE_REDIRECT_URI"),
+        }
+        os.environ["GOOGLE_CLIENT_ID"] = "test-google-client"
+        os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-secret"
+        os.environ["GOOGLE_REDIRECT_URI"] = "https://discere-test.example/auth/google/callback"
+        try:
+            for suffix in ("first", "second"):
+                start_response = self.client.get("/auth/google/start", follow_redirects=False)
+                self.assertEqual(start_response.status_code, 307, start_response.text)
+                state = parse_qs(urlparse(start_response.headers["location"]).query)["state"][0]
+                token_payload = {
+                    "access_token": f"google-access-{suffix}",
+                    "refresh_token": f"google-refresh-{suffix}",
+                    "scope": dashboard_api.REQUIRED_GOOGLE_READ_SCOPE,
+                    "id_token": "google-id-token",
+                }
+                userinfo = {"email": "oauth-lifecycle@gmail.com", "name": "OAuth Lifecycle"}
+                with patch.object(dashboard_api, "post_form_json", return_value=token_payload), patch.object(
+                    dashboard_api,
+                    "get_json_with_bearer",
+                    return_value=userinfo,
+                ):
+                    callback_response = self.client.get(
+                        f"/auth/google/callback?code=test-code-{suffix}&state={state}",
+                        follow_redirects=False,
+                    )
+                self.assertEqual(callback_response.status_code, 307, callback_response.text)
+
+                if suffix == "first":
+                    legal_response = self.client.post(
+                        "/profile/legal-acceptance",
+                        json={"accept_terms": True, "accept_privacy": True},
+                    )
+                    self.assertEqual(legal_response.status_code, 200, legal_response.text)
+                    how_to_response = self.client.post("/profile/how-to-seen")
+                    self.assertEqual(how_to_response.status_code, 200, how_to_response.text)
+
+            profile = dashboard_api.profile_response(dashboard_api.load_profile_or_404("oauth_lifecycle_gmail_com"))
+            self.assertTrue(profile["settings"]["terms_accepted"])
+            self.assertTrue(profile["settings"]["privacy_accepted"])
+            self.assertTrue(profile["settings"]["how_to_seen"])
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -130,6 +247,62 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertIn(dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE, scopes)
             self.assertNotIn("User.Read", scopes)
             self.assertEqual(query.get("prompt"), ["consent"])
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_microsoft_oauth_account_keeps_legal_and_how_to_flags_after_relogin(self) -> None:
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_REDIRECT_URI": os.environ.get("MICROSOFT_REDIRECT_URI"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_REDIRECT_URI"] = "https://discere-test.example/auth/microsoft/callback"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            for suffix in ("first", "second"):
+                start_response = self.client.get("/auth/microsoft/start", follow_redirects=False)
+                self.assertEqual(start_response.status_code, 307, start_response.text)
+                state = parse_qs(urlparse(start_response.headers["location"]).query)["state"][0]
+                id_token = make_unsigned_id_token(
+                    {
+                        "preferred_username": "oauth-lifecycle@outlook.com",
+                        "email": "oauth-lifecycle@outlook.com",
+                        "name": "OAuth Lifecycle",
+                    }
+                )
+                token_payload = {
+                    "access_token": f"microsoft-access-{suffix}",
+                    "refresh_token": f"microsoft-refresh-{suffix}",
+                    "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
+                    "id_token": id_token,
+                }
+                with patch.object(dashboard_api, "post_form_json", return_value=token_payload):
+                    callback_response = self.client.get(
+                        f"/auth/microsoft/callback?code=test-code-{suffix}&state={state}",
+                        follow_redirects=False,
+                    )
+                self.assertEqual(callback_response.status_code, 307, callback_response.text)
+
+                if suffix == "first":
+                    legal_response = self.client.post(
+                        "/profile/legal-acceptance",
+                        json={"accept_terms": True, "accept_privacy": True},
+                    )
+                    self.assertEqual(legal_response.status_code, 200, legal_response.text)
+                    how_to_response = self.client.post("/profile/how-to-seen")
+                    self.assertEqual(how_to_response.status_code, 200, how_to_response.text)
+
+            profile = dashboard_api.profile_response(dashboard_api.load_profile_or_404("oauth_lifecycle_outlook_com"))
+            self.assertTrue(profile["settings"]["terms_accepted"])
+            self.assertTrue(profile["settings"]["privacy_accepted"])
+            self.assertTrue(profile["settings"]["how_to_seen"])
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -391,6 +564,93 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(other_profile_response.status_code, 200, other_profile_response.text)
         self.assertEqual(other_profile_response.json()["profile"]["settings"]["background_theme"], "default")
 
+    def test_summary_thread_endpoint_uses_saved_local_data_only(self) -> None:
+        client = self.signup("thread-local@example.com")
+        user_id = "thread_local_example_com"
+        summary_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+        emails_dir = dashboard_api.get_user_json_emails_dir(user_id)
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        emails_dir.mkdir(parents=True, exist_ok=True)
+        (summary_dir / "saved-thread.json").write_text(
+            json.dumps(
+                {
+                    "summary_id": "saved-thread",
+                    "title": "Saved Thread",
+                    "source_email_file_ids": ["email-one"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (emails_dir / "email-one.json").write_text(
+            json.dumps(
+                {
+                    "email_id": "email-one",
+                    "subject": "Local Only",
+                    "sender": "sender@example.com",
+                    "date": "2026-04-29T12:00:00",
+                    "thread": [
+                        {
+                            "message_id": "m1",
+                            "date": "2026-04-29T12:00:00",
+                            "sender": "sender@example.com",
+                            "to": "thread-local@example.com",
+                            "subject": "Local Only",
+                            "body": "Saved body",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(
+            dashboard_api,
+            "purge_old_read_source_data",
+            side_effect=AssertionError("Full thread view should not run retention purge."),
+        ):
+            response = client.get("/summaries/saved-thread/thread")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertTrue(payload["content_available"])
+        self.assertEqual(payload["threads"][0]["thread"][0]["body"], "Saved body")
+
+    def test_summary_thread_endpoint_reports_purged_local_data(self) -> None:
+        client = self.signup("thread-purged@example.com")
+        user_id = "thread_purged_example_com"
+        summary_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+        emails_dir = dashboard_api.get_user_json_emails_dir(user_id)
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        emails_dir.mkdir(parents=True, exist_ok=True)
+        (summary_dir / "purged-thread.json").write_text(
+            json.dumps(
+                {
+                    "summary_id": "purged-thread",
+                    "title": "Purged Thread",
+                    "source_email_file_ids": ["email-purged"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (emails_dir / "email-purged.json").write_text(
+            json.dumps(
+                {
+                    "email_id": "email-purged",
+                    "content_purged_at": "2026-04-29T12:00:00",
+                    "thread": [{"body": ""}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        response = client.get("/summaries/purged-thread/thread")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertFalse(payload["content_available"])
+        self.assertEqual(payload["purged_email_count"], 1)
+        self.assertIn("no longer stored", payload["unavailable_reason"])
+
     def test_password_signup_does_not_auto_connect_mailbox_with_dashboard_password(self) -> None:
         client = self.signup("standard-mailbox@example.com")
         profile_response = client.get("/auth/me")
@@ -603,13 +863,13 @@ class SecurityRegressionTests(unittest.TestCase):
         with patch.object(
             dashboard_api,
             "send_report_email_from_discere",
-            return_value={"recipient": "private-report@example.com", "subject": "Your Discere summary is ready"},
+            return_value={"recipient": "private-report@example.com", "subject": dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT},
         ) as send_mock:
             dashboard_api.send_summary_via_smtp("private_report_example_com", secret_summary)
 
         send_kwargs = send_mock.call_args.kwargs
         serialized = json.dumps(send_kwargs)
-        self.assertEqual(send_kwargs["subject"], "Your Discere summary is ready")
+        self.assertEqual(send_kwargs["subject"], dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT)
         self.assertNotIn("Confidential merger update", serialized)
         self.assertNotIn("Acquire Project Falcon", serialized)
         self.assertNotIn("Do not leak this", serialized)
@@ -626,7 +886,7 @@ class SecurityRegressionTests(unittest.TestCase):
         with patch.object(
             dashboard_api,
             "send_report_email_from_discere",
-            return_value={"recipient": "private-combined@example.com", "subject": "Your Discere report is ready"},
+            return_value={"recipient": "private-combined@example.com", "subject": dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT},
         ) as send_mock:
             dashboard_api.send_combined_report_via_smtp(
                 "private_combined_example_com",
@@ -636,10 +896,233 @@ class SecurityRegressionTests(unittest.TestCase):
 
         send_kwargs = send_mock.call_args.kwargs
         serialized = json.dumps(send_kwargs)
-        self.assertEqual(send_kwargs["subject"], "Your Discere report is ready")
+        self.assertEqual(send_kwargs["subject"], dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT)
         self.assertNotIn("Board acquisition report", serialized)
         self.assertNotIn("Project Falcon", serialized)
         self.assertIn("Private Notification", serialized)
+
+    def test_report_sender_config_resolves_from_report_env_vars(self) -> None:
+        report_env = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+        }
+        with patch.dict(os.environ, report_env):
+            config = dashboard_api.get_report_sender_config()
+
+        self.assertEqual(config["host"], "smtp.gmail.com")
+        self.assertEqual(config["port"], 465)
+        self.assertEqual(config["user"], "discere-sender@example.com")
+        self.assertEqual(config["from_email"], "discere-sender@example.com")
+        self.assertEqual(config["from_name"], "Discere")
+
+    def test_missing_report_sender_password_returns_clean_configuration_error(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+        }
+        with patch.object(dashboard_api, "get_app_config_value", side_effect=lambda key: config_values.get(key, "")):
+            with self.assertRaises(dashboard_api.HTTPException) as raised:
+                dashboard_api.send_report_email_from_discere(
+                    user_id="missing_password_user",
+                    recipient="recipient@example.com",
+                    subject=dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT,
+                    html_body="<p>Ready</p>",
+                    text_body="Ready",
+                    event_name="test_missing_password",
+                )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("Discere report email sending is not configured", raised.exception.detail)
+
+    def test_report_sender_does_not_fallback_to_user_mailbox_smtp_credentials(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+            "SMTP_USER": "user-mailbox-smtp@example.com",
+            "SMTP_PASSWORD": "user-mailbox-password",
+        }
+        with patch.object(dashboard_api, "get_app_config_value", side_effect=lambda key: config_values.get(key, "")):
+            config = dashboard_api.get_report_sender_config()
+
+        self.assertNotEqual(config["user"], "user-mailbox-smtp@example.com")
+        self.assertNotEqual(config["password"], "user-mailbox-password")
+        self.assertEqual(config["from_email"], "discereresearch@gmail.com")
+        self.assertEqual(config["user"], "discereresearch@gmail.com")
+
+    def test_report_email_port_465_uses_smtp_ssl_and_discere_sender(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+        }
+        server = MagicMock()
+        smtp_ssl_context = MagicMock()
+        smtp_ssl_context.__enter__.return_value = server
+        smtp_ssl_context.__exit__.return_value = None
+        with patch.object(dashboard_api, "get_app_config_value", side_effect=lambda key: config_values.get(key, "")), patch.object(
+            dashboard_api.smtplib,
+            "SMTP_SSL",
+            return_value=smtp_ssl_context,
+        ) as smtp_ssl_mock, patch.object(dashboard_api.smtplib, "SMTP") as smtp_mock:
+            delivery = dashboard_api.send_report_email_from_discere(
+                user_id="smtp_ssl_user",
+                recipient="recipient@example.com",
+                subject=dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT,
+                html_body="<p>Ready</p>",
+                text_body="Ready",
+                event_name="test_smtp_ssl",
+            )
+
+        smtp_ssl_mock.assert_called_once_with("smtp.gmail.com", 465, timeout=30)
+        smtp_mock.assert_not_called()
+        server.starttls.assert_not_called()
+        server.login.assert_called_once_with("discere-sender@example.com", "test-app-password")
+        sendmail_args = server.sendmail.call_args.args
+        self.assertEqual(sendmail_args[0], "discere-sender@example.com")
+        self.assertEqual(sendmail_args[1], ["recipient@example.com"])
+        self.assertIn("From: Discere <discere-sender@example.com>", sendmail_args[2])
+        self.assertEqual(delivery["from"], "discere-sender@example.com")
+
+    def test_report_email_port_587_uses_starttls(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "587",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+        }
+        server = MagicMock()
+        smtp_context = MagicMock()
+        smtp_context.__enter__.return_value = server
+        smtp_context.__exit__.return_value = None
+        with patch.object(dashboard_api, "get_app_config_value", side_effect=lambda key: config_values.get(key, "")), patch.object(
+            dashboard_api.smtplib,
+            "SMTP",
+            return_value=smtp_context,
+        ) as smtp_mock, patch.object(dashboard_api.smtplib, "SMTP_SSL") as smtp_ssl_mock:
+            dashboard_api.send_report_email_from_discere(
+                user_id="smtp_starttls_user",
+                recipient="recipient@example.com",
+                subject=dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT,
+                html_body="<p>Ready</p>",
+                text_body="Ready",
+                event_name="test_starttls",
+            )
+
+        smtp_mock.assert_called_once_with("smtp.gmail.com", 587, timeout=30)
+        smtp_ssl_mock.assert_not_called()
+        server.starttls.assert_called_once()
+        server.login.assert_called_once_with("discere-sender@example.com", "test-app-password")
+
+    def test_report_email_auth_failure_does_not_expose_password(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+        }
+        server = MagicMock()
+        server.login.side_effect = smtplib.SMTPAuthenticationError(535, b"Username and Password not accepted")
+        smtp_ssl_context = MagicMock()
+        smtp_ssl_context.__enter__.return_value = server
+        smtp_ssl_context.__exit__.return_value = None
+        with patch.object(dashboard_api, "get_app_config_value", side_effect=lambda key: config_values.get(key, "")), patch.object(
+            dashboard_api.smtplib,
+            "SMTP_SSL",
+            return_value=smtp_ssl_context,
+        ):
+            with self.assertRaises(dashboard_api.HTTPException) as raised:
+                dashboard_api.send_report_email_from_discere(
+                    user_id="smtp_auth_user",
+                    recipient="recipient@example.com",
+                    subject=dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT,
+                    html_body="<p>Ready</p>",
+                    text_body="Ready",
+                    event_name="test_auth_failure",
+                )
+
+        self.assertEqual(raised.exception.status_code, 500)
+        self.assertIn("Failed to authenticate Discere report email sender", raised.exception.detail)
+        self.assertNotIn("test-app-password", raised.exception.detail)
+
+    def test_report_email_rejects_invalid_recipient_before_smtp(self) -> None:
+        with patch.object(dashboard_api.smtplib, "SMTP_SSL") as smtp_ssl_mock:
+            with self.assertRaises(dashboard_api.HTTPException) as raised:
+                dashboard_api.send_report_email_from_discere(
+                    user_id="invalid_recipient_user",
+                    recipient="not-an-email",
+                    subject=dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT,
+                    html_body="<p>Ready</p>",
+                    text_body="Ready",
+                    event_name="test_invalid_recipient",
+                )
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("valid recipient email", raised.exception.detail)
+        smtp_ssl_mock.assert_not_called()
+
+    def test_manual_single_summary_email_subject_is_fixed(self) -> None:
+        client = self.signup("manual-single-subject@example.com")
+        summary = {
+            "summary_id": "manual_single",
+            "title": "Client-specific title should not become subject",
+            "executive_summary": "Summary content.",
+        }
+        with patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "manual-single-subject@example.com", "subject": dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT},
+        ) as send_mock:
+            dashboard_api.send_summary_via_smtp("manual_single_subject_example_com", summary)
+
+        self.assertEqual(send_mock.call_args.kwargs["subject"], dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT)
+
+    def test_manual_combined_report_email_subject_is_fixed(self) -> None:
+        client = self.signup("manual-combined-subject@example.com")
+        with patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "manual-combined-subject@example.com", "subject": dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT},
+        ) as send_mock:
+            dashboard_api.send_combined_report_via_smtp(
+                "manual_combined_subject_example_com",
+                "Combined Report (2 Selected)",
+                "## Summary\nContent",
+            )
+
+        self.assertEqual(send_mock.call_args.kwargs["subject"], dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT)
+
+    def test_scheduled_report_subject_uses_schedule_name(self) -> None:
+        self.assertEqual(
+            dashboard_api.scheduled_report_email_subject("Morning Briefing"),
+            "Morning Briefing - Scheduled Email Summary",
+        )
+        self.assertEqual(
+            dashboard_api.scheduled_report_email_subject(""),
+            dashboard_api.SCHEDULED_REPORT_EMAIL_FALLBACK_SUBJECT,
+        )
+        self.assertEqual(
+            dashboard_api.scheduled_report_email_subject("Scheduled Report"),
+            dashboard_api.SCHEDULED_REPORT_EMAIL_FALLBACK_SUBJECT,
+        )
 
     def test_new_accounts_start_with_no_card_free_trial(self) -> None:
         client = self.signup("trial@example.com")
@@ -760,6 +1243,7 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertIn("This was created by the scheduled run.", markdown)
         self.assertNotIn("Old summary", markdown)
         self.assertNotIn("This should not be emailed again.", markdown)
+        self.assertEqual(send_mock.call_args.kwargs["subject"], "Daily - Scheduled Email Summary")
 
     def test_scheduled_report_does_not_send_when_run_has_no_new_summaries(self) -> None:
         client = self.signup("scheduled-empty@example.com")

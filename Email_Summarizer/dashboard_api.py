@@ -393,7 +393,7 @@ APP_DATA_DIR = APP_STORAGE_DIR / "app"
 DB_PATH = APP_DATA_DIR / "app.db"
 PUBLIC_REPORTS_DIR = APP_STORAGE_DIR / "public_reports"
 SESSION_COOKIE_NAME = "email_dashboard_session"
-SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+SESSION_COOKIE_MAX_AGE_SECONDS = int(os.getenv("EMAIL_SUMMARIZER_SESSION_COOKIE_MAX_AGE_SECONDS", str(60 * 60 * 24 * 7)))
 READ_RETENTION_DAYS = 20
 SUBSCRIPTION_TRIAL_DAYS = int(os.getenv("EMAIL_SUMMARIZER_SUBSCRIPTION_TRIAL_DAYS", "7"))
 SUBSCRIPTION_PRICE_CENTS = int(os.getenv("EMAIL_SUMMARIZER_SUBSCRIPTION_PRICE_CENTS", "499"))
@@ -407,6 +407,8 @@ DEFAULT_BILLING_EXEMPT_EMAILS = {
 REPORT_EMAIL_MODE_FULL = "full_report"
 REPORT_EMAIL_MODE_PRIVATE = "private_notification"
 REPORT_EMAIL_MODES = {REPORT_EMAIL_MODE_FULL, REPORT_EMAIL_MODE_PRIVATE}
+MANUAL_REPORT_EMAIL_SUBJECT = "Discere - Email Summary"
+SCHEDULED_REPORT_EMAIL_FALLBACK_SUBJECT = "Discere - Scheduled Email Summary"
 DEFAULT_BACKGROUND_THEME = "default"
 BACKGROUND_THEMES = {
     "default",
@@ -912,10 +914,19 @@ class LegalAcceptanceRequest(BaseModel):
     accept_privacy: bool = True
 
 
+def safe_next_path(next_url: str = "/dashboard") -> str:
+    candidate = str(next_url or "").strip()
+    if not candidate:
+        return "/dashboard"
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return "/dashboard"
+    if "\\" in candidate:
+        return "/dashboard"
+    return candidate
+
+
 @app.get("/")
-def home(request: Request) -> Response:
-    if get_session_user_id(request):
-        return RedirectResponse("/dashboard")
+def home() -> Response:
     return FileResponse(STATIC_DIR / "home.html")
 
 
@@ -1183,13 +1194,16 @@ def startup_configuration_check() -> None:
 
 @app.get("/login")
 def login_page(request: Request) -> Response:
+    next_url = safe_next_path(str(request.query_params.get("next", "/dashboard")))
     if get_session_user_id(request):
-        return RedirectResponse("/dashboard")
+        return RedirectResponse(next_url)
     return FileResponse(STATIC_DIR / "login.html")
 
 
 @app.get("/dashboard")
-def dashboard() -> FileResponse:
+def dashboard(request: Request) -> Response:
+    if not get_session_user_id(request):
+        return RedirectResponse(f"/login?next={quote('/dashboard', safe='')}")
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -1348,6 +1362,7 @@ def auth_google_start(
     scope = " ".join(GOOGLE_OAUTH_SCOPES)
     login_hint_value = login_hint.strip()
     prompt_value = prompt.strip()
+    next = safe_next_path(next)
     state = secrets.token_urlsafe(24)
     GOOGLE_OAUTH_STATE[state] = {"next": next, "prompt": prompt_value}
     auth_url = (
@@ -1408,7 +1423,7 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
 
     config = get_google_oauth_config()
     state_metadata = GOOGLE_OAUTH_STATE.pop(state, {}) if state else {}
-    next_url = request.cookies.get(GOOGLE_OAUTH_NEXT_COOKIE) or state_metadata.get("next") or "/dashboard"
+    next_url = safe_next_path(request.cookies.get(GOOGLE_OAUTH_NEXT_COOKIE) or state_metadata.get("next") or "/dashboard")
 
     try:
         token_payload = post_form_json(
@@ -1533,6 +1548,7 @@ def auth_microsoft_start(
     scope = " ".join(MICROSOFT_OAUTH_SCOPES)
     login_hint_value = login_hint.strip()
     prompt_value = prompt.strip()
+    next = safe_next_path(next)
     if force_reconsent:
         prompt_value = "consent"
         session_user_id = get_session_user_id(request)
@@ -1603,7 +1619,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
 
     config = get_microsoft_oauth_config()
     state_metadata = MICROSOFT_OAUTH_STATE.pop(state, {}) if state else {}
-    next_url = request.cookies.get(MICROSOFT_OAUTH_NEXT_COOKIE) or state_metadata.get("next") or "/dashboard"
+    next_url = safe_next_path(request.cookies.get(MICROSOFT_OAUTH_NEXT_COOKIE) or state_metadata.get("next") or "/dashboard")
     token_url = f"https://login.microsoftonline.com/{config['tenant']}/oauth2/v2.0/token"
 
     try:
@@ -4341,6 +4357,13 @@ def get_report_email_mode(settings: Dict[str, str]) -> str:
     return normalize_report_email_mode(settings.get("REPORT_EMAIL_MODE", REPORT_EMAIL_MODE_FULL))
 
 
+def scheduled_report_email_subject(schedule_name: Any) -> str:
+    name = str(schedule_name or "").strip()
+    if not name or name.lower() == "scheduled report":
+        return SCHEDULED_REPORT_EMAIL_FALLBACK_SUBJECT
+    return f"{name} - Scheduled Email Summary"
+
+
 def dashboard_url() -> str:
     if PUBLIC_BASE_URL:
         return f"{PUBLIC_BASE_URL}/dashboard"
@@ -4437,6 +4460,24 @@ def send_report_email_from_discere(
             with smtplib.SMTP_SSL(sender["host"], sender["port"], timeout=30) as server:
                 server.login(sender["user"], sender["password"])
                 server.sendmail(sender["from_email"], [recipient], msg.as_string())
+    except smtplib.SMTPAuthenticationError as exc:
+        write_monitoring_event(
+            "report_delivery",
+            event_name,
+            "error",
+            user_id=user_id,
+            metadata={
+                "recipient": recipient,
+                "smtp_host": sender["host"],
+                "smtp_port": sender["port"],
+                "from_email": sender["from_email"],
+                "error_type": exc.__class__.__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to authenticate Discere report email sender. Check the report sender SMTP username and app password on Render.",
+        ) from exc
     except Exception as exc:
         write_monitoring_event(
             "report_delivery",
@@ -4452,7 +4493,7 @@ def send_report_email_from_discere(
                 "error_type": exc.__class__.__name__,
             },
         )
-        raise HTTPException(status_code=500, detail=f"Failed to send report email from Discere: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Failed to send report email from Discere. Check report sender SMTP settings.") from exc
 
     return {"recipient": recipient, "subject": subject, "from": sender["from_email"]}
 
@@ -4470,13 +4511,12 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
         return send_report_email_from_discere(
             user_id=user_id,
             recipient=recipient,
-            subject="Your Discere summary is ready",
+            subject=MANUAL_REPORT_EMAIL_SUBJECT,
             html_body=render_private_report_notification_html("summary"),
             text_body=render_private_report_notification_text("summary"),
             event_name="discere_summary_email_failed",
         )
 
-    subject = summary.get("title", f"Summary: {summary.get('summary_id', '')}")
     html_body = render_summary_email_html(summary)
     text_parts: List[str] = [
         str(summary.get("title") or summary.get("summary_id") or "Summary").strip(),
@@ -4501,7 +4541,7 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
     return send_report_email_from_discere(
         user_id=user_id,
         recipient=recipient,
-        subject=subject,
+        subject=MANUAL_REPORT_EMAIL_SUBJECT,
         html_body=html_body,
         text_body="\n".join(text_parts).strip(),
         event_name="discere_summary_email_failed",
@@ -4699,7 +4739,12 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
     )
 
 
-def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Dict[str, str]:
+def send_combined_report_via_smtp(
+    user_id: str,
+    title: str,
+    markdown: str,
+    subject: str = MANUAL_REPORT_EMAIL_SUBJECT,
+) -> Dict[str, str]:
     settings = get_settings_for_user(user_id)
     profile = load_profile(user_id) or {}
     recipient = default_report_recipient(profile, settings)
@@ -4712,7 +4757,7 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Di
         delivery = send_report_email_from_discere(
             user_id=user_id,
             recipient=recipient,
-            subject="Your Discere report is ready",
+            subject=subject,
             html_body=render_private_report_notification_html("report"),
             text_body=render_private_report_notification_text("report"),
             event_name="discere_combined_report_email_failed",
@@ -4722,7 +4767,7 @@ def send_combined_report_via_smtp(user_id: str, title: str, markdown: str) -> Di
         delivery = send_report_email_from_discere(
             user_id=user_id,
             recipient=recipient,
-            subject=title,
+            subject=subject,
             html_body=html_body,
             text_body=render_markdown_report_text(title, markdown, max_chars=20000),
             event_name="discere_combined_report_email_failed",
@@ -5024,7 +5069,12 @@ def process_due_schedule(schedule_id: str) -> None:
         if summaries:
             markdown = build_scheduled_report_markdown(summaries)
             title = str(schedule["name"] or "Scheduled Report").strip() or "Scheduled Report"
-            send_combined_report_via_smtp(user_id, title, markdown)
+            send_combined_report_via_smtp(
+                user_id,
+                title,
+                markdown,
+                subject=scheduled_report_email_subject(title),
+            )
 
         advance_report_schedule(schedule)
     finally:
@@ -5616,7 +5666,6 @@ def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Quer
 @app.get("/summaries/{summary_id}/thread")
 def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str] = Query(None, description="User folder name, for example 'Ben'")) -> Dict[str, Any]:
     user_id = resolve_user_id(request, user_id)
-    purge_old_read_source_data(user_id)
     summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
@@ -5624,12 +5673,18 @@ def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str]
     summary = load_summary_json(summary_path)
     email_ids = [str(email_id).strip() for email_id in summary.get("source_email_file_ids", []) or [] if str(email_id).strip()]
     threads: List[Dict[str, Any]] = []
+    missing_email_count = 0
+    purged_email_count = 0
 
     for email_id in email_ids:
         email_path = safe_user_file_path(get_user_json_emails_dir(user_id), email_id, ".json", "email id")
         if not email_path.exists():
+            missing_email_count += 1
             continue
         email_payload = load_email_json(email_path)
+        if email_payload.get("content_purged_at"):
+            purged_email_count += 1
+            continue
         threads.append(
             {
                 "email_id": email_payload.get("email_id", email_id),
@@ -5651,11 +5706,24 @@ def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str]
             }
         )
 
+    unavailable_reason = ""
+    if not threads:
+        if purged_email_count:
+            unavailable_reason = "Full thread is no longer stored for this summary. Source email bodies are purged after the retention period once a summary is read or done."
+        elif missing_email_count or email_ids:
+            unavailable_reason = "Full thread is no longer stored for this summary."
+        else:
+            unavailable_reason = "No saved full thread was found for this summary."
+
     return {
         "summary_id": summary_id,
         "title": summary.get("title", summary_id),
         "contact_label": summary.get("contact_label", ""),
         "email_record_count": len(threads),
+        "content_available": bool(threads),
+        "missing_email_count": missing_email_count,
+        "purged_email_count": purged_email_count,
+        "unavailable_reason": unavailable_reason,
         "threads": threads,
     }
 

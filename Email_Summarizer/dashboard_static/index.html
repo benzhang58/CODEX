@@ -2578,6 +2578,14 @@
         summaryThreadCache.delete(key);
       }
 
+      function getSummaryThreadCache(summaryId) {
+        return summaryThreadCache.get(summaryCacheKey(summaryId));
+      }
+
+      function hasCachedSummaryThread(summaryId) {
+        return Boolean(getSummaryThreadCache(summaryId)?.html);
+      }
+
       function setThreadToggleLoading(loading) {
         isThreadToggleLoading = Boolean(loading);
         viewThreadButton.disabled = Boolean(loading);
@@ -3568,6 +3576,10 @@
         const params = new URLSearchParams(window.location.search);
         const requestedOnboarding = params.get("onboarding") === "1";
         if (!force && !requestedOnboarding && Boolean(currentProfile?.settings?.how_to_seen)) return;
+        const shouldPersistAutomaticView = !force && !requestedOnboarding;
+        if (shouldPersistAutomaticView) {
+          await markHowToSeen();
+        }
         let showFirstPage = true;
         let schedulesLoaded = false;
         await new Promise((resolve) => {
@@ -3609,7 +3621,9 @@
           appModalInput.onkeydown = null;
           renderPage();
         });
-        await markHowToSeen();
+        if (!shouldPersistAutomaticView) {
+          await markHowToSeen();
+        }
         if (requestedOnboarding) {
           const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
           window.history.replaceState({}, "", cleanUrl);
@@ -4077,15 +4091,22 @@
         return escaped.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       }
 
+      function renderThreadUnavailableView(title, message) {
+        return `
+          <div class="detail-section">
+            <h3>${escapeHtml(title || "Full Thread")}</h3>
+            <p class="meta">${escapeHtml(message || "Full thread is no longer stored for this summary.")}</p>
+          </div>
+        `;
+      }
+
       function renderThreadView(data) {
         const records = Array.isArray(data?.threads) ? data.threads : [];
         if (!records.length) {
-          return `
-            <div class="detail-section">
-              <h3>${escapeHtml(data?.title || "Full Thread")}</h3>
-              <p class="meta">No saved thread messages found for this summary.</p>
-            </div>
-          `;
+          return renderThreadUnavailableView(
+            data?.title || "Full Thread",
+            data?.unavailable_reason || "Full thread is no longer stored for this summary."
+          );
         }
 
         const recordHtml = records.map((record, recordIndex) => {
@@ -4962,7 +4983,6 @@
           if (!response.ok) {
             throw new Error(extractApiError(data, "Failed to load full thread."));
           }
-          await new Promise((resolve) => setTimeout(resolve, 0));
           return renderThreadView(data);
         })();
 
@@ -4979,13 +4999,31 @@
 
       function prefetchSummaryThread(summaryId, requestToken) {
         if (!currentDisplayedThreadAvailable || !summaryId) return;
+        const cached = getSummaryThreadCache(summaryId);
+        if (cached?.html) {
+          currentDisplayedThreadHtml = cached.html;
+          updateCurrentThreadPane(cached.html);
+          setThreadToggleLoading(false);
+          return;
+        }
+        if (requestToken === summaryViewRequestToken && currentSummaryId === summaryId) {
+          setThreadToggleLoading(true);
+        }
         loadSummaryThreadHtml(summaryId)
           .then((threadHtml) => {
             if (requestToken !== summaryViewRequestToken || currentSummaryId !== summaryId) return;
             currentDisplayedThreadHtml = threadHtml;
             updateCurrentThreadPane(threadHtml);
+            setThreadToggleLoading(false);
           })
-          .catch(() => {});
+          .catch((error) => {
+            if (requestToken !== summaryViewRequestToken || currentSummaryId !== summaryId) return;
+            const fallbackHtml = renderThreadUnavailableView(currentDisplayedSummaryTitle, friendlyApiMessage(error.message));
+            currentDisplayedThreadHtml = fallbackHtml;
+            summaryThreadCache.set(summaryCacheKey(summaryId), { html: fallbackHtml });
+            updateCurrentThreadPane(fallbackHtml);
+            setThreadToggleLoading(false);
+          });
       }
 
       async function loadSummaryDetail(summaryId, options = {}) {
@@ -5003,7 +5041,7 @@
           currentDisplayedSummaryMarkdown = cached.markdown;
           currentDisplayedSummaryHtml = cached.html;
           currentDisplayedThreadAvailable = cached.threadAvailable;
-          currentDisplayedThreadHtml = summaryThreadCache.get(cacheKey)?.html || "";
+          currentDisplayedThreadHtml = getSummaryThreadCache(summaryId)?.html || "";
           detailStatus.textContent = "";
           sendSummaryEmailButton.hidden = false;
           viewThreadButton.hidden = !currentDisplayedThreadAvailable;
@@ -5049,7 +5087,7 @@
           buildMarkdownFromSummary(summary);
         currentDisplayedThreadAvailable = Array.isArray(summary.source_email_file_ids) && summary.source_email_file_ids.length > 0;
         currentDisplayedSummaryHtml = buildSummaryDetailHtml(summary);
-        currentDisplayedThreadHtml = summaryThreadCache.get(cacheKey)?.html || "";
+        currentDisplayedThreadHtml = getSummaryThreadCache(summaryId)?.html || "";
         summaryDetailCache.set(cacheKey, {
           title: currentDisplayedSummaryTitle,
           markdown: currentDisplayedSummaryMarkdown,
@@ -5061,6 +5099,9 @@
         sendSummaryEmailButton.hidden = false;
         viewThreadButton.hidden = !currentDisplayedThreadAvailable;
         setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
+        if (currentDisplayedThreadAvailable && !hasCachedSummaryThread(summaryId)) {
+          setThreadToggleLoading(true);
+        }
         prefetchSummaryThread(summaryId, requestToken);
 
         syncSummaryCheckboxes();

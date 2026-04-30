@@ -176,6 +176,15 @@
       const microsoftOauthButton = document.getElementById("microsoftOauthButton");
       const status = document.getElementById("status");
 
+      function getNextDestination() {
+        const params = new URLSearchParams(window.location.search);
+        const next = String(params.get("next") || "/dashboard").trim();
+        if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) {
+          return "/dashboard";
+        }
+        return next;
+      }
+
       function getRememberedOauth() {
         return {
           provider: String(localStorage.getItem("oauth:lastProvider") || "").trim(),
@@ -242,6 +251,7 @@
           params.set("prompt", provider === "google" ? "select_account consent" : "select_account");
           localStorage.removeItem("oauth:forceAccountPicker");
         }
+        params.set("next", getNextDestination());
         const query = params.toString();
         setOauthAttempt(provider, mode, rememberedEmail);
         window.location.href = `/auth/${provider}/start${query ? `?${query}` : ""}`;
@@ -286,7 +296,7 @@
             status.textContent = data.detail || "Login failed.";
             return;
           }
-          window.location.href = "/dashboard";
+          window.location.href = getNextDestination();
         } catch (error) {
           status.textContent = `Login failed: ${error.message}`;
         } finally {
@@ -302,7 +312,7 @@
         const data = await response.json();
         if (data.authenticated) {
           clearOauthAttempt();
-          window.location.href = "/dashboard";
+          window.location.href = getNextDestination();
           return;
         }
 
@@ -318,6 +328,7 @@
           if (attemptedEmail) {
             params.set("login_hint", attemptedEmail);
           }
+          params.set("next", getNextDestination());
           window.location.href = `/auth/google/start${params.toString() ? `?${params.toString()}` : ""}`;
           return;
         }
@@ -329,6 +340,7 @@
           if (attemptedEmail) {
             params.set("login_hint", attemptedEmail);
           }
+          params.set("next", getNextDestination());
           setOauthAttempt("microsoft", "interactive", attemptedEmail);
           window.location.href = `/auth/microsoft/start${params.toString() ? `?${params.toString()}` : ""}`;
           return;
