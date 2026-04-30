@@ -1,4 +1,5 @@
 import base64
+import email
 import json
 import os
 import shutil
@@ -29,6 +30,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 
 import dashboard_api
+
+
+def decoded_mime_text(raw_message: str) -> str:
+    parsed = email.message_from_string(raw_message)
+    parts = []
+    for part in parsed.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            continue
+        charset = part.get_content_charset() or "utf-8"
+        parts.append(payload.decode(charset, errors="replace"))
+    return "\n".join(parts)
 
 
 def make_unsigned_id_token(claims: dict) -> str:
@@ -94,6 +109,37 @@ class SecurityRegressionTests(unittest.TestCase):
         response = client.get("/login", follow_redirects=False)
         self.assertEqual(response.status_code, 307, response.text)
         self.assertEqual(response.headers.get("location"), "/dashboard")
+
+    def test_email_hint_flags_default_false_and_persist_true(self) -> None:
+        client = self.signup("email-hints@example.com")
+        profile_response = client.get("/profile")
+        self.assertEqual(profile_response.status_code, 200, profile_response.text)
+        settings = profile_response.json()["profile"]["settings"]
+        self.assertFalse(settings["has_seen_combined_summary_email_hint"])
+        self.assertFalse(settings["has_seen_single_summary_email_hint"])
+
+        mark_response = client.post(
+            "/profile/ui-hint-seen",
+            json={"hint_key": "has_seen_combined_summary_email_hint"},
+        )
+        self.assertEqual(mark_response.status_code, 200, mark_response.text)
+        updated_settings = mark_response.json()["profile"]["settings"]
+        self.assertTrue(updated_settings["has_seen_combined_summary_email_hint"])
+        self.assertFalse(updated_settings["has_seen_single_summary_email_hint"])
+
+        persisted_response = client.get("/profile")
+        self.assertEqual(persisted_response.status_code, 200, persisted_response.text)
+        persisted_settings = persisted_response.json()["profile"]["settings"]
+        self.assertTrue(persisted_settings["has_seen_combined_summary_email_hint"])
+
+    def test_unknown_email_hint_key_is_rejected(self) -> None:
+        client = self.signup("bad-email-hint@example.com")
+        response = client.post(
+            "/profile/ui-hint-seen",
+            json={"hint_key": "not_a_real_hint"},
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Unknown UI hint", response.json()["detail"])
 
     def test_login_redirects_valid_session_to_safe_next_destination(self) -> None:
         client = self.signup("login-next@example.com")
@@ -901,6 +947,35 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("Project Falcon", serialized)
         self.assertIn("Private Notification", serialized)
 
+    def test_combined_report_uses_executive_summary_only(self) -> None:
+        markdown = dashboard_api.build_combined_report_markdown(
+            [
+                {
+                    "summary_id": "summary_one",
+                    "title": "Email Summary - Sender One",
+                    "updated_at": "2026-04-30",
+                    "executive_summary": "This is the executive summary.",
+                    "action_items": "This action item should not be included.",
+                    "bottom_line": "This bottom line should not be included.",
+                },
+                {
+                    "summary_id": "summary_two",
+                    "title": "Sender Two",
+                    "new_developments": "This fallback section should not be included.",
+                    "main_topics": "This topic should not be included.",
+                },
+            ]
+        )
+
+        self.assertIn("## Sender One", markdown)
+        self.assertIn("This is the executive summary.", markdown)
+        self.assertIn("## Sender Two", markdown)
+        self.assertIn("No executive summary is available for this summary.", markdown)
+        self.assertNotIn("This action item should not be included.", markdown)
+        self.assertNotIn("This bottom line should not be included.", markdown)
+        self.assertNotIn("This fallback section should not be included.", markdown)
+        self.assertNotIn("This topic should not be included.", markdown)
+
     def test_report_sender_config_resolves_from_report_env_vars(self) -> None:
         report_env = {
             "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
@@ -970,6 +1045,7 @@ class SecurityRegressionTests(unittest.TestCase):
             "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
             "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
             "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+            "EMAIL_SUMMARIZER_REPORT_REPLY_TO_EMAIL": "support@example.com",
         }
         server = MagicMock()
         smtp_ssl_context = MagicMock()
@@ -997,7 +1073,66 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(sendmail_args[0], "discere-sender@example.com")
         self.assertEqual(sendmail_args[1], ["recipient@example.com"])
         self.assertIn("From: Discere <discere-sender@example.com>", sendmail_args[2])
+        self.assertIn("Reply-To: Discere <support@example.com>", sendmail_args[2])
+        self.assertIn("Date:", sendmail_args[2])
+        self.assertIn("Message-ID:", sendmail_args[2])
+        decoded_message = decoded_mime_text(sendmail_args[2])
+        self.assertIn("You received this because you requested or scheduled a Discere email summary.", decoded_message)
+        self.assertIn("Need help? Contact", decoded_message)
         self.assertEqual(delivery["from"], "discere-sender@example.com")
+
+    def test_scheduled_report_email_adds_manage_footer_and_list_unsubscribe(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+            "EMAIL_SUMMARIZER_REPORT_REPLY_TO_EMAIL": "support@example.com",
+        }
+        server = MagicMock()
+        smtp_ssl_context = MagicMock()
+        smtp_ssl_context.__enter__.return_value = server
+        smtp_ssl_context.__exit__.return_value = None
+        with patch.object(dashboard_api, "PUBLIC_BASE_URL", "https://discere-ai.com"), patch.object(
+            dashboard_api,
+            "get_app_config_value",
+            side_effect=lambda key: config_values.get(key, ""),
+        ), patch.object(
+            dashboard_api.smtplib,
+            "SMTP_SSL",
+            return_value=smtp_ssl_context,
+        ):
+            dashboard_api.send_report_email_from_discere(
+                user_id="scheduled_headers_user",
+                recipient="recipient@example.com",
+                subject="Morning Briefing - Scheduled Email Summary",
+                html_body="<html><body><p>Ready</p></body></html>",
+                text_body="Ready",
+                event_name="test_scheduled_headers",
+                include_manage_link=True,
+            )
+
+        message = server.sendmail.call_args.args[2]
+        self.assertIn("List-Unsubscribe:", message)
+        self.assertIn("https://discere-ai.com/settings", message)
+        self.assertIn("Manage scheduled summaries in Discere settings", decoded_mime_text(message))
+
+    def test_single_summary_email_html_escapes_summary_content(self) -> None:
+        html = dashboard_api.render_summary_email_html(
+            {
+                "title": "<script>alert(1)</script>",
+                "updated_at": "<b>today</b>",
+                "executive_summary": "<img src=x onerror=alert(1)>\n- **Important** item",
+            }
+        )
+
+        self.assertNotIn("<script>", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)
+        self.assertIn("<strong>Important</strong> item", html)
 
     def test_report_email_port_587_uses_starttls(self) -> None:
         config_values = {

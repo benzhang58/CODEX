@@ -2162,16 +2162,6 @@
                   </svg>
                 </button>
               </span>
-              <span class="tooltip-wrap" data-tooltip="Combined Report">
-                <button id="combinedReportButton" class="icon-button" type="button" aria-label="Combined Report">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M4 6h9"></path>
-                    <path d="M4 12h9"></path>
-                    <path d="M4 18h9"></path>
-                    <path d="m15 16 2 2 4-4"></path>
-                  </svg>
-                </button>
-              </span>
               <span class="tooltip-wrap" data-tooltip="Delete Selected">
                 <button id="deleteSelectedButton" class="icon-button" type="button" aria-label="Delete Selected">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2183,8 +2173,8 @@
                   </svg>
                 </button>
               </span>
-              <span class="tooltip-wrap" data-tooltip="Send Report">
-                <button id="emailReportButton" class="icon-button" type="button" aria-label="Send Report">
+              <span class="tooltip-wrap" data-tooltip="Send Selected Report">
+                <button id="emailReportButton" class="icon-button" type="button" aria-label="Send Selected Report">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M4 6h16v12H4z"></path>
                     <path d="m4 7 8 6 8-6"></path>
@@ -2430,7 +2420,6 @@
       const chatInput = document.getElementById("chatInput");
       const chatSendButton = document.getElementById("chatSendButton");
       const selectAllNewButton = document.getElementById("selectAllNewButton");
-      const combinedReportButton = document.getElementById("combinedReportButton");
       const deleteSelectedButton = document.getElementById("deleteSelectedButton");
       const emailReportButton = document.getElementById("emailReportButton");
       const refineSummaryButton = document.getElementById("refineSummaryButton");
@@ -3377,6 +3366,40 @@
           }
         } catch (error) {
           return;
+        }
+      }
+
+      async function markUiHintSeen(hintKey) {
+        if (!currentProfile?.user_id) return;
+        try {
+          const response = await fetch("/profile/ui-hint-seen", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: currentProfile.user_id,
+              hint_key: hintKey,
+            }),
+          });
+          const data = await response.json();
+          if (response.ok && data.profile) {
+            currentProfile = data.profile;
+            applyProfileToForm(data.profile);
+          }
+        } catch (error) {
+          return;
+        }
+      }
+
+      async function showFirstTimeEmailHint({ hintKey, alreadySeen, title, message }) {
+        if (alreadySeen) return;
+        const acknowledged = await openAppModal({
+          title,
+          message,
+          confirmLabel: "Got it",
+          cancelLabel: "Not now",
+        });
+        if (acknowledged) {
+          await markUiHintSeen(hintKey);
         }
       }
 
@@ -4807,8 +4830,15 @@
           return;
         }
 
+        await showFirstTimeEmailHint({
+          hintKey: "has_seen_combined_summary_email_hint",
+          alreadySeen: Boolean(currentProfile?.settings?.has_seen_combined_summary_email_hint),
+          title: "Send Selected Report",
+          message: "Send Selected Report sends one email report with the Executive Summary sections from the summary cards you selected. It does not include each full summary.",
+        });
+
         const deliveryChoice = await openAppModal({
-          title: "Send Report",
+          title: "Send Selected Report",
           message: "Choose how you want to send the selected summaries.",
           confirmLabel: "Email",
           cancelLabel: "Cancel",
@@ -5149,73 +5179,6 @@
         syncSummaryCheckboxes();
       }
 
-      async function generateCombinedSummary(options = {}) {
-        if (!requireSignedIn()) return;
-        if (!(await requireSubscriptionAccess())) return;
-        const summaryIds = options.summaryIds || [...selectedSummaryIds];
-        if (!summaryIds.length) {
-          setRunStatus("Select at least one summary first.");
-          return;
-        }
-
-        const requestToken = ++summaryViewRequestToken;
-        sendSummaryEmailButton.hidden = true;
-        viewThreadButton.hidden = true;
-        isViewingFullThread = false;
-        syncViewThreadButton();
-        detailStatus.textContent = `Building report from ${summaryIds.length} selected summaries...`;
-        summaryDetail.setAttribute("aria-busy", "true");
-        setRunStatus(`Generating report from ${summaryIds.length} selected summaries...`, true);
-
-        try {
-          const response = await fetch("/summaries/combined", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: currentUserId,
-              summary_ids: summaryIds,
-            }),
-          });
-          const data = await response.json();
-          if (requestToken !== summaryViewRequestToken) {
-            return;
-          }
-          if (!response.ok) {
-            detailStatus.textContent = "Failed to build combined summary.";
-            summaryDetail.textContent = extractApiError(data, "Unknown error.");
-            setRunStatus(extractApiError(data, "Failed to build combined summary."));
-            summaryDetail.removeAttribute("aria-busy");
-            return;
-          }
-
-          currentSummaryId = null;
-          currentDisplayedSummaryTitle = data.title || "Combined Report";
-          currentDisplayedSummaryMarkdown = data.combined_markdown || "";
-          currentDisplayedSummaryHtml = `
-            <div class="detail-section">
-              <h3>${escapeHtml(data.title || "Combined Summary")}</h3>
-            </div>
-            ${renderMarkdownSummary(data.combined_markdown || "")}
-          `;
-          currentDisplayedThreadHtml = "";
-          currentDisplayedThreadAvailable = false;
-          detailStatus.textContent = "";
-          summaryDetail.className = "";
-          summaryDetail.innerHTML = currentDisplayedSummaryHtml;
-          summaryDetail.removeAttribute("aria-busy");
-          setRunStatus(`Combined report ready for ${data.count} selected summaries.`);
-        } catch (error) {
-          if (requestToken !== summaryViewRequestToken) {
-            return;
-          }
-          detailStatus.textContent = "Failed to build combined summary.";
-          summaryDetail.textContent = friendlyApiMessage(error.message);
-          setRunStatus(`Failed to build combined summary: ${friendlyApiMessage(error.message)}`);
-          summaryDetail.removeAttribute("aria-busy");
-        } finally {
-        }
-      }
-
       async function refineCurrentSummary() {
         if (!requireSignedIn()) return;
         if (!(await requireSubscriptionAccess())) return;
@@ -5462,11 +5425,20 @@
           return;
         }
 
-        if (!(await openAppModal({
-          title: "Send to Email",
-          message: "Would you like to send this summary to your email?",
-        }))) {
-          return;
+        if (currentProfile?.settings?.has_seen_single_summary_email_hint) {
+          if (!(await openAppModal({
+            title: "Send to Email",
+            message: "Would you like to send this summary to your email?",
+          }))) {
+            return;
+          }
+        } else {
+          await showFirstTimeEmailHint({
+            hintKey: "has_seen_single_summary_email_hint",
+            alreadySeen: false,
+            title: "Send Full Summary",
+            message: "This sends the full summary for the currently open email summary only.",
+          });
         }
 
         sendSummaryEmailButton.disabled = true;
@@ -5527,7 +5499,6 @@
         setPulseCollapsed(!heroShell.classList.contains("is-collapsed"));
       });
       selectAllNewButton.addEventListener("click", toggleSelectAllSummaries);
-      combinedReportButton.addEventListener("click", () => generateCombinedSummary());
       doneToggleButton.addEventListener("click", toggleDoneForSelectedSummaries);
       toggleDoneViewButton.addEventListener("click", toggleDoneView);
       deleteSelectedButton.addEventListener("click", deleteSelectedSummaries);

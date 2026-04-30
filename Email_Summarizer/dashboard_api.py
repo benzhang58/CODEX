@@ -19,7 +19,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formataddr
+from email.utils import formataddr, formatdate, make_msgid
 from html import escape
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -915,6 +915,11 @@ class LegalAcceptanceRequest(BaseModel):
     accept_privacy: bool = True
 
 
+class UiHintSeenRequest(BaseModel):
+    user_id: Optional[str] = None
+    hint_key: str
+
+
 def safe_next_path(next_url: str = "/dashboard") -> str:
     candidate = str(next_url or "").strip()
     if not candidate:
@@ -1778,6 +1783,24 @@ def mark_how_to_seen(request: Request, user_id: Optional[str] = Query(None)) -> 
     return {"success": True, "profile": profile_response(profile)}
 
 
+@app.post("/profile/ui-hint-seen")
+def mark_ui_hint_seen(request: Request, payload: UiHintSeenRequest) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    hint_map = {
+        "has_seen_combined_summary_email_hint": "HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT",
+        "has_seen_single_summary_email_hint": "HAS_SEEN_SINGLE_SUMMARY_EMAIL_HINT",
+    }
+    setting_key = hint_map.get(str(payload.hint_key or "").strip())
+    if not setting_key:
+        raise HTTPException(status_code=400, detail="Unknown UI hint.")
+
+    profile = load_profile_or_404(resolved_user_id)
+    profile["settings"] = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
+    profile["settings"][setting_key] = "true"
+    save_profile(profile)
+    return {"success": True, "profile": profile_response(profile)}
+
+
 @app.post("/profile/legal-acceptance")
 def accept_legal_terms(
     request: Request,
@@ -2598,6 +2621,8 @@ def default_profile_settings() -> Dict[str, str]:
         "BIRTHDAY": "",
         "GENDER": "",
         "HOW_TO_SEEN": "false",
+        "HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT": "false",
+        "HAS_SEEN_SINGLE_SUMMARY_EMAIL_HINT": "false",
         "TERMS_ACCEPTED_AT": "",
         "PRIVACY_ACCEPTED_AT": "",
         "TERMS_VERSION_ACCEPTED": "",
@@ -2967,6 +2992,8 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "birthday": settings.get("BIRTHDAY", ""),
         "gender": settings.get("GENDER", ""),
         "how_to_seen": str(settings.get("HOW_TO_SEEN", "false")).lower() == "true",
+        "has_seen_combined_summary_email_hint": str(settings.get("HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT", "false")).lower() == "true",
+        "has_seen_single_summary_email_hint": str(settings.get("HAS_SEEN_SINGLE_SUMMARY_EMAIL_HINT", "false")).lower() == "true",
         "terms_accepted": bool(str(settings.get("TERMS_ACCEPTED_AT", "")).strip()),
         "privacy_accepted": bool(str(settings.get("PRIVACY_ACCEPTED_AT", "")).strip()),
         "terms_accepted_at": settings.get("TERMS_ACCEPTED_AT", ""),
@@ -4278,11 +4305,14 @@ def render_summary_email_html(summary: Dict[str, Any]) -> str:
         plain_lines = [line for line in lines if not line.startswith("- ")]
         html_parts: List[str] = []
         for line in plain_lines:
-            html_parts.append(f"<p style='margin:0 0 10px 0; line-height:1.55;'>{line}</p>")
+            html_parts.append(f"<p style='margin:0 0 10px 0; line-height:1.55;'>{render_inline_markdown_html(line)}</p>")
         if bullet_lines:
             html_parts.append(
                 "<ul style='margin:0; padding-left:22px;'>"
-                + "".join(f"<li style='margin:0 0 6px 0; line-height:1.5;'>{item}</li>" for item in bullet_lines)
+                + "".join(
+                    f"<li style='margin:0 0 6px 0; line-height:1.5;'>{render_inline_markdown_html(item)}</li>"
+                    for item in bullet_lines
+                )
                 + "</ul>"
             )
         return "".join(html_parts)
@@ -4302,8 +4332,8 @@ def render_summary_email_html(summary: Dict[str, Any]) -> str:
     return (
         "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
         "max-width:760px; margin:0 auto; padding:24px; background:#fff;'>"
-        f"<h1 style='margin:0 0 6px 0; font-size:28px;'>{summary.get('title', summary.get('summary_id', 'Summary'))}</h1>"
-        f"<p style='margin:0 0 24px 0; color:#666;'>Updated: {summary.get('updated_at', '')}</p>"
+        f"<h1 style='margin:0 0 6px 0; font-size:28px;'>{escape(str(summary.get('title', summary.get('summary_id', 'Summary'))))}</h1>"
+        f"<p style='margin:0 0 24px 0; color:#666;'>Updated: {escape(str(summary.get('updated_at', '')))}</p>"
         + "".join(section_html)
         + "</body></html>"
     )
@@ -4351,6 +4381,11 @@ def get_report_sender_config() -> Dict[str, Any]:
         "password": get_app_config_value("EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD").strip(),
         "from_email": from_email,
         "from_name": (get_app_config_value("EMAIL_SUMMARIZER_REPORT_FROM_NAME") or "Discere").strip(),
+        "reply_to_email": (
+            get_app_config_value("EMAIL_SUMMARIZER_REPORT_REPLY_TO_EMAIL")
+            or get_app_config_value("EMAIL_SUMMARIZER_SUPPORT_EMAIL")
+            or from_email
+        ).strip(),
     }
 
 
@@ -4420,6 +4455,47 @@ def dashboard_url() -> str:
     return "/dashboard"
 
 
+def settings_url() -> str:
+    if PUBLIC_BASE_URL:
+        return f"{PUBLIC_BASE_URL}/settings"
+    return "/settings"
+
+
+def append_report_email_footer_html(html_body: str, *, support_email: str, include_manage_link: bool = False) -> str:
+    support = escape(str(support_email or "").strip())
+    manage_link = escape(settings_url())
+    manage_html = (
+        f"<br>Manage scheduled summaries in <a href='{manage_link}' style='color:#111; font-weight:700;'>Discere settings</a>."
+        if include_manage_link
+        else ""
+    )
+    footer = (
+        "<div style='margin-top:28px; padding-top:16px; border-top:1px solid #e5e5e5; "
+        "color:#6b6b66; font-size:13px; line-height:1.5;'>"
+        "You received this because you requested or scheduled a Discere email summary."
+        f"{manage_html}"
+        f"<br>Need help? Contact <a href='mailto:{support}' style='color:#111; font-weight:700;'>{support}</a>."
+        "</div>"
+    )
+    if "</body>" in html_body:
+        return html_body.replace("</body>", f"{footer}</body>", 1)
+    return f"{html_body}{footer}"
+
+
+def append_report_email_footer_text(text_body: str, *, support_email: str, include_manage_link: bool = False) -> str:
+    lines = [
+        str(text_body or "").strip(),
+        "",
+        "---",
+        "You received this because you requested or scheduled a Discere email summary.",
+    ]
+    if include_manage_link:
+        lines.append(f"Manage scheduled summaries in Discere settings: {settings_url()}")
+    if support_email:
+        lines.append(f"Need help? Contact {support_email}")
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
 def render_private_report_notification_html(report_label: str = "report") -> str:
     link = dashboard_url()
     link_html = (
@@ -4470,6 +4546,7 @@ def send_report_email_from_discere(
     html_body: str,
     text_body: str,
     event_name: str,
+    include_manage_link: bool = False,
 ) -> Dict[str, str]:
     if not is_valid_email(recipient):
         raise HTTPException(status_code=400, detail="A valid recipient email is required before sending.")
@@ -4500,8 +4577,28 @@ def send_report_email_from_discere(
     msg["Subject"] = subject
     msg["From"] = formataddr((sender["from_name"], sender["from_email"]))
     msg["To"] = recipient
-    msg.attach(MIMEText(_to_ascii_safe(text_body), "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    msg["Date"] = formatdate(localtime=False)
+    message_id_domain = sender["from_email"].split("@", 1)[1] if "@" in sender["from_email"] else None
+    msg["Message-ID"] = make_msgid(domain=message_id_domain)
+    if sender.get("reply_to_email"):
+        msg["Reply-To"] = formataddr((sender["from_name"], sender["reply_to_email"]))
+    if include_manage_link and settings_url().startswith("http"):
+        support_email = sender.get("reply_to_email") or sender["from_email"]
+        msg["List-Unsubscribe"] = f"<mailto:{support_email}?subject=Unsubscribe%20Discere%20scheduled%20summaries>, <{settings_url()}>"
+
+    support_email = sender.get("reply_to_email") or sender["from_email"]
+    html_with_footer = append_report_email_footer_html(
+        html_body,
+        support_email=support_email,
+        include_manage_link=include_manage_link,
+    )
+    text_with_footer = append_report_email_footer_text(
+        text_body,
+        support_email=support_email,
+        include_manage_link=include_manage_link,
+    )
+    msg.attach(MIMEText(_to_ascii_safe(text_with_footer), "plain", "utf-8"))
+    msg.attach(MIMEText(html_with_footer, "html", "utf-8"))
 
     try:
         if sender["port"] == 587:
@@ -4604,22 +4701,11 @@ def build_combined_report_markdown(summaries: List[Dict[str, Any]]) -> str:
         if summary.get("updated_at"):
             parts.append(f"Updated: {summary.get('updated_at')}")
 
-        primary_text = ""
-        for key in [
-            "executive_summary",
-            "bottom_line",
-            "new_developments",
-            "action_items",
-            "main_topics",
-            "deadlines",
-        ]:
-            content = str(summary.get(key, "") or "").strip()
-            if content:
-                primary_text = content
-                break
-
-        if primary_text:
-            parts.append(primary_text)
+        executive_summary = str(summary.get("executive_summary", "") or "").strip()
+        if executive_summary:
+            parts.append(executive_summary)
+        else:
+            parts.append("No executive summary is available for this summary.")
 
         blocks.append("\n\n".join(parts))
 
@@ -4678,7 +4764,7 @@ def generate_combined_summary_content(user_id: str, summary_ids: List[str], requ
         "summary_ids": [summary.get("summary_id", "") for summary in summaries],
         "count": len(summaries),
         "combined_markdown": combined_markdown,
-        "title": f"Combined Report ({len(summaries)} Selected)",
+        "title": f"Selected Summary Report ({len(summaries)} Selected)",
     }
 
 
@@ -4802,6 +4888,7 @@ def send_combined_report_via_smtp(
             html_body=render_private_report_notification_html("report"),
             text_body=render_private_report_notification_text("report"),
             event_name="discere_combined_report_email_failed",
+            include_manage_link=subject != MANUAL_REPORT_EMAIL_SUBJECT,
         )
     else:
         html_body = render_markdown_report_email_html(title, markdown)
@@ -4812,6 +4899,7 @@ def send_combined_report_via_smtp(
             html_body=html_body,
             text_body=render_markdown_report_text(title, markdown, max_chars=20000),
             event_name="discere_combined_report_email_failed",
+            include_manage_link=subject != MANUAL_REPORT_EMAIL_SUBJECT,
         )
 
     track_analytics_event(

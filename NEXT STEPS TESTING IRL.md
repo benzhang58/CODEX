@@ -162,12 +162,21 @@ Discere report sender setup:
 Future transactional email provider upgrade:
 
 - [ ] Decide whether to replace Gmail SMTP with a transactional email provider before public launch.
-- [ ] Recommended first choices: Resend for fastest/simple developer setup, or Postmark for strong transactional-email positioning.
+- [ ] Use a domain-authenticated sender such as `summaries@discere-ai.com` instead of `discereresearch@gmail.com`.
+- [ ] Recommended first choices: Postmark for strongest transactional-email positioning and deliverability, or Resend for the simplest early-SaaS setup.
 - [ ] Other viable options: SendGrid, Mailgun, or Amazon SES.
 - [ ] Verify a Discere-owned sending domain, for example `discere-ai.com`.
 - [ ] Configure SPF, DKIM, and DMARC for the sending domain.
-- [ ] Add the provider API key to Render as an environment variable, not GitHub.
-- [ ] Update the report sender code to send through the provider API instead of a normal Gmail SMTP account.
+- [ ] Start with the provider's SMTP mode so the existing `EMAIL_SUMMARIZER_REPORT_*` variables can keep working.
+- [ ] Update Render SMTP settings to the provider values:
+  - `EMAIL_SUMMARIZER_REPORT_SMTP_HOST=<provider SMTP host>`
+  - `EMAIL_SUMMARIZER_REPORT_SMTP_PORT=587`
+  - `EMAIL_SUMMARIZER_REPORT_SMTP_USER=<provider SMTP username>`
+  - `EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD=<provider SMTP password or token>`
+  - `EMAIL_SUMMARIZER_REPORT_FROM_EMAIL=summaries@discere-ai.com`
+  - `EMAIL_SUMMARIZER_REPORT_FROM_NAME=Discere`
+- [ ] Do not commit provider credentials to GitHub.
+- [ ] Consider an API-based provider integration later only if SMTP is not enough for bounce handling, suppression lists, or detailed delivery webhooks.
 - [ ] Confirm sent reports are not stored in a normal Gmail Sent folder.
 - [ ] Confirm bounces, delivery failures, and provider errors appear in monitoring.
 - [ ] Keep Private Notification mode available for users who do not want summary content in report emails.
