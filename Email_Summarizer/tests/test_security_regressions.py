@@ -111,7 +111,7 @@ class SecurityRegressionTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
-    def test_microsoft_oauth_start_requests_outlook_imap_scope_without_graph_user_read(self) -> None:
+    def test_microsoft_oauth_start_requests_graph_mail_scope_without_graph_user_read(self) -> None:
         originals = {
             "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
             "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
@@ -127,7 +127,7 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 307, response.text)
             query = parse_qs(urlparse(response.headers["location"]).query)
             scopes = query.get("scope", [""])[0].split()
-            self.assertIn(dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE, scopes)
+            self.assertIn(dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE, scopes)
             self.assertNotIn("User.Read", scopes)
             self.assertEqual(query.get("prompt"), ["consent"])
         finally:
@@ -159,9 +159,9 @@ class SecurityRegressionTests(unittest.TestCase):
                 }
             )
             token_payload = {
-                "access_token": "outlook-imap-access-token",
+                "access_token": "outlook-graph-access-token",
                 "refresh_token": "outlook-refresh-token",
-                "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+                "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
                 "id_token": id_token,
             }
             with patch.object(dashboard_api, "post_form_json", return_value=token_payload), patch.object(
@@ -178,8 +178,8 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(response.headers.get("location"), "/dashboard")
             profile = dashboard_api.load_profile_or_404("outlook_user_example_com")
             self.assertEqual(profile["email"], "outlook-user@example.com")
-            self.assertEqual(profile["microsoft_oauth"]["access_token"], "outlook-imap-access-token")
-            self.assertTrue(dashboard_api.microsoft_oauth_has_scope(profile, dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE))
+            self.assertEqual(profile["microsoft_oauth"]["access_token"], "outlook-graph-access-token")
+            self.assertTrue(dashboard_api.microsoft_oauth_has_scope(profile, dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE))
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -196,7 +196,7 @@ class SecurityRegressionTests(unittest.TestCase):
             "email": "microsoft-consent@example.com",
             "access_token": "old-access-token",
             "refresh_token": "old-refresh-token",
-            "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+            "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
         }
         dashboard_api.save_profile(profile)
 
@@ -240,7 +240,7 @@ class SecurityRegressionTests(unittest.TestCase):
             "email": "stale-microsoft@example.com",
             "access_token": "stale-access",
             "refresh_token": "stale-refresh",
-            "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+            "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
         }
         dashboard_api.save_profile(profile)
 
@@ -317,7 +317,7 @@ class SecurityRegressionTests(unittest.TestCase):
             "email": "remembered-outlook@example.com",
             "access_token": "expired-access-token",
             "refresh_token": "stored-refresh-token",
-            "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+            "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
         }
         dashboard_api.save_profile(profile)
 
@@ -370,6 +370,26 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("global-smtp@example.com", json.dumps(payload))
         self.assertNotIn("global-recipient@example.com", json.dumps(payload))
         self.assertNotIn("should-not-leak@example.com", json.dumps(payload))
+
+    def test_new_accounts_default_to_default_background_theme(self) -> None:
+        client = self.signup("theme-default@example.com")
+        profile_response = client.get("/auth/me")
+        self.assertEqual(profile_response.status_code, 200, profile_response.text)
+        self.assertEqual(profile_response.json()["profile"]["settings"]["background_theme"], "default")
+
+    def test_background_theme_is_account_scoped_setting(self) -> None:
+        client = self.signup("theme-owner@example.com")
+        update_response = client.put(
+            "/profile",
+            json={"email": "theme-owner@example.com", "background_theme": "green"},
+        )
+        self.assertEqual(update_response.status_code, 200, update_response.text)
+        self.assertEqual(update_response.json()["profile"]["settings"]["background_theme"], "green")
+
+        other_client = self.signup("theme-other@example.com")
+        other_profile_response = other_client.get("/auth/me")
+        self.assertEqual(other_profile_response.status_code, 200, other_profile_response.text)
+        self.assertEqual(other_profile_response.json()["profile"]["settings"]["background_theme"], "default")
 
     def test_password_signup_does_not_auto_connect_mailbox_with_dashboard_password(self) -> None:
         client = self.signup("standard-mailbox@example.com")

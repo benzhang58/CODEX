@@ -1067,7 +1067,7 @@
       const subscriptionPriceLine = document.getElementById("subscriptionPriceLine");
       const manageSubscriptionButton = document.getElementById("manageSubscriptionButton");
       const subscriptionStatus = document.getElementById("subscriptionStatus");
-      let currentTheme = localStorage.getItem("emailDashboardTheme") || "white";
+      let currentTheme = "default";
       let attachmentAiEnabled = false;
       let reportEmailMode = "full_report";
 
@@ -1096,8 +1096,8 @@
       }
 
       function applyTheme(theme) {
-        currentTheme = theme;
-        localStorage.setItem("emailDashboardTheme", theme);
+        currentTheme = theme || "default";
+        theme = currentTheme;
         if (theme === "white") {
           document.documentElement.style.setProperty("--bg", "#ffffff");
           document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
@@ -1378,6 +1378,7 @@
         mailboxSection.style.display = "none";
         currentProfile = data.profile;
         rememberOauthProvider(data.profile);
+        applyTheme(data.profile.settings?.background_theme || "default");
         settingsLoginEmail.textContent = data.profile.email || "Not available";
         settingsLoginMethod.textContent = data.profile.google_connected
           ? "Google OAuth"
@@ -1427,6 +1428,28 @@
         } finally {
           attachmentAiOffButton.disabled = false;
           attachmentAiOnButton.disabled = false;
+        }
+      }
+
+      async function saveThemeSetting(theme) {
+        if (!currentProfile) return;
+        try {
+          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: currentProfile.email || "",
+              background_theme: theme || "default",
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            return;
+          }
+          currentProfile = data.profile;
+          applyTheme(data.profile.settings?.background_theme || theme || "default");
+        } catch (error) {
+          return;
         }
       }
 
@@ -1675,7 +1698,11 @@
       }
 
       themeChips.forEach((chip) => {
-        chip.addEventListener("click", () => applyTheme(chip.dataset.theme || "default"));
+        chip.addEventListener("click", () => {
+          const theme = chip.dataset.theme || "default";
+          applyTheme(theme);
+          saveThemeSetting(theme);
+        });
       });
       attachmentAiOffButton.addEventListener("click", () => {
         if (!attachmentAiEnabled) return;

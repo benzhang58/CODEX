@@ -16,6 +16,7 @@ import logging
 import re
 import sqlite3
 import base64
+import hashlib
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -26,7 +27,7 @@ import imaplib
 import email
 import email.utils
 from email.message import Message
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request as UrlRequest, urlopen
 from urllib.error import HTTPError
 import pandas as pd
@@ -374,7 +375,7 @@ class EmailSummarizer:
         self.google_oauth = self._load_google_oauth()
         self.microsoft_oauth = self._load_microsoft_oauth()
         self.use_gmail_api = self._should_use_gmail_api()
-        self.use_microsoft_imap_oauth = self._should_use_microsoft_imap_oauth()
+        self.use_microsoft_graph_api = self._should_use_microsoft_graph_api()
         self.include_attachment_previews_in_llm = os.getenv(
             "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM",
             "false",
@@ -472,7 +473,7 @@ class EmailSummarizer:
             return False
         return bool(self.google_oauth.get("refresh_token") or self.google_oauth.get("access_token"))
 
-    def _should_use_microsoft_imap_oauth(self) -> bool:
+    def _should_use_microsoft_graph_api(self) -> bool:
         if self.use_gmail_api:
             return False
         provider = str(self.microsoft_oauth.get("provider", "")).strip().lower()
@@ -516,6 +517,11 @@ class EmailSummarizer:
         if cleaned:
             return int(cleaned[:15], 16)
         return abs(hash(gmail_message_id)) % (10**15)
+
+    @staticmethod
+    def _microsoft_numeric_uid(message_id: str) -> int:
+        digest = hashlib.sha256(str(message_id).encode("utf-8")).hexdigest()
+        return int(digest[:15], 16)
 
     def _gmail_refresh_access_token(self) -> str:
         refresh_token = str(self.google_oauth.get("refresh_token", "")).strip()
@@ -573,7 +579,7 @@ class EmailSummarizer:
                 "client_secret": client_secret,
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token",
-                "scope": "https://outlook.office.com/IMAP.AccessAsUser.All offline_access",
+                "scope": "https://graph.microsoft.com/Mail.Read offline_access",
             }
         ).encode("utf-8")
         request = UrlRequest(
@@ -596,7 +602,7 @@ class EmailSummarizer:
         maybe_refresh_token = str(payload.get("refresh_token", "")).strip()
         if maybe_refresh_token:
             self.microsoft_oauth["refresh_token"] = maybe_refresh_token
-        self.microsoft_oauth["scope"] = payload.get("scope") or self.microsoft_oauth.get("scope", "") or "https://outlook.office.com/IMAP.AccessAsUser.All offline_access"
+        self.microsoft_oauth["scope"] = payload.get("scope") or self.microsoft_oauth.get("scope", "") or "https://graph.microsoft.com/Mail.Read offline_access"
         self.microsoft_oauth["updated_at"] = datetime.now().isoformat()
         self._save_oauth_payload("microsoft_oauth_json", self.microsoft_oauth)
         return new_access_token
@@ -628,6 +634,37 @@ class EmailSummarizer:
         parsed.uid = self._gmail_numeric_uid(gmail_message_id)
         parsed.gmail_message_id = gmail_message_id
         parsed.gmail_thread_id = payload.get("threadId", "")
+        return parsed
+
+    def _microsoft_graph_request(self, path_or_url: str, params: Optional[Dict[str, str]] = None, raw: bool = False) -> Any:
+        access_token = self._microsoft_refresh_access_token()
+        if path_or_url.startswith("https://"):
+            url = path_or_url
+        else:
+            query = f"?{urlencode(params)}" if params else ""
+            url = f"https://graph.microsoft.com/v1.0/me/{path_or_url}{query}"
+        request = UrlRequest(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                payload = response.read()
+                if raw:
+                    return payload
+                return json.loads(payload.decode("utf-8"))
+        except HTTPError as exc:
+            payload = exc.read().decode("utf-8", errors="replace")
+            raise ValueError(f"Microsoft Graph request failed for {path_or_url}: {payload}") from exc
+
+    def _microsoft_graph_raw_message(self, graph_message_id: str, conversation_id: str = "") -> Message:
+        escaped_id = quote(str(graph_message_id), safe="")
+        raw_bytes = self._microsoft_graph_request(f"messages/{escaped_id}/$value", raw=True)
+        parsed = email.message_from_bytes(raw_bytes)
+        parsed.uid = self._microsoft_numeric_uid(graph_message_id)
+        parsed.microsoft_message_id = graph_message_id
+        parsed.microsoft_conversation_id = conversation_id
         return parsed
 
     def _summary_file_id(self, sender: str, run_date: str) -> str:
@@ -791,13 +828,9 @@ class EmailSummarizer:
         user     = os.getenv("IMAP_USER")
         password = os.getenv("IMAP_PASSWORD")
 
-        if self.use_microsoft_imap_oauth:
-            server = "outlook.office365.com"
-            port = 993
-            user = user or str(self.microsoft_oauth.get("email", "")).strip() or self.profile_email
-            if not all([server, user]):
-                raise ValueError("Missing Outlook IMAP settings for Microsoft OAuth mailbox access.")
-        elif not all([server, user, password]):
+        if self.use_microsoft_graph_api:
+            raise ValueError("IMAP should not be used for Microsoft accounts with Microsoft Graph OAuth tokens.")
+        if not all([server, user, password]):
             raise ValueError("Missing IMAP credentials.")
 
         logger.info(f"Connecting to {server}:{port}")
@@ -806,12 +839,7 @@ class EmailSummarizer:
             mail.sock.settimeout(self.imap_timeout_seconds)
         except Exception:
             pass
-        if self.use_microsoft_imap_oauth:
-            access_token = self._microsoft_refresh_access_token()
-            auth_string = self._build_xoauth2_string(user, access_token)
-            mail.authenticate("XOAUTH2", lambda _: auth_string)
-        else:
-            mail.login(user, password)
+        mail.login(user, password)
         mail.select(self._primary_folder)
 
         self._all_folders = self._list_all_folders(mail)
@@ -955,6 +983,12 @@ class EmailSummarizer:
         import re
 
         def get_thread_key(msg: Message) -> str:
+            microsoft_conversation_id = getattr(msg, "microsoft_conversation_id", "")
+            if microsoft_conversation_id:
+                return f"microsoft::{microsoft_conversation_id}"
+            gmail_thread_id = getattr(msg, "gmail_thread_id", "")
+            if gmail_thread_id:
+                return f"gmail::{gmail_thread_id}"
             # Use the root Message-ID from References chain as the thread key
             refs = msg.get("References", "").strip().split()
             if refs:
@@ -1053,8 +1087,10 @@ class EmailSummarizer:
         """
         if self.use_gmail_api:
             return self.fetch_trigger_emails_gmail_api(days_back, processed_uids)
+        if self.use_microsoft_graph_api:
+            return self.fetch_trigger_emails_microsoft_graph(days_back, processed_uids)
 
-        since_dt = datetime.now() - timedelta(days=days_back)
+        since_dt = datetime.utcnow() - timedelta(days=days_back)
         logger.info(f"Searching for whitelisted emails since {since_dt.strftime('%d-%b-%Y')} (date filtered in Python)")
 
         # Strategy: run SINCE and FROM as separate queries, intersect in Python.
@@ -1181,6 +1217,75 @@ class EmailSummarizer:
             "new_trigger_count": len(msgs),
         }
 
+    @staticmethod
+    def _odata_string(value: str) -> str:
+        return str(value or "").replace("'", "''")
+
+    def fetch_trigger_emails_microsoft_graph(self, days_back: int, processed_uids: Set[str]) -> Tuple[List[Message], Dict[str, int]]:
+        if not self.whitelist:
+            logger.info("No tracked senders configured; skipping Microsoft Graph trigger search.")
+            return [], {
+                "candidate_trigger_count": 0,
+                "already_processed_count": 0,
+                "untracked_sender_count": 0,
+                "new_trigger_count": 0,
+            }
+
+        logger.info("Running Microsoft Graph search for tracked senders.")
+        since_dt = datetime.utcnow() - timedelta(days=days_back)
+        since_iso = since_dt.replace(microsecond=0).isoformat() + "Z"
+
+        candidate_items: List[Dict[str, str]] = []
+        seen_candidate_ids: Set[str] = set()
+        for tracked_sender in self.whitelist:
+            params = {
+                "$select": "id,conversationId,receivedDateTime,from",
+                "$top": "100",
+                "$filter": f"receivedDateTime ge {since_iso} and from/emailAddress/address eq '{self._odata_string(tracked_sender)}'",
+            }
+            payload = self._microsoft_graph_request("messages", params)
+            while True:
+                for item in payload.get("value", []):
+                    graph_id = str(item.get("id", "")).strip()
+                    if graph_id and graph_id not in seen_candidate_ids:
+                        seen_candidate_ids.add(graph_id)
+                        candidate_items.append({
+                            "id": graph_id,
+                            "conversationId": str(item.get("conversationId", "")).strip(),
+                        })
+                next_link = payload.get("@odata.nextLink")
+                if not next_link:
+                    break
+                payload = self._microsoft_graph_request(next_link)
+
+        logger.info(f"Microsoft Graph returned {len(candidate_items)} candidate message(s)")
+        msgs: List[Message] = []
+        skipped_processed = 0
+        skipped_untracked_sender = 0
+        for item in candidate_items:
+            graph_message_id = item["id"]
+            numeric_uid = self._microsoft_numeric_uid(graph_message_id)
+            if self._uid_token(numeric_uid) in processed_uids:
+                skipped_processed += 1
+                continue
+            try:
+                msg = self._microsoft_graph_raw_message(graph_message_id, item.get("conversationId", ""))
+                sender = self._message_sender(msg)
+                if not self._is_tracked_sender(sender):
+                    skipped_untracked_sender += 1
+                    logger.info(f"Skipping Microsoft Graph candidate because actual From is not tracked: {sender or '(empty)'}")
+                    continue
+                msgs.append(msg)
+            except Exception as exc:
+                logger.warning(f"Failed to fetch Microsoft Graph message {graph_message_id}: {exc}")
+
+        return msgs, {
+            "candidate_trigger_count": len(candidate_items),
+            "already_processed_count": skipped_processed,
+            "untracked_sender_count": skipped_untracked_sender,
+            "new_trigger_count": len(msgs),
+        }
+
     # ──────────────────────────────────────────────
     # Thread reconstruction
     # ──────────────────────────────────────────────
@@ -1204,6 +1309,8 @@ class EmailSummarizer:
         """
         if self.use_gmail_api and getattr(trigger, "gmail_thread_id", ""):
             return self._fetch_full_thread_gmail_api(trigger)
+        if self.use_microsoft_graph_api and getattr(trigger, "microsoft_conversation_id", ""):
+            return self._fetch_full_thread_microsoft_graph(trigger)
 
         own_mid       = trigger.get("Message-ID", "").strip()
         referenced    = self._get_referenced_ids(trigger)
@@ -1318,6 +1425,42 @@ class EmailSummarizer:
                 messages.append(self._gmail_api_raw_message(gmail_message_id))
             except Exception as exc:
                 logger.warning(f"Failed to fetch Gmail thread message {gmail_message_id}: {exc}")
+        if not messages:
+            return [self._to_thread_message(trigger, None)]
+        thread_msgs = [self._to_thread_message(msg, None) for msg in messages]
+        thread_msgs.sort(key=lambda m: m.date)
+        return thread_msgs
+
+    def _fetch_full_thread_microsoft_graph(self, trigger: Message) -> List[ThreadMessage]:
+        conversation_id = getattr(trigger, "microsoft_conversation_id", "")
+        if not conversation_id:
+            return [self._to_thread_message(trigger, None)]
+
+        params = {
+            "$select": "id,conversationId,receivedDateTime",
+            "$top": "100",
+            "$filter": f"conversationId eq '{self._odata_string(conversation_id)}'",
+        }
+        messages: List[Message] = []
+        try:
+            payload = self._microsoft_graph_request("messages", params)
+            while True:
+                for item in payload.get("value", []):
+                    graph_message_id = str(item.get("id", "")).strip()
+                    if not graph_message_id:
+                        continue
+                    try:
+                        messages.append(self._microsoft_graph_raw_message(graph_message_id, conversation_id))
+                    except Exception as exc:
+                        logger.warning(f"Failed to fetch Microsoft Graph thread message {graph_message_id}: {exc}")
+                next_link = payload.get("@odata.nextLink")
+                if not next_link:
+                    break
+                payload = self._microsoft_graph_request(next_link)
+        except Exception as exc:
+            logger.warning(f"Failed to fetch Microsoft Graph conversation {conversation_id}: {exc}")
+            return [self._to_thread_message(trigger, None)]
+
         if not messages:
             return [self._to_thread_message(trigger, None)]
         thread_msgs = [self._to_thread_message(msg, None) for msg in messages]
@@ -1901,7 +2044,7 @@ class EmailSummarizer:
 
         processed_uids = self.load_processed_uids()
         mail: Optional[imaplib.IMAP4_SSL] = None
-        if not self.use_gmail_api:
+        if not self.use_gmail_api and not self.use_microsoft_graph_api:
             connect_started_at = time.perf_counter()
             mail = self.connect_imap()
             stage_timings["imap_connect_seconds"] = round(time.perf_counter() - connect_started_at, 3)

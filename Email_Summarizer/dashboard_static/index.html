@@ -2506,7 +2506,7 @@
       let contactsLoadedForUser = null;
       let currentContacts = [];
       let currentContactProfiles = {};
-      let currentTheme = localStorage.getItem("emailDashboardTheme") || "white";
+      let currentTheme = "default";
       let summaryViewRequestToken = 0;
       let showingDoneSummaries = false;
       let currentRunJobId = "";
@@ -2651,8 +2651,8 @@
       }
 
       function applyTheme(theme) {
-        currentTheme = theme;
-        localStorage.setItem("emailDashboardTheme", theme);
+        currentTheme = theme || "default";
+        theme = currentTheme;
         if (theme === "white") {
           document.documentElement.style.setProperty("--bg", "#ffffff");
           document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
@@ -3820,6 +3820,7 @@
         currentProfile = profile;
         currentUserId = profile.user_id;
         rememberOauthProvider(profile);
+        applyTheme(profile.settings?.background_theme || "default");
         userIdInput.value = profile.user_id;
         const { firstName, lastName } = getProfileNameParts(profile);
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();

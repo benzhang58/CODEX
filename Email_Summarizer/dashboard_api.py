@@ -407,6 +407,22 @@ DEFAULT_BILLING_EXEMPT_EMAILS = {
 REPORT_EMAIL_MODE_FULL = "full_report"
 REPORT_EMAIL_MODE_PRIVATE = "private_notification"
 REPORT_EMAIL_MODES = {REPORT_EMAIL_MODE_FULL, REPORT_EMAIL_MODE_PRIVATE}
+DEFAULT_BACKGROUND_THEME = "default"
+BACKGROUND_THEMES = {
+    "default",
+    "white",
+    "blue",
+    "pink",
+    "red",
+    "stone",
+    "mist",
+    "green",
+    "purple",
+    "ocean",
+    "rose",
+    "amber",
+    "slate",
+}
 GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
 GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
@@ -417,7 +433,7 @@ GOOGLE_OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 REQUIRED_GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
-REQUIRED_MICROSOFT_IMAP_SCOPE = "https://outlook.office.com/IMAP.AccessAsUser.All"
+REQUIRED_MICROSOFT_MAIL_SCOPE = "https://graph.microsoft.com/Mail.Read"
 TERMS_VERSION = "2026-04-23"
 PRIVACY_VERSION = "2026-04-23"
 MICROSOFT_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
@@ -428,10 +444,10 @@ MICROSOFT_OAUTH_SCOPES = [
     "email",
     "profile",
     "offline_access",
-    "https://outlook.office.com/IMAP.AccessAsUser.All",
+    REQUIRED_MICROSOFT_MAIL_SCOPE,
 ]
 MICROSOFT_MAILBOX_TOKEN_SCOPES = [
-    "https://outlook.office.com/IMAP.AccessAsUser.All",
+    REQUIRED_MICROSOFT_MAIL_SCOPE,
     "offline_access",
 ]
 REQUIRED_PRODUCTION_ENV_VARS = [
@@ -847,6 +863,7 @@ class ProfileUpdateRequest(BaseModel):
     last_name: str = ""
     attachment_ai_enabled: Optional[bool] = None
     report_email_mode: str = ""
+    background_theme: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-5.1"
     imap_server: str = ""
@@ -2475,14 +2492,14 @@ def ensure_mailbox_access_ready(
                 "Microsoft mailbox access needs to be refreshed for this account. Reconnect Microsoft and approve mailbox permissions.",
                 microsoft_reconnect_url(profile),
             )
-        if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_IMAP_SCOPE):
+        if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_MAIL_SCOPE):
             write_monitoring_event(
                 "oauth",
-                "microsoft_missing_imap_scope",
+                "microsoft_missing_mail_scope",
                 "error",
                 request=request,
                 user_id=user_id,
-                metadata={"required_scope": REQUIRED_MICROSOFT_IMAP_SCOPE},
+                metadata={"required_scope": REQUIRED_MICROSOFT_MAIL_SCOPE},
             )
             raise reconnect_error(
                 "microsoft",
@@ -2570,6 +2587,7 @@ def default_profile_settings() -> Dict[str, str]:
         "PRIVACY_VERSION_ACCEPTED": "",
         "EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM": "false",
         "REPORT_EMAIL_MODE": REPORT_EMAIL_MODE_FULL,
+        "BACKGROUND_THEME": DEFAULT_BACKGROUND_THEME,
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
         "OPENAI_MODEL": "gpt-5.1",
         "WHITELIST_SENDERS": "",
@@ -2759,6 +2777,11 @@ def normalize_report_email_mode(value: Any) -> str:
     return mode if mode in REPORT_EMAIL_MODES else REPORT_EMAIL_MODE_FULL
 
 
+def normalize_background_theme(value: Any) -> str:
+    theme = str(value or "").strip().lower()
+    return theme if theme in BACKGROUND_THEMES else DEFAULT_BACKGROUND_THEME
+
+
 def parse_summary_style_preferences(settings_or_raw: Any) -> List[str]:
     if isinstance(settings_or_raw, dict):
         raw = str(settings_or_raw.get("SUMMARY_STYLE_PREFERENCES", "") or "").strip()
@@ -2935,6 +2958,7 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "privacy_version": settings.get("PRIVACY_VERSION_ACCEPTED", "") or PRIVACY_VERSION,
         "attachment_ai_enabled": str(settings.get("EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM", "false")).lower() == "true",
         "report_email_mode": normalize_report_email_mode(settings.get("REPORT_EMAIL_MODE", REPORT_EMAIL_MODE_FULL)),
+        "background_theme": normalize_background_theme(settings.get("BACKGROUND_THEME", DEFAULT_BACKGROUND_THEME)),
         "openai_model": normalize_openai_model(settings.get("OPENAI_MODEL", "gpt-5.1")),
         "summary_style_preferences": parse_summary_style_preferences(settings),
         "imap_user": settings.get("IMAP_USER", ""),
@@ -2954,6 +2978,8 @@ def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str,
         settings["EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM"] = "true" if update.attachment_ai_enabled else "false"
     if update.report_email_mode.strip():
         settings["REPORT_EMAIL_MODE"] = normalize_report_email_mode(update.report_email_mode)
+    if update.background_theme.strip():
+        settings["BACKGROUND_THEME"] = normalize_background_theme(update.background_theme)
     if update.openai_model.strip():
         settings["OPENAI_MODEL"] = normalize_openai_model(update.openai_model.strip())
     if update.imap_server.strip():
@@ -3907,7 +3933,7 @@ Purpose and core workflow:
 Contacts and summarization behavior:
 - Discere is designed to process trigger emails only when the actual parsed From email matches a tracked contact.
 - Gmail OAuth uses Gmail API read-only access to find and read relevant Gmail messages. Gmail OAuth does not use IMAP.
-- Microsoft OAuth uses Microsoft-supported IMAP mailbox access plus refresh/offline access for scheduled runs.
+- Microsoft OAuth uses Microsoft Graph mailbox access plus refresh/offline access for scheduled runs.
 - Non-OAuth providers such as 263.com use the mailbox credentials/IMAP settings the user enters in Mailbox Connection.
 - Gmail and Microsoft OAuth users do not need the Mailbox Connection module. Standard/non-OAuth users use Mailbox Connection.
 - The summarizer reconstructs thread context so a summary can include relevant messages and attachments in the thread, not only the single trigger email.

@@ -255,9 +255,9 @@ The public website, privacy page, and OAuth consent screens should describe the 
 
 - App purpose: Discere summarizes emails from contacts selected by the user.
 - Google scopes: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`.
-- Microsoft scopes: `openid`, `email`, `profile`, `offline_access`, `User.Read`, `https://outlook.office.com/IMAP.AccessAsUser.All`.
+- Microsoft scopes: `openid`, `email`, `profile`, `offline_access`, `https://graph.microsoft.com/Mail.Read`.
 - Gmail OAuth uses Gmail API read-only access to find emails from tracked contacts and build summaries.
-- Microsoft OAuth uses Microsoft-supported IMAP mailbox access to find emails from tracked contacts and build summaries.
+- Microsoft OAuth uses Microsoft Graph mailbox access to find emails from tracked contacts and build summaries.
 - Non-OAuth mailbox connections use the IMAP settings and mailbox credentials the user provides.
 - Report emails are sent from the Discere report sender address, not from the connected user mailbox.
 - Profile/email access is used to sign the user in, identify the connected mailbox, and display account information.
