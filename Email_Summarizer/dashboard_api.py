@@ -756,14 +756,17 @@ def enforce_usage_limit(user_id: str, usage_key: str, amount: int = 1) -> Dict[s
     return {"count": 0, "limit": limit, "remaining": limit}
 
 
-def reconnect_error(provider: str, purpose: str, detail: str) -> HTTPException:
+def reconnect_error(provider: str, purpose: str, detail: str, reconnect_url: str = "") -> HTTPException:
+    headers = {
+        "X-Discere-Reconnect-Provider": provider,
+        "X-Discere-Reconnect-Purpose": purpose,
+    }
+    if reconnect_url:
+        headers["X-Discere-Reconnect-Url"] = reconnect_url
     return HTTPException(
         status_code=400,
         detail=detail,
-        headers={
-            "X-Discere-Reconnect-Provider": provider,
-            "X-Discere-Reconnect-Purpose": purpose,
-        },
+        headers=headers,
     )
 
 
@@ -1499,9 +1502,11 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
 
 @app.get("/auth/microsoft/start")
 def auth_microsoft_start(
+    request: Request,
     next: str = "/dashboard",
     login_hint: str = "",
     prompt: str = "consent",
+    force_reconsent: bool = False,
 ) -> RedirectResponse:
     try:
         config = get_microsoft_oauth_config()
@@ -1511,6 +1516,16 @@ def auth_microsoft_start(
     scope = " ".join(MICROSOFT_OAUTH_SCOPES)
     login_hint_value = login_hint.strip()
     prompt_value = prompt.strip()
+    if force_reconsent:
+        prompt_value = "consent"
+        session_user_id = get_session_user_id(request)
+        if session_user_id:
+            profile = load_profile(session_user_id)
+            if profile:
+                profile["microsoft_oauth"] = {}
+                profile["settings"] = merge_stored_settings(default_profile_settings(), profile.get("settings") or {})
+                profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"] = "false"
+                save_profile(profile)
     state = secrets.token_urlsafe(24)
     MICROSOFT_OAUTH_STATE[state] = {"next": next, "prompt": prompt_value}
     auth_url = (
@@ -2329,6 +2344,22 @@ def microsoft_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> b
     return required in scopes or required_short in {scope.rsplit("/", 1)[-1] for scope in scopes}
 
 
+def microsoft_reconnect_url(profile: Dict[str, Any], next_url: str = "/dashboard") -> str:
+    email = (
+        str((profile.get("microsoft_oauth") or {}).get("email", "") or "").strip()
+        or str(profile.get("email", "") or "").strip()
+        or str((profile.get("settings") or {}).get("IMAP_USER", "") or "").strip()
+    )
+    query = {
+        "next": next_url or "/dashboard",
+        "prompt": "consent",
+        "force_reconsent": "true",
+    }
+    if email:
+        query["login_hint"] = email
+    return f"/auth/microsoft/start?{urlencode(query)}"
+
+
 def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
     microsoft_oauth = profile.get("microsoft_oauth") or {}
     user_id = str(profile.get("user_id", "") or "")
@@ -2339,6 +2370,7 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
             "microsoft",
             "refresh_token",
             "Microsoft access needs a refreshed Microsoft sign-in for this account.",
+            microsoft_reconnect_url(profile),
         )
 
     config = get_microsoft_oauth_config()
@@ -2366,7 +2398,8 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
             raise reconnect_error(
                 "microsoft",
                 "consent_required",
-                "Microsoft mailbox access needs approval. Sign out, then sign in with Microsoft again and approve the requested mailbox permission.",
+                "Microsoft mailbox access needs approval. Reconnect Microsoft and approve the requested mailbox permission.",
+                microsoft_reconnect_url(profile),
             ) from exc
         raise
     new_access_token = str(token_payload.get("access_token", "")).strip()
@@ -2439,7 +2472,8 @@ def ensure_mailbox_access_ready(
             raise reconnect_error(
                 "microsoft",
                 "refresh_token",
-                "Microsoft mailbox access needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant mailbox permissions.",
+                "Microsoft mailbox access needs to be refreshed for this account. Reconnect Microsoft and approve mailbox permissions.",
+                microsoft_reconnect_url(profile),
             )
         if not microsoft_oauth_has_scope(profile, REQUIRED_MICROSOFT_IMAP_SCOPE):
             write_monitoring_event(
@@ -2453,7 +2487,8 @@ def ensure_mailbox_access_ready(
             raise reconnect_error(
                 "microsoft",
                 "read_mailbox",
-                "Microsoft mailbox access needs to be refreshed for this account. Sign out and sign back in with Microsoft to grant mailbox permissions.",
+                "Microsoft mailbox access needs to be refreshed for this account. Reconnect Microsoft and approve mailbox permissions.",
+                microsoft_reconnect_url(profile),
             )
         if refresh_oauth:
             refresh_microsoft_access_token(profile)

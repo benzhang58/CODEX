@@ -221,6 +221,47 @@ class SecurityRegressionTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 400, response.text)
             self.assertIn("Microsoft mailbox access needs approval", response.json()["detail"])
+            self.assertEqual(response.headers.get("X-Discere-Reconnect-Provider"), "microsoft")
+            self.assertIn("/auth/microsoft/start?", response.headers.get("X-Discere-Reconnect-Url", ""))
+            self.assertIn("force_reconsent=true", response.headers.get("X-Discere-Reconnect-Url", ""))
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_microsoft_force_reconsent_clears_stale_oauth_before_redirect(self) -> None:
+        client = self.signup("stale-microsoft@example.com")
+        user_id = "stale_microsoft_example_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "stale-microsoft@example.com",
+            "access_token": "stale-access",
+            "refresh_token": "stale-refresh",
+            "scope": dashboard_api.REQUIRED_MICROSOFT_IMAP_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_REDIRECT_URI": os.environ.get("MICROSOFT_REDIRECT_URI"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_REDIRECT_URI"] = "https://discere-test.example/auth/microsoft/callback"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            response = client.get("/auth/microsoft/start?force_reconsent=true", follow_redirects=False)
+            self.assertEqual(response.status_code, 307, response.text)
+            query = parse_qs(urlparse(response.headers["location"]).query)
+            self.assertEqual(query.get("prompt"), ["consent"])
+            refreshed = dashboard_api.load_profile_or_404(user_id)
+            self.assertFalse(refreshed.get("microsoft_oauth"))
+            self.assertEqual(refreshed["settings"].get("MAILBOX_CONNECTION_CONFIRMED"), "false")
         finally:
             for key, value in originals.items():
                 if value is None:
