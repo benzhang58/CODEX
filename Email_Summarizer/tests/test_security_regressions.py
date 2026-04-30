@@ -940,7 +940,8 @@ class SecurityRegressionTests(unittest.TestCase):
                 )
 
         self.assertEqual(raised.exception.status_code, 400)
-        self.assertIn("Discere report email sending is not configured", raised.exception.detail)
+        self.assertEqual(raised.exception.detail["code"], "report_sender_not_configured")
+        self.assertIn("Discere report email sending is not configured", raised.exception.detail["message"])
 
     def test_report_sender_does_not_fallback_to_user_mailbox_smtp_credentials(self) -> None:
         config_values = {
@@ -1060,8 +1061,36 @@ class SecurityRegressionTests(unittest.TestCase):
                 )
 
         self.assertEqual(raised.exception.status_code, 500)
-        self.assertIn("Failed to authenticate Discere report email sender", raised.exception.detail)
-        self.assertNotIn("test-app-password", raised.exception.detail)
+        self.assertEqual(raised.exception.detail["code"], "smtp_auth_failed")
+        self.assertIn("could not authenticate", raised.exception.detail["message"])
+        self.assertNotIn("test-app-password", json.dumps(raised.exception.detail))
+
+    def test_report_email_connection_failure_is_classified_cleanly(self) -> None:
+        config_values = {
+            "EMAIL_SUMMARIZER_REPORT_SMTP_HOST": "smtp.gmail.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PORT": "465",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_USER": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_SMTP_PASSWORD": "test-app-password",
+            "EMAIL_SUMMARIZER_REPORT_FROM_EMAIL": "discere-sender@example.com",
+            "EMAIL_SUMMARIZER_REPORT_FROM_NAME": "Discere",
+        }
+        with patch.object(dashboard_api, "get_app_config_value", side_effect=lambda key: config_values.get(key, "")), patch.object(
+            dashboard_api.smtplib,
+            "SMTP_SSL",
+            side_effect=dashboard_api.smtplib.SMTPConnectError(421, "temporarily unavailable"),
+        ):
+            with self.assertRaises(dashboard_api.HTTPException) as raised:
+                dashboard_api.send_report_email_from_discere(
+                    user_id="smtp_connection_user",
+                    recipient="recipient@example.com",
+                    subject=dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT,
+                    html_body="<p>Ready</p>",
+                    text_body="Ready",
+                    event_name="test_connection_failure",
+                )
+
+        self.assertEqual(raised.exception.status_code, 502)
+        self.assertEqual(raised.exception.detail["code"], "smtp_connection_failed")
 
     def test_report_email_rejects_invalid_recipient_before_smtp(self) -> None:
         with patch.object(dashboard_api.smtplib, "SMTP_SSL") as smtp_ssl_mock:

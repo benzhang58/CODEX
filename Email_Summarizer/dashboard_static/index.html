@@ -2583,7 +2583,7 @@
       }
 
       function hasCachedSummaryThread(summaryId) {
-        return Boolean(getSummaryThreadCache(summaryId)?.html);
+        return Boolean(getSummaryThreadCache(summaryId)?.content);
       }
 
       function setThreadToggleLoading(loading) {
@@ -2819,6 +2819,24 @@
         }
         if (lower.includes("email sending is not configured") || lower.includes("discere report email sending is not configured")) {
           return "Discere report email sending is not configured yet. Add the Discere report sender SMTP settings on Render.";
+        }
+        if (lower.includes("smtp_auth_failed") || lower.includes("could not authenticate the report sender")) {
+          return "Discere could not authenticate the report sender. Check the Gmail app password on Render, then try again.";
+        }
+        if (lower.includes("smtp_recipient_refused") || lower.includes("recipient email was rejected")) {
+          return "The recipient email was rejected. Check that your connected account email is valid.";
+        }
+        if (lower.includes("smtp_sender_refused") || lower.includes("report sender address was rejected")) {
+          return "Discere's report sender address was rejected. Check the report sender From email and SMTP user on Render.";
+        }
+        if (lower.includes("smtp_connection_failed") || lower.includes("could not reach the report email provider")) {
+          return "Discere could not reach the report email provider. This may be temporary; try again shortly.";
+        }
+        if (lower.includes("smtp_message_rejected") || lower.includes("provider rejected the report message")) {
+          return "The email provider rejected the report message. Try again, or check the report sender account limits.";
+        }
+        if (lower.includes("smtp_delivery_failed") || lower.includes("could not send the report email")) {
+          return "Discere could not send the report email. Check the Discere report sender SMTP settings on Render.";
         }
         if (lower.includes("mailbox is not connected yet") || lower.includes("missing imap credentials")) {
           return "Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.";
@@ -4091,13 +4109,30 @@
         return escaped.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       }
 
+      function createElement(tagName, className = "", text = "") {
+        const element = document.createElement(tagName);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
+      }
+
+      function appendThreadMeta(container, label, value) {
+        const cleaned = String(value || "").trim();
+        if (!cleaned) return;
+        const row = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = `${label}:`;
+        row.append(strong, ` ${cleaned}`);
+        container.appendChild(row);
+      }
+
       function renderThreadUnavailableView(title, message) {
-        return `
-          <div class="detail-section">
-            <h3>${escapeHtml(title || "Full Thread")}</h3>
-            <p class="meta">${escapeHtml(message || "Full thread is no longer stored for this summary.")}</p>
-          </div>
-        `;
+        const section = createElement("div", "detail-section");
+        section.appendChild(createElement("h3", "", title || "Full Thread"));
+        section.appendChild(
+          createElement("p", "meta", message || "Full thread is no longer stored for this summary.")
+        );
+        return section;
       }
 
       function renderThreadView(data) {
@@ -4109,43 +4144,43 @@
           );
         }
 
-        const recordHtml = records.map((record, recordIndex) => {
+        const container = document.createElement("div");
+        const intro = createElement("div", "detail-section");
+        intro.appendChild(createElement("h3", "", data.title || "Full Thread"));
+        intro.appendChild(createElement("p", "meta", "Full saved email chain for this summary."));
+        container.appendChild(intro);
+
+        const recordsContainer = createElement("div", "thread-records");
+        records.forEach((record, recordIndex) => {
           const messages = Array.isArray(record.thread) ? record.thread : [];
-          const messageHtml = messages.map((message, messageIndex) => `
-            <div class="thread-message-card">
-              <div class="thread-message-title">${messageIndex + 1}. ${escapeHtml(formatDate(message.date) || "Unknown date")}</div>
-              <div class="thread-message-meta">
-                <div><strong>FROM:</strong> ${escapeHtml(message.from || "Unknown")}</div>
-                <div><strong>TO:</strong> ${escapeHtml(message.to || "Unknown")}</div>
-                ${message.cc ? `<div><strong>CC:</strong> ${escapeHtml(message.cc)}</div>` : ""}
-                ${message.subject ? `<div><strong>SUBJECT:</strong> ${escapeHtml(message.subject)}</div>` : ""}
-              </div>
-              <div class="thread-message-body">${escapeHtml(message.body || "[No content]")}</div>
-            </div>
-          `).join("");
+          const recordElement = createElement("div", "thread-record");
+          const header = createElement("div", "thread-record-header");
+          header.appendChild(createElement("h3", "", record.subject || `Email Record ${recordIndex + 1}`));
+          header.appendChild(createElement("p", "meta", `Saved thread with ${messages.length} message(s)`));
+          recordElement.appendChild(header);
 
-          return `
-            <div class="thread-record">
-              <div class="thread-record-header">
-                <h3>${escapeHtml(record.subject || `Email Record ${recordIndex + 1}`)}</h3>
-                <p class="meta">Saved thread with ${messages.length} message(s)</p>
-              </div>
-              <div class="thread-message-list">
-                ${messageHtml}
-              </div>
-            </div>
-          `;
-        }).join("");
+          const messageList = createElement("div", "thread-message-list");
+          messages.forEach((message, messageIndex) => {
+            const messageCard = createElement("div", "thread-message-card");
+            messageCard.appendChild(
+              createElement("div", "thread-message-title", `${messageIndex + 1}. ${formatDate(message.date) || "Unknown date"}`)
+            );
 
-        return `
-          <div class="detail-section">
-            <h3>${escapeHtml(data.title || "Full Thread")}</h3>
-            <p class="meta">Full saved email chain for this summary.</p>
-          </div>
-          <div class="thread-records">
-            ${recordHtml}
-          </div>
-        `;
+            const meta = createElement("div", "thread-message-meta");
+            appendThreadMeta(meta, "FROM", message.from || "Unknown");
+            appendThreadMeta(meta, "TO", message.to || "Unknown");
+            appendThreadMeta(meta, "CC", message.cc || "");
+            appendThreadMeta(meta, "SUBJECT", message.subject || "");
+            messageCard.appendChild(meta);
+
+            messageCard.appendChild(createElement("div", "thread-message-body", message.body || "[No content]"));
+            messageList.appendChild(messageCard);
+          });
+          recordElement.appendChild(messageList);
+          recordsContainer.appendChild(recordElement);
+        });
+        container.appendChild(recordsContainer);
+        return container;
       }
 
       function formatSummaryCardTitle(summary) {
@@ -4920,20 +4955,37 @@
         return summaryDetail.querySelector("[data-thread-pane]");
       }
 
-      function setSummaryDetailPanes(summaryHtml, threadHtml = "") {
+      function setSummaryDetailPanes(summaryHtml, threadContent = "") {
         summaryDetail.className = "";
         summaryDetail.innerHTML = `
           <div class="summary-view-pane" data-summary-pane>${summaryHtml || ""}</div>
-          <div class="summary-view-pane" data-thread-pane hidden>${threadHtml || ""}</div>
+          <div class="summary-view-pane" data-thread-pane hidden></div>
         `;
+        if (threadContent) {
+          updateCurrentThreadPane(threadContent);
+        }
         summaryDetail.removeAttribute("aria-busy");
       }
 
-      function updateCurrentThreadPane(threadHtml) {
+      function updateCurrentThreadPane(threadContent) {
         const threadPane = getThreadPane();
-        if (threadPane) {
-          threadPane.innerHTML = threadHtml || "";
+        if (!threadPane) return;
+        if (!threadContent) {
+          threadPane.replaceChildren();
+          delete threadPane.dataset.threadReady;
+          return;
         }
+        if (threadPane.dataset.threadReady === currentSummaryId && threadPane.childNodes.length) return;
+        if (threadContent instanceof Node) {
+          threadPane.replaceChildren(threadContent);
+        } else {
+          threadPane.textContent = String(threadContent || "");
+        }
+        threadPane.dataset.threadReady = currentSummaryId || "";
+      }
+
+      function waitForNextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => resolve()));
       }
 
       function showCurrentSummaryView() {
@@ -4972,7 +5024,7 @@
       async function loadSummaryThreadHtml(summaryId) {
         const cacheKey = summaryCacheKey(summaryId);
         const cached = summaryThreadCache.get(cacheKey);
-        if (cached?.html) return cached.html;
+        if (cached?.content) return cached.content;
         if (cached?.promise) return cached.promise;
 
         const promise = (async () => {
@@ -4983,14 +5035,15 @@
           if (!response.ok) {
             throw new Error(extractApiError(data, "Failed to load full thread."));
           }
+          await waitForNextFrame();
           return renderThreadView(data);
         })();
 
         summaryThreadCache.set(cacheKey, { promise });
         try {
-          const html = await promise;
-          summaryThreadCache.set(cacheKey, { html });
-          return html;
+          const content = await promise;
+          summaryThreadCache.set(cacheKey, { content });
+          return content;
         } catch (error) {
           summaryThreadCache.delete(cacheKey);
           throw error;
@@ -5000,28 +5053,22 @@
       function prefetchSummaryThread(summaryId, requestToken) {
         if (!currentDisplayedThreadAvailable || !summaryId) return;
         const cached = getSummaryThreadCache(summaryId);
-        if (cached?.html) {
-          currentDisplayedThreadHtml = cached.html;
-          updateCurrentThreadPane(cached.html);
+        if (cached?.content) {
+          currentDisplayedThreadHtml = cached.content;
           setThreadToggleLoading(false);
           return;
         }
-        if (requestToken === summaryViewRequestToken && currentSummaryId === summaryId) {
-          setThreadToggleLoading(true);
-        }
         loadSummaryThreadHtml(summaryId)
-          .then((threadHtml) => {
+          .then((threadContent) => {
             if (requestToken !== summaryViewRequestToken || currentSummaryId !== summaryId) return;
-            currentDisplayedThreadHtml = threadHtml;
-            updateCurrentThreadPane(threadHtml);
+            currentDisplayedThreadHtml = threadContent;
             setThreadToggleLoading(false);
           })
           .catch((error) => {
             if (requestToken !== summaryViewRequestToken || currentSummaryId !== summaryId) return;
-            const fallbackHtml = renderThreadUnavailableView(currentDisplayedSummaryTitle, friendlyApiMessage(error.message));
-            currentDisplayedThreadHtml = fallbackHtml;
-            summaryThreadCache.set(summaryCacheKey(summaryId), { html: fallbackHtml });
-            updateCurrentThreadPane(fallbackHtml);
+            const fallbackContent = renderThreadUnavailableView(currentDisplayedSummaryTitle, friendlyApiMessage(error.message));
+            currentDisplayedThreadHtml = fallbackContent;
+            summaryThreadCache.set(summaryCacheKey(summaryId), { content: fallbackContent });
             setThreadToggleLoading(false);
           });
       }
@@ -5041,14 +5088,13 @@
           currentDisplayedSummaryMarkdown = cached.markdown;
           currentDisplayedSummaryHtml = cached.html;
           currentDisplayedThreadAvailable = cached.threadAvailable;
-          currentDisplayedThreadHtml = getSummaryThreadCache(summaryId)?.html || "";
+          currentDisplayedThreadHtml = getSummaryThreadCache(summaryId)?.content || "";
           detailStatus.textContent = "";
           sendSummaryEmailButton.hidden = false;
           viewThreadButton.hidden = !currentDisplayedThreadAvailable;
           setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
           syncViewThreadButton();
           syncSummaryCheckboxes();
-          prefetchSummaryThread(summaryId, requestToken);
           return;
         }
 
@@ -5087,7 +5133,7 @@
           buildMarkdownFromSummary(summary);
         currentDisplayedThreadAvailable = Array.isArray(summary.source_email_file_ids) && summary.source_email_file_ids.length > 0;
         currentDisplayedSummaryHtml = buildSummaryDetailHtml(summary);
-        currentDisplayedThreadHtml = getSummaryThreadCache(summaryId)?.html || "";
+        currentDisplayedThreadHtml = getSummaryThreadCache(summaryId)?.content || "";
         summaryDetailCache.set(cacheKey, {
           title: currentDisplayedSummaryTitle,
           markdown: currentDisplayedSummaryMarkdown,
@@ -5099,10 +5145,6 @@
         sendSummaryEmailButton.hidden = false;
         viewThreadButton.hidden = !currentDisplayedThreadAvailable;
         setSummaryDetailPanes(currentDisplayedSummaryHtml, currentDisplayedThreadHtml);
-        if (currentDisplayedThreadAvailable && !hasCachedSummaryThread(summaryId)) {
-          setThreadToggleLoading(true);
-        }
-        prefetchSummaryThread(summaryId, requestToken);
 
         syncSummaryCheckboxes();
       }
@@ -5287,6 +5329,7 @@
         detailStatus.textContent = "Loading full thread...";
 
         try {
+          await waitForNextFrame();
           currentDisplayedThreadHtml = await loadSummaryThreadHtml(currentSummaryId);
           showCurrentThreadView();
         } catch (error) {

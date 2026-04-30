@@ -14,6 +14,7 @@ import threading
 import time
 import unicodedata
 import base64
+import socket
 from functools import lru_cache
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -4364,6 +4365,55 @@ def scheduled_report_email_subject(schedule_name: Any) -> str:
     return f"{name} - Scheduled Email Summary"
 
 
+def smtp_tls_mode_for_port(port: int) -> str:
+    return "starttls" if int(port or 0) == 587 else "ssl"
+
+
+def classify_smtp_delivery_exception(exc: Exception) -> Dict[str, Any]:
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return {
+            "code": "smtp_auth_failed",
+            "status_code": 500,
+            "message": "Discere could not authenticate the report sender. Check the report sender Gmail app password on Render.",
+        }
+    if isinstance(exc, smtplib.SMTPSenderRefused):
+        return {
+            "code": "smtp_sender_refused",
+            "status_code": 500,
+            "message": "Discere's report sender address was rejected by the email provider. Check the report sender From email and SMTP user on Render.",
+        }
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return {
+            "code": "smtp_recipient_refused",
+            "status_code": 400,
+            "message": "The recipient email was rejected by the email provider. Check that your connected account email is valid.",
+        }
+    if isinstance(exc, smtplib.SMTPDataError):
+        return {
+            "code": "smtp_message_rejected",
+            "status_code": 502,
+            "message": "The email provider rejected the report message. Try again, or check the report sender account limits.",
+        }
+    if isinstance(exc, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, socket.timeout, TimeoutError)):
+        return {
+            "code": "smtp_connection_failed",
+            "status_code": 502,
+            "message": "Discere could not reach the report email provider. This may be temporary; try again shortly.",
+        }
+    return {
+        "code": "smtp_delivery_failed",
+        "status_code": 502,
+        "message": "Discere could not send the report email. Check the report sender SMTP settings on Render.",
+    }
+
+
+def safe_smtp_exception_metadata(exc: Exception) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {"error_type": exc.__class__.__name__}
+    if isinstance(exc, smtplib.SMTPResponseException):
+        metadata["smtp_code"] = int(exc.smtp_code)
+    return metadata
+
+
 def dashboard_url() -> str:
     if PUBLIC_BASE_URL:
         return f"{PUBLIC_BASE_URL}/dashboard"
@@ -4440,7 +4490,10 @@ def send_report_email_from_discere(
         )
         raise HTTPException(
             status_code=400,
-            detail="Discere report email sending is not configured yet. Add the report sender SMTP settings on Render.",
+            detail={
+                "code": "report_sender_not_configured",
+                "message": "Discere report email sending is not configured yet. Add the Discere report sender SMTP settings on Render.",
+            },
         )
 
     msg = MIMEMultipart("alternative")
@@ -4460,7 +4513,8 @@ def send_report_email_from_discere(
             with smtplib.SMTP_SSL(sender["host"], sender["port"], timeout=30) as server:
                 server.login(sender["user"], sender["password"])
                 server.sendmail(sender["from_email"], [recipient], msg.as_string())
-    except smtplib.SMTPAuthenticationError as exc:
+    except Exception as exc:
+        failure = classify_smtp_delivery_exception(exc)
         write_monitoring_event(
             "report_delivery",
             event_name,
@@ -4470,30 +4524,17 @@ def send_report_email_from_discere(
                 "recipient": recipient,
                 "smtp_host": sender["host"],
                 "smtp_port": sender["port"],
+                "smtp_tls_mode": smtp_tls_mode_for_port(sender["port"]),
+                "smtp_user": sender["user"],
                 "from_email": sender["from_email"],
-                "error_type": exc.__class__.__name__,
+                "failure_code": failure["code"],
+                **safe_smtp_exception_metadata(exc),
             },
         )
         raise HTTPException(
-            status_code=500,
-            detail="Failed to authenticate Discere report email sender. Check the report sender SMTP username and app password on Render.",
+            status_code=int(failure["status_code"]),
+            detail={"code": failure["code"], "message": failure["message"]},
         ) from exc
-    except Exception as exc:
-        write_monitoring_event(
-            "report_delivery",
-            event_name,
-            "error",
-            user_id=user_id,
-            metadata={
-                "recipient": recipient,
-                "smtp_host": sender["host"],
-                "smtp_port": sender["port"],
-                "from_email": sender["from_email"],
-                "error": str(exc),
-                "error_type": exc.__class__.__name__,
-            },
-        )
-        raise HTTPException(status_code=500, detail="Failed to send report email from Discere. Check report sender SMTP settings.") from exc
 
     return {"recipient": recipient, "subject": subject, "from": sender["from_email"]}
 
