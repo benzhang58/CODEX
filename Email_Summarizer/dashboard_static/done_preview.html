@@ -431,6 +431,10 @@
         listStatus.textContent = `${selectedIds.length} Summaries Selected`;
       }
 
+      function showPreviewOnlyMessage(message) {
+        listStatus.textContent = message;
+      }
+
       function getCurrentCollection() {
         return showDone ? archivedSummaries : activeSummaries;
       }
@@ -574,11 +578,11 @@
       });
 
       document.getElementById("emailButton").addEventListener("click", () => {
-        alert("Preview only: this would email the current combined report.");
+        showPreviewOnlyMessage("Preview only: this would email the current combined report.");
       });
 
       document.getElementById("refineButton").addEventListener("click", () => {
-        alert("Preview only: this would refine the current visible summary/report.");
+        showPreviewOnlyMessage("Preview only: this would refine the current visible summary/report.");
       });
 
       doneActionButton.addEventListener("click", moveSelectedToDone);

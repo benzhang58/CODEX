@@ -102,9 +102,9 @@
             Notification mode, those report emails do not include summary content.
           </p>
           <p>
-            Gmail OAuth uses Google profile/email access and the Gmail API read-only scope. Gmail OAuth does not use IMAP for
-            mailbox reading. Microsoft OAuth uses Microsoft profile/email access, offline access, and
-            Microsoft Graph mailbox access.
+            Gmail OAuth uses Gmail API read-only access. Discere identifies your Gmail address from that Gmail connection and
+            does not request separate Google profile access. Gmail OAuth does not use IMAP for mailbox reading. Microsoft OAuth
+            uses Microsoft profile/email access, offline access, and Microsoft Graph mailbox access.
           </p>
           <table class="simple-table" aria-label="OAuth permission use">
             <thead>
@@ -117,8 +117,8 @@
             <tbody>
               <tr>
                 <td>Google</td>
-                <td>Profile/email, Gmail API read-only</td>
-                <td>Sign you in, identify your Gmail address, and read relevant Gmail content for summaries.</td>
+                <td>Gmail API read-only</td>
+                <td>Identify your Gmail address and read relevant Gmail content for summaries.</td>
               </tr>
               <tr>
                 <td>Microsoft</td>

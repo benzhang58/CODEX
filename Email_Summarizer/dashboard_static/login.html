@@ -248,7 +248,7 @@
         if (mode === "silent") {
           params.set("prompt", "none");
         } else if (forceAccountPicker) {
-          params.set("prompt", provider === "google" ? "select_account consent" : "select_account");
+          params.set("prompt", provider === "google" ? "select_account consent" : "consent");
           localStorage.removeItem("oauth:forceAccountPicker");
         }
         params.set("next", getNextDestination());

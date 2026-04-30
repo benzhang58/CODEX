@@ -1009,6 +1009,19 @@
           </div>
         </div>
       </div>
+
+      <div id="settingsConfirmModal" class="modal-shell" hidden>
+        <div class="modal-card">
+          <div>
+            <h3 id="settingsConfirmTitle">Confirm</h3>
+            <p id="settingsConfirmMessage"></p>
+          </div>
+          <div class="modal-actions">
+            <button id="settingsConfirmCancelButton" type="button" class="secondary">Cancel</button>
+            <button id="settingsConfirmActionButton" type="button">Continue</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
@@ -1058,6 +1071,11 @@
       const deleteAccountModal = document.getElementById("deleteAccountModal");
       const cancelDeleteAccountButton = document.getElementById("cancelDeleteAccountButton");
       const confirmDeleteAccountButton = document.getElementById("confirmDeleteAccountButton");
+      const settingsConfirmModal = document.getElementById("settingsConfirmModal");
+      const settingsConfirmTitle = document.getElementById("settingsConfirmTitle");
+      const settingsConfirmMessage = document.getElementById("settingsConfirmMessage");
+      const settingsConfirmCancelButton = document.getElementById("settingsConfirmCancelButton");
+      const settingsConfirmActionButton = document.getElementById("settingsConfirmActionButton");
       const subscriptionStatusTitle = document.getElementById("subscriptionStatusTitle");
       const subscriptionStatusBadge = document.getElementById("subscriptionStatusBadge");
       const subscriptionStatusMessage = document.getElementById("subscriptionStatusMessage");
@@ -1067,6 +1085,8 @@
       let currentTheme = "default";
       let attachmentAiEnabled = false;
       let reportEmailMode = "full_report";
+      let settingsConfirmResolver = null;
+      let logoutInProgress = false;
 
       function rememberOauthProvider(profile) {
         if (!profile) return;
@@ -1309,6 +1329,32 @@
       function closeDeleteAccountModal() {
         deleteAccountModal.hidden = true;
         confirmDeleteAccountButton.disabled = false;
+      }
+
+      function closeSettingsConfirmModal(result = false) {
+        settingsConfirmModal.hidden = true;
+        settingsConfirmResolver?.(result);
+        settingsConfirmResolver = null;
+      }
+
+      function openSettingsConfirmModal({
+        title = "Confirm",
+        message = "",
+        confirmLabel = "Continue",
+        cancelLabel = "Cancel",
+      } = {}) {
+        settingsConfirmTitle.textContent = title;
+        settingsConfirmMessage.textContent = message;
+        settingsConfirmActionButton.textContent = confirmLabel;
+        settingsConfirmCancelButton.textContent = cancelLabel;
+        settingsConfirmActionButton.disabled = false;
+        settingsConfirmModal.hidden = false;
+        settingsConfirmActionButton.focus();
+        return new Promise((resolve) => {
+          settingsConfirmResolver = resolve;
+          settingsConfirmActionButton.onclick = () => closeSettingsConfirmModal(true);
+          settingsConfirmCancelButton.onclick = () => closeSettingsConfirmModal(false);
+        });
       }
 
       function syncMailboxConnectionUI() {
@@ -1731,7 +1777,15 @@
       cancelMailboxModalButton.addEventListener("click", closeMailboxModal);
       saveMailboxModalButton.addEventListener("click", saveMailboxSettings);
       logoutButton.addEventListener("click", async () => {
-        if (!window.confirm("Are you sure you want to log out?")) return;
+        if (logoutInProgress) return;
+        const confirmed = await openSettingsConfirmModal({
+          title: "Sign out?",
+          message: "Are you sure you want to sign out?",
+          confirmLabel: "Sign out",
+          cancelLabel: "Cancel",
+        });
+        if (!confirmed) return;
+        logoutInProgress = true;
         logoutButton.disabled = true;
         try {
           await fetch("/auth/logout", { method: "POST" });
@@ -1749,6 +1803,11 @@
       deleteAccountModal.addEventListener("click", (event) => {
         if (event.target === deleteAccountModal) {
           closeDeleteAccountModal();
+        }
+      });
+      settingsConfirmModal.addEventListener("click", (event) => {
+        if (event.target === settingsConfirmModal) {
+          closeSettingsConfirmModal(false);
         }
       });
       editProfileNameButton.addEventListener("click", () => {

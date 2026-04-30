@@ -7,6 +7,7 @@ import smtplib
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -214,7 +215,14 @@ class SecurityRegressionTests(unittest.TestCase):
             query = parse_qs(urlparse(response.headers["location"]).query)
             self.assertEqual(query.get("access_type"), ["offline"])
             self.assertEqual(query.get("prompt"), ["consent"])
-            self.assertEqual(query.get("include_granted_scopes"), ["true"])
+            self.assertNotIn("include_granted_scopes", query)
+            scopes = query.get("scope", [""])[0].split()
+            self.assertEqual(scopes, [dashboard_api.REQUIRED_GOOGLE_READ_SCOPE])
+            self.assertIn(dashboard_api.REQUIRED_GOOGLE_READ_SCOPE, scopes)
+            self.assertNotIn("openid", scopes)
+            self.assertNotIn("email", scopes)
+            self.assertNotIn("profile", scopes)
+            self.assertNotIn("https://www.googleapis.com/auth/gmail.send", scopes)
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -572,6 +580,94 @@ class SecurityRegressionTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
+    def test_microsoft_refresh_missing_mail_scope_returns_clean_reconnect_error(self) -> None:
+        client = self.signup("missing-scope-outlook@example.com")
+        user_id = "missing_scope_outlook_example_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "missing-scope-outlook@example.com",
+            "access_token": "expired-access-token",
+            "refresh_token": "stored-refresh-token",
+            "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        try:
+            with patch.object(
+                dashboard_api,
+                "post_form_json",
+                return_value={"access_token": "fresh-access-token", "refresh_token": "rotated-refresh-token", "scope": "offline_access"},
+            ):
+                response = client.post("/run-summarizer", json={"days_back": 7})
+
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn("Microsoft mailbox access needs approval", response.json()["detail"])
+            self.assertEqual(response.headers.get("X-Discere-Reconnect-Provider"), "microsoft")
+            self.assertIn("force_reconsent=true", response.headers.get("X-Discere-Reconnect-Url", ""))
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_microsoft_graph_401_from_subprocess_returns_clean_reconnect_job(self) -> None:
+        self.signup("graph-401@example.com")
+        user_id = "graph_401_example_com"
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "graph-401@example.com",
+            "access_token": "expired-access-token",
+            "refresh_token": "stored-refresh-token",
+            "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        originals = {
+            "MICROSOFT_CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+            "MICROSOFT_CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+            "MICROSOFT_TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+        }
+        os.environ["MICROSOFT_CLIENT_ID"] = "test-microsoft-client"
+        os.environ["MICROSOFT_CLIENT_SECRET"] = "test-microsoft-secret"
+        os.environ["MICROSOFT_TENANT_ID"] = "common"
+        fake_result = SimpleNamespace(
+            returncode=1,
+            stdout='{"success": false, "error": "Microsoft mailbox access expired or needs permission again. Please reconnect Microsoft in Settings, then try again."}\n',
+            stderr="Traceback (most recent call last):\nValueError: Microsoft Graph request failed for messages: HTTP Error 401: Unauthorized",
+        )
+        try:
+            with patch.object(
+                dashboard_api,
+                "post_form_json",
+                return_value={"access_token": "fresh-access-token", "refresh_token": "rotated-refresh-token", "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE},
+            ), patch.object(dashboard_api.subprocess, "run", return_value=fake_result):
+                result = dashboard_api.execute_summarizer_run(user_id, 7)
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["message"], dashboard_api.MICROSOFT_RECONNECT_MESSAGE)
+            self.assertEqual(result["stderr"], dashboard_api.MICROSOFT_RECONNECT_MESSAGE)
+            self.assertNotIn("Traceback", result["stderr"])
+            self.assertEqual(result["reconnect_provider"], "microsoft")
+            self.assertIn("/auth/microsoft/start?", result["reconnect_url"])
+            self.assertIn("force_reconsent=true", result["reconnect_url"])
+        finally:
+            for key, value in originals.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_new_accounts_do_not_inherit_global_account_scoped_settings(self) -> None:
         client = self.signup("fresh@example.com")
         response = client.get("/whitelist")
@@ -858,6 +954,59 @@ class SecurityRegressionTests(unittest.TestCase):
         manual_profile = {"email": "profile@example.com"}
         self.assertEqual(dashboard_api.default_report_recipient(manual_profile, settings), "imap-mailbox@example.com")
 
+    def test_adding_tracked_contact_does_not_notify_contact(self) -> None:
+        client = self.signup("contact-owner@example.com")
+        with patch.object(dashboard_api, "send_report_email_from_discere") as send_mock:
+            response = client.post("/whitelist", json={"contacts": ["tracked-contact@example.com"]})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["contacts"], ["tracked-contact@example.com"])
+        send_mock.assert_not_called()
+
+    def test_manual_single_summary_report_goes_to_user_not_tracked_contact(self) -> None:
+        client = self.signup("single-report-owner@example.com")
+        self.connect_standard_mailbox(client, "single-report-owner@example.com")
+        contact_response = client.post("/whitelist", json={"contacts": ["tracked-contact@example.com"]})
+        self.assertEqual(contact_response.status_code, 200, contact_response.text)
+
+        summary = {
+            "summary_id": "tracked_contact_summary",
+            "sender": "tracked-contact@example.com",
+            "title": "Tracked contact summary",
+            "executive_summary": "Important update from the tracked contact.",
+        }
+        with patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "single-report-owner@example.com", "subject": dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT},
+        ) as send_mock:
+            dashboard_api.send_summary_via_smtp("single_report_owner_example_com", summary)
+
+        send_mock.assert_called_once()
+        self.assertEqual(send_mock.call_args.kwargs["recipient"], "single-report-owner@example.com")
+        self.assertNotEqual(send_mock.call_args.kwargs["recipient"], "tracked-contact@example.com")
+
+    def test_manual_selected_summary_report_goes_to_user_not_tracked_contact(self) -> None:
+        client = self.signup("selected-report-owner@example.com")
+        self.connect_standard_mailbox(client, "selected-report-owner@example.com")
+        contact_response = client.post("/whitelist", json={"contacts": ["tracked-contact@example.com"]})
+        self.assertEqual(contact_response.status_code, 200, contact_response.text)
+
+        with patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "selected-report-owner@example.com", "subject": dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT},
+        ) as send_mock:
+            dashboard_api.send_combined_report_via_smtp(
+                "selected_report_owner_example_com",
+                "Selected Summary Report",
+                "## tracked-contact@example.com\nImportant executive summary.",
+            )
+
+        send_mock.assert_called_once()
+        self.assertEqual(send_mock.call_args.kwargs["recipient"], "selected-report-owner@example.com")
+        self.assertNotEqual(send_mock.call_args.kwargs["recipient"], "tracked-contact@example.com")
+
     def test_report_schedule_ignores_custom_recipient_email(self) -> None:
         client = self.signup("schedule-owner@example.com")
         self.connect_standard_mailbox(client, "schedule-owner@example.com")
@@ -975,6 +1124,68 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("This bottom line should not be included.", markdown)
         self.assertNotIn("This fallback section should not be included.", markdown)
         self.assertNotIn("This topic should not be included.", markdown)
+
+    def test_selected_summary_email_cards_are_solid_white(self) -> None:
+        html = dashboard_api.render_markdown_report_email_html(
+            "Selected Summary Report",
+            "## Sender One\nUpdated: 2026-04-30\nExecutive summary text.",
+        )
+
+        self.assertIn("background:#ffffff", html)
+        self.assertNotIn("linear-gradient", html)
+        self.assertNotIn("#f5f3ed", html)
+
+    def test_refine_selected_summaries_persists_each_checked_summary(self) -> None:
+        client = self.signup("batch-refine@example.com")
+        user_id = "batch_refine_example_com"
+        summaries_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+        summaries_dir.mkdir(parents=True, exist_ok=True)
+        first_summary = {
+            "summary_id": "first_summary",
+            "sender": "first@example.com",
+            "title": "First Summary",
+            "summary_markdown": "# First Summary\n\n## Executive Summary\nOld first executive.",
+            "executive_summary": "Old first executive.",
+        }
+        second_summary = {
+            "summary_id": "second_summary",
+            "sender": "second@example.com",
+            "title": "Second Summary",
+            "summary_markdown": "# Second Summary\n\n## Executive Summary\nOld second executive.",
+            "executive_summary": "Old second executive.",
+        }
+        (summaries_dir / "first_summary.json").write_text(json.dumps(first_summary), encoding="utf-8")
+        (summaries_dir / "second_summary.json").write_text(json.dumps(second_summary), encoding="utf-8")
+
+        mock_client = MagicMock()
+        mock_client.responses.create.side_effect = [
+            MagicMock(output_text="# First Summary\n\n## Executive Summary\nRefined first executive."),
+            MagicMock(output_text="# Second Summary\n\n## Executive Summary\nRefined second executive."),
+        ]
+
+        with patch.object(dashboard_api, "OpenAI", return_value=mock_client):
+            response = client.post(
+                "/summaries/refine-selected",
+                json={
+                    "summary_ids": ["first_summary", "second_summary"],
+                    "instructions": "Make these more concise.",
+                    "save_preference": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(payload["summary_ids"], ["first_summary", "second_summary"])
+        self.assertEqual(mock_client.responses.create.call_count, 2)
+
+        saved_first = json.loads((summaries_dir / "first_summary.json").read_text(encoding="utf-8"))
+        saved_second = json.loads((summaries_dir / "second_summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved_first["executive_summary"], "Refined first executive.")
+        self.assertEqual(saved_second["executive_summary"], "Refined second executive.")
+        self.assertIn("Refined first executive.", saved_first["summary_markdown"])
+        self.assertIn("Refined second executive.", saved_second["summary_markdown"])
+        self.assertEqual(payload["summary_style_preferences"], ["Make these more concise."])
 
     def test_report_sender_config_resolves_from_report_env_vars(self) -> None:
         report_env = {
@@ -1408,6 +1619,54 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("Old summary", markdown)
         self.assertNotIn("This should not be emailed again.", markdown)
         self.assertEqual(send_mock.call_args.kwargs["subject"], "Daily - Scheduled Email Summary")
+
+    def test_scheduled_report_goes_to_user_not_tracked_contact(self) -> None:
+        client = self.signup("scheduled-recipient-owner@example.com")
+        self.connect_standard_mailbox(client, "scheduled-recipient-owner@example.com")
+        user_id = "scheduled_recipient_owner_example_com"
+        contact = "tracked-contact@example.com"
+        contacts_response = client.post("/whitelist", json={"contacts": [contact]})
+        self.assertEqual(contacts_response.status_code, 200, contacts_response.text)
+
+        summaries_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+        summaries_dir.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "summary_id": "scheduled_contact_summary",
+            "sender": contact,
+            "title": "Scheduled contact summary",
+            "executive_summary": "This scheduled report should go to the account owner.",
+            "created_at": "2026-04-28T08:00:00",
+        }
+        (summaries_dir / "scheduled_contact_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+        schedule_response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "recipient_email": contact,
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.text)
+        schedule = schedule_response.json()["schedule"]
+        self.assertEqual(schedule["recipient_email"], "scheduled-recipient-owner@example.com")
+
+        with patch.object(
+            dashboard_api,
+            "execute_summarizer_run",
+            return_value={"success": True, "new_summary_ids": ["scheduled_contact_summary"]},
+        ), patch.object(
+            dashboard_api,
+            "send_report_email_from_discere",
+            return_value={"recipient": "scheduled-recipient-owner@example.com", "subject": "Daily - Scheduled Email Summary"},
+        ) as send_mock:
+            dashboard_api.process_due_schedule(schedule["schedule_id"])
+
+        send_mock.assert_called_once()
+        self.assertEqual(send_mock.call_args.kwargs["recipient"], "scheduled-recipient-owner@example.com")
+        self.assertNotEqual(send_mock.call_args.kwargs["recipient"], contact)
 
     def test_scheduled_report_does_not_send_when_run_has_no_new_summaries(self) -> None:
         client = self.signup("scheduled-empty@example.com")

@@ -990,7 +990,19 @@
 
       #appModal .modal-card.is-howto-modal {
         width: min(1240px, 96vw);
-        max-height: min(86vh, 760px);
+        height: min(86vh, 720px);
+        max-height: min(86vh, 720px);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+      }
+
+      #appModal .modal-card.is-howto-modal .modal-copy {
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      #appModal .modal-card.is-howto-modal .modal-actions {
+        align-self: end;
       }
 
       .modal-card h3 {
@@ -1010,6 +1022,8 @@
         grid-template-columns: minmax(280px, 0.82fr) minmax(420px, 1.18fr);
         gap: 16px;
         align-items: stretch;
+        height: 100%;
+        min-height: 0;
       }
 
       .onboarding-intro,
@@ -1039,7 +1053,7 @@
       .onboarding-title {
         margin: 0;
         color: #111111;
-        font-size: clamp(28px, 4vw, 46px);
+        font-size: clamp(26px, 3.6vw, 42px);
         line-height: 0.95;
         letter-spacing: -0.06em;
       }
@@ -1080,15 +1094,16 @@
 
       .onboarding-checklist {
         display: grid;
-        gap: 10px;
+        gap: 8px;
+        min-height: 0;
       }
 
       .onboarding-item {
         display: grid;
         grid-template-columns: 42px 1fr;
-        gap: 12px;
+        gap: 10px;
         align-items: center;
-        padding: 12px;
+        padding: 10px;
         border: 1px solid var(--border);
         border-radius: 20px;
         background: #ffffff;
@@ -1124,7 +1139,7 @@
       .onboarding-copy-block p {
         margin: 0;
         color: var(--muted);
-        line-height: 1.4;
+        line-height: 1.28;
       }
 
       @media (max-width: 1200px) {
@@ -2506,6 +2521,7 @@
       let currentTimeTimer = null;
       let chatConversation = [];
       let subscriptionModalShown = false;
+      let logoutInProgress = false;
       const SCHEDULE_TIMEZONE_LABELS = {
         "America/Los_Angeles": "Pacific Time",
         "America/Denver": "Mountain Time",
@@ -2851,19 +2867,19 @@
         return friendlyApiMessage(fallback);
       }
 
-      function getReconnectUrlFromResponse(response) {
-        if (!response || !response.headers) return "";
-        return String(response.headers.get("X-Discere-Reconnect-Url") || "").trim();
+      function getReconnectUrlFromResponse(response, data = null) {
+        const headerUrl = response?.headers ? String(response.headers.get("X-Discere-Reconnect-Url") || "").trim() : "";
+        return headerUrl || String(data?.reconnect_url || "").trim();
       }
 
-      function getReconnectProviderFromResponse(response) {
-        if (!response || !response.headers) return "";
-        return String(response.headers.get("X-Discere-Reconnect-Provider") || "").trim().toLowerCase();
+      function getReconnectProviderFromResponse(response, data = null) {
+        const headerProvider = response?.headers ? String(response.headers.get("X-Discere-Reconnect-Provider") || "").trim().toLowerCase() : "";
+        return headerProvider || String(data?.reconnect_provider || "").trim().toLowerCase();
       }
 
       async function offerMailboxReconnect(response, data) {
-        const reconnectUrl = getReconnectUrlFromResponse(response);
-        const provider = getReconnectProviderFromResponse(response);
+        const reconnectUrl = getReconnectUrlFromResponse(response, data);
+        const provider = getReconnectProviderFromResponse(response, data);
         if (!reconnectUrl || !provider) return false;
         const label = provider === "microsoft" ? "Microsoft" : provider === "google" ? "Google" : "your mailbox";
         const approved = await openAppModal({
@@ -3562,27 +3578,27 @@
           {
             complete: hasDoneSummary,
             title: "Mark summaries as done",
-            copy: "When you finish handling a summary, select it and use the check button. Done summaries stay out of your way.",
+            copy: "Finished with a summary? Select it and use the check button.",
           },
           {
             complete: hasDeletedSummary,
             title: "Delete only when you want it removed",
-            copy: "Deleting removes the summary. If that email still matches later, Discere can find it again.",
+            copy: "Deleting removes the summary. It may be found again later.",
           },
           {
             complete: hasEmailedSummary,
             title: "Email selected summaries",
-            copy: "Select one or more summaries and use the email button to send yourself a clean report.",
+            copy: "Select summaries and use the email button to send a clean report.",
           },
           {
             complete: hasScheduledReport,
             title: "Schedule routine reports",
-            copy: "Use the clock button to have Discere check your contacts and email you summaries on a schedule.",
+            copy: "Use the clock button to get routine summaries by email.",
           },
           {
             complete: hasAskedAi,
             title: "Ask follow-up questions",
-            copy: "Open AI Assistant to ask about deadlines, requests, people, attachments, or how Discere works.",
+            copy: "Ask about deadlines, requests, people, attachments, or Discere.",
           },
         ];
         const completedCount = checklist.filter((item) => item.complete).length;
@@ -3592,8 +3608,8 @@
             <div class="onboarding-intro">
               <div>
                 <p class="onboarding-kicker">Daily Use</p>
-                <h4 class="onboarding-title">What to do after summaries appear.</h4>
-                <p class="onboarding-copy">These steps help you keep summaries organized, send reports, and automate routine checks.</p>
+                <h4 class="onboarding-title">Use summaries after they appear.</h4>
+                <p class="onboarding-copy">Keep summaries organized, send reports, and automate routine checks.</p>
               </div>
               <div class="onboarding-progress">
                 <div class="onboarding-progress-label">
@@ -4045,6 +4061,25 @@
         sessionStorage.removeItem("oauth:attemptEmail");
         resetSignedOutState();
         window.location.href = "/login";
+      }
+
+      async function confirmLogout() {
+        if (logoutInProgress) return;
+        const confirmed = await openAppModal({
+          title: "Sign out?",
+          message: "Are you sure you want to sign out?",
+          confirmLabel: "Sign out",
+          cancelLabel: "Cancel",
+        });
+        if (!confirmed) return;
+        logoutInProgress = true;
+        logoutButton.disabled = true;
+        try {
+          await logout();
+        } finally {
+          logoutInProgress = false;
+          logoutButton.disabled = false;
+        }
       }
 
       function renderChatConversation() {
@@ -4719,6 +4754,9 @@
           }
 
           const detail = extractApiError(data, "No error details returned.");
+          if (await offerMailboxReconnect(null, data)) {
+            return;
+          }
           setRunStatus(`Run failed. ${detail}`);
         } catch (error) {
           runButton.disabled = false;
@@ -4837,58 +4875,8 @@
           message: "Send Selected Report sends one email report with the Executive Summary sections from the summary cards you selected. It does not include each full summary.",
         });
 
-        const deliveryChoice = await openAppModal({
-          title: "Send Selected Report",
-          message: "Choose how you want to send the selected summaries.",
-          confirmLabel: "Email",
-          cancelLabel: "Cancel",
-          altLabel: "Text",
-        });
-        if (!deliveryChoice) {
-          return;
-        }
-
         emailReportButton.disabled = true;
         try {
-          if (deliveryChoice?.alternate) {
-            const phoneResult = await openAppModal({
-              title: "Text Report",
-              message: "Enter the phone number that should receive the text and PDF link.",
-              confirmLabel: "Send Text",
-              cancelLabel: "Cancel",
-              withInput: true,
-              inputValue: "",
-              inputPlaceholder: "+14155550123",
-            });
-            if (!phoneResult?.confirmed) {
-              return;
-            }
-
-            const phoneNumber = String(phoneResult.value || "").trim();
-            if (!phoneNumber) {
-              setRunStatus("Enter a phone number first.");
-              return;
-            }
-
-            setRunStatus(`Sending text report for ${summaryIds.length} selected summaries...`, true);
-            const response = await fetch("/summaries/combined/send-text", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                user_id: currentUserId,
-                summary_ids: summaryIds,
-                phone_number: phoneNumber,
-              }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-              setRunStatus(extractApiError(data, "Failed to send text report."));
-              return;
-            }
-            setRunStatus(`Sent text report to ${data.to}.`);
-            return;
-          }
-
           setRunStatus(`Sending email report for ${summaryIds.length} selected summaries...`, true);
           const response = await fetch("/summaries/combined/send-email", {
             method: "POST",
@@ -5182,8 +5170,9 @@
       async function refineCurrentSummary() {
         if (!requireSignedIn()) return;
         if (!(await requireSubscriptionAccess())) return;
-        if (!currentDisplayedSummaryMarkdown) {
-          setRunStatus("Select or build a summary first.");
+        const summaryIds = [...selectedSummaryIds];
+        if (!summaryIds.length) {
+          setRunStatus("Select at least one summary first.");
           return;
         }
 
@@ -5194,10 +5183,10 @@
 
         const refineResult = await openAppModal({
           title: "Refine Summary",
-          message: `How would you like this summary to be different?\n\n${preferenceMessage}`,
+          message: `How would you like the ${summaryIds.length} selected summary item(s) rewritten?\n\n${preferenceMessage}`,
           withInput: true,
           inputValue: "",
-          inputPlaceholder: "Describe how you want the summary rewritten",
+          inputPlaceholder: "Describe how you want the selected summaries rewritten",
           confirmLabel: "Refine",
           cancelLabel: "Cancel",
         });
@@ -5215,18 +5204,17 @@
         viewThreadButton.hidden = true;
         isViewingFullThread = false;
         syncViewThreadButton();
-        detailStatus.textContent = "Refining summary...";
+        detailStatus.textContent = `Refining ${summaryIds.length} selected summary item(s)...`;
         summaryDetail.setAttribute("aria-busy", "true");
-        setRunStatus("Refining the current summary...", true);
+        setRunStatus(`Refining ${summaryIds.length} selected summary item(s)...`, true);
 
         try {
-          const response = await fetch("/summaries/refine", {
+          const response = await fetch("/summaries/refine-selected", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               user_id: currentUserId,
-              title: currentDisplayedSummaryTitle,
-              markdown: currentDisplayedSummaryMarkdown,
+              summary_ids: summaryIds,
               instructions: instructions.trim(),
               save_preference: savePreference,
             }),
@@ -5240,25 +5228,17 @@
             return;
           }
 
-          currentDisplayedSummaryTitle = data.title || currentDisplayedSummaryTitle || "Refined Summary";
-          currentDisplayedSummaryMarkdown = data.refined_markdown || "";
-          currentDisplayedThreadHtml = "";
-          currentDisplayedThreadAvailable = false;
-          currentDisplayedSummaryHtml = `
-            <div class="detail-section">
-              <h3>${escapeHtml(currentDisplayedSummaryTitle)}</h3>
-              <p class="meta">Refined for your preferred focus and organization.</p>
-            </div>
-            ${renderMarkdownSummary(currentDisplayedSummaryMarkdown)}
-          `;
+          (data.summary_ids || summaryIds).forEach(removeSummaryDetailCache);
           if (currentProfile?.settings) {
             currentProfile.settings.summary_style_preferences = data.summary_style_preferences || currentProfile.settings.summary_style_preferences || [];
           }
-          detailStatus.textContent = "Refined summary ready.";
-          summaryDetail.className = "";
-          summaryDetail.innerHTML = currentDisplayedSummaryHtml;
-          summaryDetail.removeAttribute("aria-busy");
-          setRunStatus("Refined summary ready.");
+          const refinedIds = data.summary_ids || [];
+          await loadSummaries();
+          if (refinedIds.length) {
+            await loadSummaryDetail(refinedIds[0], { preserveSelection: true });
+          }
+          detailStatus.textContent = data.count === 1 ? "Refined summary ready." : `${data.count} refined summaries ready.`;
+          setRunStatus(data.count === 1 ? "Refined summary ready." : `${data.count} selected summaries refined.`);
         } catch (error) {
           detailStatus.textContent = "Failed to refine summary.";
           summaryDetail.textContent = friendlyApiMessage(error.message);
@@ -5473,7 +5453,7 @@
 
       runButton.addEventListener("click", runSummarizer);
       scheduleButton.addEventListener("click", openScheduleModal);
-      logoutButton.addEventListener("click", logout);
+      logoutButton.addEventListener("click", confirmLogout);
       openContactsButton.addEventListener("click", loadWhitelist);
       openAiButton.addEventListener("click", openChatModal);
       contactsModalAddButton.addEventListener("click", addContactFromModal);

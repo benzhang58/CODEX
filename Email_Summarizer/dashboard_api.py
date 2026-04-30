@@ -430,9 +430,6 @@ GOOGLE_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 GOOGLE_OAUTH_STATE_COOKIE = "email_dashboard_google_state"
 GOOGLE_OAUTH_NEXT_COOKIE = "email_dashboard_google_next"
 GOOGLE_OAUTH_SCOPES = [
-    "openid",
-    "email",
-    "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 REQUIRED_GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
@@ -453,6 +450,10 @@ MICROSOFT_MAILBOX_TOKEN_SCOPES = [
     REQUIRED_MICROSOFT_MAIL_SCOPE,
     "offline_access",
 ]
+MICROSOFT_RECONNECT_MESSAGE = (
+    "Microsoft mailbox access expired or needs permission again. "
+    "Please reconnect Microsoft in Settings, then try again."
+)
 REQUIRED_PRODUCTION_ENV_VARS = [
     "EMAIL_SUMMARIZER_PUBLIC_BASE_URL",
     "OPENAI_API_KEY",
@@ -826,6 +827,13 @@ class RefineSummaryRequest(BaseModel):
     user_id: Optional[str] = None
     title: str = ""
     markdown: str
+    instructions: str
+    save_preference: bool = False
+
+
+class RefineSelectedSummariesRequest(BaseModel):
+    user_id: Optional[str] = None
+    summary_ids: List[str]
     instructions: str
     save_preference: bool = False
 
@@ -1378,7 +1386,6 @@ def auth_google_start(
         "&response_type=code"
         f"&scope={quote(scope, safe='')}"
         "&access_type=offline"
-        "&include_granted_scopes=true"
         f"&state={quote(state, safe='')}"
     )
     if login_hint_value:
@@ -1457,15 +1464,19 @@ def auth_google_callback(request: Request, code: Optional[str] = None, state: Op
         return response
 
     try:
-        userinfo = get_json_with_bearer("https://openidconnect.googleapis.com/v1/userinfo", access_token)
+        userinfo = get_json_with_bearer(
+            "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+            access_token,
+            error_prefix="Google Gmail profile request failed",
+        )
     except HTTPException:
-        write_monitoring_event("oauth", "google_userinfo_failed", "error", request=request)
-        response = RedirectResponse("/dashboard?google_error=userinfo_failed")
+        write_monitoring_event("oauth", "google_gmail_profile_failed", "error", request=request)
+        response = RedirectResponse("/dashboard?google_error=gmail_profile_failed")
         response.delete_cookie(GOOGLE_OAUTH_STATE_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         response.delete_cookie(GOOGLE_OAUTH_NEXT_COOKIE, domain=SESSION_COOKIE_DOMAIN, path="/")
         return response
-    email = str(userinfo.get("email", "")).strip().lower()
-    display_name = str(userinfo.get("name") or userinfo.get("given_name") or "").strip()
+    email = str(userinfo.get("emailAddress") or userinfo.get("email") or "").strip().lower()
+    display_name = ""
     if not email:
         write_monitoring_event("oauth", "google_no_email_returned", "error", request=request)
         response = RedirectResponse("/dashboard?google_error=no_email_returned")
@@ -2401,6 +2412,25 @@ def microsoft_oauth_has_scope(profile: Dict[str, Any], required_scope: str) -> b
     return required in scopes or required_short in {scope.rsplit("/", 1)[-1] for scope in scopes}
 
 
+def is_microsoft_reconnect_error_text(value: Any) -> bool:
+    lower = str(value or "").lower()
+    return (
+        "microsoft mailbox access expired" in lower
+        or "microsoft mailbox access needs" in lower
+        or "microsoft access needs" in lower
+        or "microsoft graph request failed" in lower
+        or ("microsoft" in lower and "http error 401" in lower)
+        or ("microsoft" in lower and "unauthorized" in lower)
+        or ("microsoft" in lower and "unauthenticated" in lower)
+        or ("microsoft" in lower and "invalid authentication credentials" in lower)
+        or ("microsoft" in lower and "invalidauthenticationtoken" in lower)
+        or ("microsoft" in lower and "insufficient permission" in lower)
+        or ("microsoft" in lower and "insufficient privileges" in lower)
+        or "aadsts65001" in lower
+        or "consent_required" in lower
+    )
+
+
 def microsoft_reconnect_url(profile: Dict[str, Any], next_url: str = "/dashboard") -> str:
     email = (
         str((profile.get("microsoft_oauth") or {}).get("email", "") or "").strip()
@@ -2447,11 +2477,7 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
         write_monitoring_event("oauth", "microsoft_token_refresh_failed", "error", user_id=user_id, metadata={"detail": exc.detail})
         detail = str(exc.detail or "")
         detail_lower = detail.lower()
-        if (
-            "aadsts65001" in detail_lower
-            or "consent_required" in detail_lower
-            or "invalid_grant" in detail_lower
-        ):
+        if "aadsts65001" in detail_lower or "consent_required" in detail_lower or "invalid_grant" in detail_lower:
             raise reconnect_error(
                 "microsoft",
                 "consent_required",
@@ -2469,6 +2495,20 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
     if maybe_refresh_token:
         microsoft_oauth["refresh_token"] = maybe_refresh_token
     microsoft_oauth["scope"] = token_payload.get("scope") or microsoft_oauth.get("scope") or " ".join(MICROSOFT_MAILBOX_TOKEN_SCOPES)
+    if not microsoft_oauth_has_scope({"microsoft_oauth": microsoft_oauth}, REQUIRED_MICROSOFT_MAIL_SCOPE):
+        write_monitoring_event(
+            "oauth",
+            "microsoft_refresh_missing_mail_scope",
+            "error",
+            user_id=user_id,
+            metadata={"required_scope": REQUIRED_MICROSOFT_MAIL_SCOPE},
+        )
+        raise reconnect_error(
+            "microsoft",
+            "read_mailbox",
+            "Microsoft mailbox access needs approval. Reconnect Microsoft and approve the requested mailbox permission.",
+            microsoft_reconnect_url(profile),
+        )
     microsoft_oauth["updated_at"] = datetime.now().isoformat()
     profile["microsoft_oauth"] = microsoft_oauth
     save_profile(profile)
@@ -3652,6 +3692,50 @@ def save_summary_json(summary_path: Path, payload: Dict[str, Any]) -> None:
     summary_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def build_markdown_from_summary_payload(summary: Dict[str, Any]) -> str:
+    existing_markdown = str(summary.get("summary_markdown") or summary.get("content_markdown") or "").strip()
+    if existing_markdown:
+        return existing_markdown
+
+    sections: List[str] = []
+    title = str(summary.get("title") or summary.get("summary_id") or "Summary").strip()
+    if title:
+        sections.append(f"# {title}")
+    for section_title, key in [
+        ("Executive Summary", "executive_summary"),
+        ("Main Topics", "main_topics"),
+        ("New Developments", "new_developments"),
+        ("Action Items / Asks", "action_items"),
+        ("Deadlines / Dates / Meetings", "deadlines"),
+        ("Attachment Summary", "attachment_summary"),
+        ("Bottom Line", "bottom_line"),
+    ]:
+        content = str(summary.get(key) or "").strip()
+        if not content:
+            continue
+        sections.append(f"## {section_title}")
+        sections.append(content)
+    return "\n\n".join(sections).strip()
+
+
+def apply_refined_markdown_to_summary(summary: Dict[str, Any], refined_markdown: str) -> Dict[str, Any]:
+    refined = str(refined_markdown or "").strip()
+    updated = dict(summary)
+    updated["summary_markdown"] = refined
+    updated["content_markdown"] = refined
+    updated["executive_summary"] = extract_markdown_section(refined, "Executive Summary")
+    updated["main_topics"] = extract_markdown_section(refined, "Main Topics")
+    updated["new_developments"] = extract_markdown_section(refined, "New Developments")
+    updated["action_items"] = extract_markdown_section(refined, "Action Items / Asks")
+    updated["deadlines"] = extract_markdown_section(refined, "Deadlines / Dates / Meetings")
+    updated["attachment_summary"] = extract_markdown_section(refined, "Attachment Summary")
+    updated["bottom_line"] = extract_markdown_section(refined, "Bottom Line")
+    updated["preview"] = summarize_preview(refined) or updated.get("preview", "")
+    updated["updated_at"] = datetime.now().isoformat()
+    updated["refined_at"] = updated["updated_at"]
+    return updated
+
+
 def load_all_current_summaries_for_user(user_id: str) -> List[Dict[str, Any]]:
     tracked_contacts = {contact.strip().lower() for contact in get_contacts_for_user(user_id) if contact.strip()}
 
@@ -4793,6 +4877,7 @@ def parse_markdown_sections(markdown: str) -> Dict[str, str]:
 
 def render_markdown_report_email_html(title: str, markdown: str) -> str:
     sections = parse_markdown_sections(markdown)
+    summary_card_style = "background:#ffffff; border:1px solid #e3e3e8; border-radius:16px; padding:16px;"
 
     def render_block(text: str) -> str:
         lines = [line.strip() for line in str(text).splitlines() if line.strip()]
@@ -4833,7 +4918,7 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
         section_html.append(
             f"<section style='margin:0 0 18px 0;'>"
             f"<h3 style='margin:0 0 8px 0; font-size:17px; color:#111; letter-spacing:-0.02em;'>{escape(section_title)}</h3>"
-            f"<div style='background:linear-gradient(180deg, #ffffff 0%, #f5f3ed 100%); border:1px solid #e3e3e8; border-radius:16px; padding:16px;'>{block}</div>"
+            f"<div style='{summary_card_style}'>{block}</div>"
             f"</section>"
         )
 
@@ -4845,14 +4930,14 @@ def render_markdown_report_email_html(title: str, markdown: str) -> str:
             section_html.append(
                 f"<section style='margin:0 0 18px 0;'>"
                 f"<h3 style='margin:0 0 8px 0; font-size:17px; color:#111; letter-spacing:-0.02em;'>{escape(section_title)}</h3>"
-                f"<div style='background:linear-gradient(180deg, #ffffff 0%, #f5f3ed 100%); border:1px solid #e3e3e8; border-radius:16px; padding:16px;'>{block}</div>"
+                f"<div style='{summary_card_style}'>{block}</div>"
                 f"</section>"
             )
 
     if not section_html:
         section_html.append(
             f"<section style='margin:0 0 18px 0;'>"
-            f"<div style='background:linear-gradient(180deg, #ffffff 0%, #f5f3ed 100%); border:1px solid #e3e3e8; border-radius:16px; padding:16px;'>"
+            f"<div style='{summary_card_style}'>"
             f"{render_block(markdown)}"
             f"</div></section>"
         )
@@ -5476,6 +5561,130 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
     }
 
 
+@app.post("/summaries/refine-selected")
+def refine_selected_summaries(payload: RefineSelectedSummariesRequest, request: Request) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, payload.user_id)
+    enforce_subscription_access(resolved_user_id, "refine")
+    enforce_usage_limit(resolved_user_id, "refine")
+    enforce_summary_id_limit(payload.summary_ids)
+    instructions = enforce_text_limit(payload.instructions, "Refinement instructions", MAX_REFINE_INSTRUCTIONS_CHARS)
+    if not instructions:
+        raise HTTPException(status_code=400, detail="Refinement instructions cannot be empty.")
+
+    cleaned_summary_ids = [summary_id.strip() for summary_id in payload.summary_ids if summary_id.strip()]
+    if not cleaned_summary_ids:
+        raise HTTPException(status_code=400, detail="Select at least one summary first.")
+
+    settings = get_settings_for_user(resolved_user_id)
+    api_key = settings.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    model = normalize_openai_model(settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1")
+    saved_preferences = parse_summary_style_preferences(settings)
+    if not api_key:
+        write_monitoring_event("server_error", "openai_key_missing_refine_selected", "error", request=request, user_id=resolved_user_id)
+        raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
+
+    instructions_text = (
+        "You are refining saved email summaries for one user. "
+        "Keep each output grounded in that summary's provided content only. "
+        "Do not add new facts, deadlines, people, or attachments. "
+        "Follow the user's refinement request closely. "
+        + (
+            "The user also has saved summary style preferences. Apply them unless the current refinement request conflicts:\n"
+            + "\n".join(f"- {item}" for item in saved_preferences)
+            + "\n"
+            if saved_preferences else ""
+        )
+        + (
+            "Return Markdown. Preserve clear sections such as Executive Summary, Main Topics, Action Items / Asks, "
+            "Deadlines / Dates / Meetings, Attachment Summary, and Bottom Line when those sections are useful."
+        )
+    )
+
+    client = OpenAI(api_key=api_key)
+    refined_summaries: List[Dict[str, Any]] = []
+    skipped_summary_ids: List[str] = []
+    json_summaries_dir = get_user_json_summaries_dir(resolved_user_id)
+
+    for summary_id in cleaned_summary_ids:
+        summary_path = safe_user_file_path(json_summaries_dir, summary_id, ".json", "summary id")
+        if not summary_path.exists():
+            skipped_summary_ids.append(summary_id)
+            continue
+
+        summary = load_summary_json(summary_path)
+        markdown = enforce_text_limit(
+            build_markdown_from_summary_payload(summary),
+            "Summary content",
+            MAX_REFINE_MARKDOWN_CHARS,
+        )
+        if not markdown:
+            skipped_summary_ids.append(summary_id)
+            continue
+
+        title = str(summary.get("title") or summary.get("summary_id") or "Summary").strip()
+        input_text = (
+            f"CURRENT TITLE\n{_to_ascii_safe(title)}\n\n"
+            f"CURRENT SUMMARY\n{_to_ascii_safe(markdown)}\n\n"
+            f"REFINEMENT REQUEST\n{_to_ascii_safe(instructions)}\n"
+        )
+
+        try:
+            response = client.responses.create(
+                model=model,
+                instructions=instructions_text,
+                input=input_text,
+                temperature=0.2,
+                max_output_tokens=1800,
+            )
+        except Exception as exc:
+            write_monitoring_event(
+                "server_error",
+                "openai_refine_selected_failed",
+                "error",
+                request=request,
+                user_id=resolved_user_id,
+                metadata={"model": model, "summary_id": summary_id, "error": str(exc), "error_type": exc.__class__.__name__},
+            )
+            raise HTTPException(status_code=500, detail=f"Refine summary request failed: {exc}") from exc
+
+        updated_summary = apply_refined_markdown_to_summary(summary, response.output_text)
+        save_summary_json(summary_path, updated_summary)
+        refined_summaries.append(
+            {
+                "summary_id": summary_id,
+                "title": updated_summary.get("title", title),
+                "refined_markdown": updated_summary.get("summary_markdown", ""),
+            }
+        )
+
+    if not refined_summaries:
+        raise HTTPException(status_code=404, detail="None of the selected summaries could be refined.")
+
+    updated_preferences = saved_preferences
+    if payload.save_preference:
+        updated_preferences = add_summary_style_preference(resolved_user_id, instructions)
+
+    track_analytics_event(
+        resolved_user_id,
+        "refinement_used",
+        {
+            "summary_count": len(refined_summaries),
+            "instruction_length": len(instructions),
+            "saved_preference": bool(payload.save_preference),
+        },
+    )
+
+    return {
+        "success": True,
+        "user_id": resolved_user_id,
+        "count": len(refined_summaries),
+        "summary_ids": [item["summary_id"] for item in refined_summaries],
+        "skipped_summary_ids": skipped_summary_ids,
+        "summaries": refined_summaries,
+        "summary_style_preferences": updated_preferences,
+    }
+
+
 @app.post("/summary-style-preferences")
 def create_summary_style_preference(payload: SummaryStylePreferenceRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
@@ -5540,13 +5749,21 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
     try:
         ensure_mailbox_access_ready(profile, user_id, refresh_oauth=True)
     except HTTPException as exc:
-        return {
+        detail = str(exc.detail or "Mailbox access is not ready.")
+        result = {
             "returncode": 1,
             "stdout": "",
-            "stderr": str(exc.detail or "Mailbox access is not ready."),
+            "stderr": detail,
+            "message": detail,
             "stats": {},
             "success": False,
         }
+        if is_microsoft_reconnect_error_text(detail):
+            result["message"] = MICROSOFT_RECONNECT_MESSAGE
+            result["stderr"] = MICROSOFT_RECONNECT_MESSAGE
+            result["reconnect_provider"] = "microsoft"
+            result["reconnect_url"] = microsoft_reconnect_url(profile)
+        return result
 
     before_count = len(load_all_current_summaries_for_user(user_id))
     env = os.environ.copy()
@@ -5564,6 +5781,7 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
     )
 
     parsed_stats: Dict[str, Any] = {}
+    parsed_error = ""
     for line in reversed(result.stdout.splitlines()):
         line = line.strip()
         if not line:
@@ -5575,14 +5793,33 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
         if isinstance(parsed_payload, dict) and "stats" in parsed_payload:
             parsed_stats = parsed_payload.get("stats") or {}
             break
+        if isinstance(parsed_payload, dict) and parsed_payload.get("success") is False:
+            parsed_error = str(parsed_payload.get("error") or "").strip()
+            break
+
+    raw_stdout = result.stdout[-4000:]
+    raw_stderr = result.stderr[-4000:]
+    public_error = parsed_error
+    reconnect_provider = ""
+    reconnect_url = ""
+    combined_output = f"{raw_stderr}\n{raw_stdout}\n{parsed_error}"
+    if is_microsoft_reconnect_error_text(combined_output):
+        public_error = MICROSOFT_RECONNECT_MESSAGE
+        reconnect_provider = "microsoft"
+        reconnect_url = microsoft_reconnect_url(profile)
 
     result_payload = {
         "returncode": result.returncode,
-        "stdout": result.stdout[-4000:],
-        "stderr": result.stderr[-4000:],
+        "stdout": "" if public_error else raw_stdout,
+        "stderr": public_error if public_error else raw_stderr,
         "stats": parsed_stats,
         "success": result.returncode == 0,
     }
+    if public_error:
+        result_payload["message"] = public_error
+    if reconnect_provider and reconnect_url:
+        result_payload["reconnect_provider"] = reconnect_provider
+        result_payload["reconnect_url"] = reconnect_url
     if result_payload["success"]:
         result_payload["new_summary_ids"] = load_last_run_summary_ids_for_user(user_id)
     after_count = len(load_all_current_summaries_for_user(user_id))
@@ -5593,12 +5830,12 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
             {"days_back": days_back, "summary_count": after_count},
         )
     if not result_payload["success"]:
-        combined_output = f"{result_payload.get('stderr', '')}\n{result_payload.get('stdout', '')}"
+        monitoring_output = combined_output
         category = "summarizer"
         event_name = "summarizer_failed"
-        if "gmail" in combined_output.lower() or "imap" in combined_output.lower() or "oauth" in combined_output.lower() or "token" in combined_output.lower():
+        if "gmail" in monitoring_output.lower() or "imap" in monitoring_output.lower() or "oauth" in monitoring_output.lower() or "token" in monitoring_output.lower() or "microsoft graph" in monitoring_output.lower():
             event_name = "summarizer_mailbox_or_oauth_failed"
-        if "openai" in combined_output.lower():
+        if "openai" in monitoring_output.lower():
             event_name = "summarizer_openai_failed"
         write_monitoring_event(
             category,
@@ -5608,8 +5845,9 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
             metadata={
                 "days_back": days_back,
                 "returncode": result_payload.get("returncode"),
-                "stderr_tail": result_payload.get("stderr", "")[-1200:],
-                "stdout_tail": result_payload.get("stdout", "")[-1200:],
+                "stderr_tail": raw_stderr[-1200:],
+                "stdout_tail": raw_stdout[-1200:],
+                "public_error": public_error,
             },
         )
     return result_payload

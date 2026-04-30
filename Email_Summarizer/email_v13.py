@@ -48,6 +48,14 @@ logger = logging.getLogger(__name__)
 APP_BASE_DIR = Path(__file__).resolve().parent
 APP_STORAGE_DIR = Path(os.getenv("EMAIL_SUMMARIZER_STORAGE_DIR", str(APP_BASE_DIR / "data"))).resolve()
 OUTPUT_ROOT_DIR = Path(os.getenv("EMAIL_SUMMARIZER_OUTPUT_DIR", str(APP_BASE_DIR / "email_summaries_output"))).resolve()
+MICROSOFT_RECONNECT_MESSAGE = (
+    "Microsoft mailbox access expired or needs permission again. "
+    "Please reconnect Microsoft in Settings, then try again."
+)
+GOOGLE_RECONNECT_MESSAGE = (
+    "Google mailbox access expired or needs permission again. "
+    "Please reconnect Google, then try again."
+)
 
 
 def available_env_options(cwd: Path = Path(".")) -> List[Path]:
@@ -95,6 +103,33 @@ def parse_contact_profiles(raw_value: str) -> Dict[str, Dict[str, str]]:
             "last_name": str(value.get("last_name", "") or "").strip(),
         }
     return normalized
+
+
+def parse_oauth_scope_text(scope_value: Any) -> Set[str]:
+    return {part.strip().lower() for part in str(scope_value or "").split() if part.strip()}
+
+
+def oauth_scope_contains(scope_value: Any, required_scope: str) -> bool:
+    scopes = parse_oauth_scope_text(scope_value)
+    required = required_scope.lower()
+    required_short = required.rsplit("/", 1)[-1]
+    return required in scopes or required_short in {scope.rsplit("/", 1)[-1] for scope in scopes}
+
+
+def is_microsoft_auth_payload(payload: str, status_code: int = 0) -> bool:
+    lower = str(payload or "").lower()
+    return (
+        status_code in {401, 403}
+        or "invalidauthenticationtoken" in lower
+        or "invalid authentication credentials" in lower
+        or "unauthenticated" in lower
+        or "unauthorized" in lower
+        or "accessdenied" in lower
+        or "insufficient privileges" in lower
+        or "insufficient permission" in lower
+        or "aadsts65001" in lower
+        or "consent_required" in lower
+    )
 
 
 def get_app_config_value(key: str, cwd: Path = Path(".")) -> str:
@@ -593,6 +628,8 @@ class EmailSummarizer:
                 payload = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             payload = exc.read().decode("utf-8", errors="replace")
+            if is_microsoft_auth_payload(payload, exc.code):
+                raise ValueError(MICROSOFT_RECONNECT_MESSAGE) from exc
             raise ValueError(f"Microsoft token refresh failed: {payload}") from exc
 
         new_access_token = str(payload.get("access_token", "")).strip()
@@ -603,6 +640,8 @@ class EmailSummarizer:
         if maybe_refresh_token:
             self.microsoft_oauth["refresh_token"] = maybe_refresh_token
         self.microsoft_oauth["scope"] = payload.get("scope") or self.microsoft_oauth.get("scope", "") or "https://graph.microsoft.com/Mail.Read offline_access"
+        if not oauth_scope_contains(self.microsoft_oauth["scope"], "https://graph.microsoft.com/Mail.Read"):
+            raise ValueError(MICROSOFT_RECONNECT_MESSAGE)
         self.microsoft_oauth["updated_at"] = datetime.now().isoformat()
         self._save_oauth_payload("microsoft_oauth_json", self.microsoft_oauth)
         return new_access_token
@@ -656,6 +695,8 @@ class EmailSummarizer:
                 return json.loads(payload.decode("utf-8"))
         except HTTPError as exc:
             payload = exc.read().decode("utf-8", errors="replace")
+            if is_microsoft_auth_payload(payload, exc.code):
+                raise ValueError(MICROSOFT_RECONNECT_MESSAGE) from exc
             raise ValueError(f"Microsoft Graph request failed for {path_or_url}: {payload}") from exc
 
     def _microsoft_graph_raw_message(self, graph_message_id: str, conversation_id: str = "") -> Message:
@@ -2212,13 +2253,18 @@ class EmailSummarizer:
 
 
 if __name__ == "__main__":
-    config_path = select_client_env()
-    profile_user_id = os.getenv("PROFILE_USER_ID")
-    if profile_user_id:
-        client_name = profile_user_id
-    else:
-        client_name = config_path.name.replace(".env.", "").replace(".env", "default")
-    output_dir  = OUTPUT_ROOT_DIR / client_name
-    summarizer  = EmailSummarizer(output_dir, user_id=client_name)
-    stats = summarizer.run(days_back=int(os.getenv("DAYS_BACK", 7)))
-    print(json.dumps({"success": True, "stats": stats}))
+    try:
+        config_path = select_client_env()
+        profile_user_id = os.getenv("PROFILE_USER_ID")
+        if profile_user_id:
+            client_name = profile_user_id
+        else:
+            client_name = config_path.name.replace(".env.", "").replace(".env", "default")
+        output_dir  = OUTPUT_ROOT_DIR / client_name
+        summarizer  = EmailSummarizer(output_dir, user_id=client_name)
+        stats = summarizer.run(days_back=int(os.getenv("DAYS_BACK", 7)))
+        print(json.dumps({"success": True, "stats": stats}))
+    except Exception as exc:
+        logger.error("Run failed: %s", exc)
+        print(json.dumps({"success": False, "error": str(exc), "error_type": exc.__class__.__name__}))
+        raise SystemExit(1)
