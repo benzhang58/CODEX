@@ -25,7 +25,7 @@ os.environ["SMTP_PASSWORD"] = "global-smtp-password"
 os.environ["SUMMARY_RECIPIENT"] = "global-recipient@example.com"
 os.environ["EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY"] = "100"
 os.environ["EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY"] = "10"
-os.environ["EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD"] = "VIPCLIENT"
+os.environ["EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD"] = "test-private-invite"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -60,6 +60,11 @@ class SecurityRegressionTests(unittest.TestCase):
     def setUp(self) -> None:
         shutil.rmtree(os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"], ignore_errors=True)
         shutil.rmtree(os.environ["EMAIL_SUMMARIZER_OUTPUT_DIR"], ignore_errors=True)
+        os.environ["EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD"] = "test-private-invite"
+        os.environ.pop("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", None)
+        os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL", None)
+        os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD", None)
+        os.environ.pop("EMAIL_SUMMARIZER_SMS_ENABLED", None)
         dashboard_api.initialize_database()
         self.client = TestClient(dashboard_api.app, base_url="https://discere-test.example")
 
@@ -72,12 +77,13 @@ class SecurityRegressionTests(unittest.TestCase):
         }
         existing_allowlist.add(email.strip().lower())
         os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = ",".join(sorted(existing_allowlist))
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = email.strip().lower()
         response = client.post(
             "/auth/signup",
             json={
                 "email": email,
                 "password": "StrongPass123!",
-                "manual_access_password": "VIPCLIENT",
+                "manual_access_password": os.environ["EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD"],
                 "accept_terms": True,
                 "accept_privacy": True,
             },
@@ -135,7 +141,7 @@ class SecurityRegressionTests(unittest.TestCase):
             json={
                 "email": "public-blocked@example.com",
                 "password": "StrongPass123!",
-                "manual_access_password": "VIPCLIENT",
+                "manual_access_password": "test-private-invite",
                 "accept_terms": True,
                 "accept_privacy": True,
             },
@@ -143,6 +149,7 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(blocked_response.status_code, 403, blocked_response.text)
 
         os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "approved-private@example.com"
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "approved-private@example.com"
         wrong_password_response = self.client.post(
             "/auth/signup",
             json={
@@ -160,7 +167,7 @@ class SecurityRegressionTests(unittest.TestCase):
             json={
                 "email": "approved-private@example.com",
                 "password": "StrongPass123!",
-                "manual_access_password": "VIPCLIENT",
+                "manual_access_password": "test-private-invite",
                 "accept_terms": True,
                 "accept_privacy": True,
             },
@@ -168,17 +175,112 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(allowed_response.status_code, 200, allowed_response.text)
         self.assertTrue(allowed_response.json()["profile"]["manual_mailbox_allowed"])
 
+    def test_manual_signup_requires_explicit_configured_private_password(self) -> None:
+        os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "approved-private@example.com"
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "approved-private@example.com"
+        os.environ.pop("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", None)
+
+        response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "approved-private@example.com",
+                "password": "StrongPass123!",
+                "manual_access_password": "VIPCLIENT",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertNotIn("VIPCLIENT", response.text)
+
+    def test_manual_signup_only_preconfigures_configured_vip_email(self) -> None:
+        os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "vip-client@263.com,other-client@example.com"
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "vip-client@263.com"
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD"] = "vip-mailbox-app-password"
+
+        blocked_response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "other-client@example.com",
+                "password": "StrongPass123!",
+                "manual_access_password": "test-private-invite",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+        self.assertEqual(blocked_response.status_code, 403, blocked_response.text)
+
+        allowed_response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "vip-client@263.com",
+                "password": "ClientChosenPass123!",
+                "manual_access_password": "test-private-invite",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+        self.assertEqual(allowed_response.status_code, 200, allowed_response.text)
+        profile_payload = allowed_response.json()["profile"]
+        settings = profile_payload["settings"]
+        self.assertTrue(settings["mailbox_connected"])
+        self.assertEqual(settings["imap_user"], "vip-client@263.com")
+        self.assertEqual(settings["imap_server"], "imap.263.net")
+        self.assertEqual(settings["imap_port"], "993")
+        self.assertNotIn("vip-mailbox-app-password", json.dumps(profile_payload))
+
+        profile = dashboard_api.load_profile_or_404("vip_client_263_com")
+        stored_settings = profile["settings"]
+        self.assertEqual(stored_settings["SMTP_HOST"], "smtp.263.net")
+        self.assertEqual(stored_settings["SMTP_PORT"], "465")
+        self.assertEqual(stored_settings["IMAP_PASSWORD"], "vip-mailbox-app-password")
+
+    def test_missing_vip_mailbox_password_does_not_crash_signup(self) -> None:
+        os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "vip-missing@263.com"
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "vip-missing@263.com"
+        os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD", None)
+
+        response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "vip-missing@263.com",
+                "password": "StrongPass123!",
+                "manual_access_password": "test-private-invite",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()["profile"]["settings"]["mailbox_connected"])
+        profile = dashboard_api.load_profile_or_404("vip_missing_263_com")
+        self.assertEqual(profile["settings"]["IMAP_SERVER"], "imap.263.net")
+        self.assertEqual(profile["settings"]["IMAP_PASSWORD"], "")
+
+    def test_oauth_accounts_do_not_receive_vip_263_defaults(self) -> None:
+        os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "vip-client@263.com"
+        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "vip-client@263.com"
+        settings = dashboard_api.apply_provider_defaults(dashboard_api.default_profile_settings(), "google-user@gmail.com")
+        self.assertNotEqual(settings.get("IMAP_SERVER"), "imap.263.net")
+        self.assertEqual(settings.get("IMAP_SERVER"), "imap.gmail.com")
+
+        default_settings = dashboard_api.apply_provider_defaults(dashboard_api.default_profile_settings(), "public@example.com")
+        self.assertNotEqual(default_settings.get("IMAP_SERVER"), "imap.263.net")
+
     def test_non_allowlisted_user_cannot_save_manual_mailbox_password(self) -> None:
         original_allowlist = os.environ.get("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", "")
+        original_vip = os.environ.get("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL", "")
         try:
             os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "temporary-standard@example.com"
+            os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "temporary-standard@example.com"
             client = TestClient(dashboard_api.app, base_url="https://discere-test.example")
             signup_response = client.post(
                 "/auth/signup",
                 json={
                     "email": "temporary-standard@example.com",
                     "password": "StrongPass123!",
-                    "manual_access_password": "VIPCLIENT",
+                    "manual_access_password": "test-private-invite",
                     "accept_terms": True,
                     "accept_privacy": True,
                 },
@@ -197,6 +299,7 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 403, response.text)
         finally:
             os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = original_allowlist
+            os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = original_vip
 
     def test_login_and_mailbox_passwords_are_encrypted_and_not_returned(self) -> None:
         client = self.signup("password-storage@example.com")
@@ -281,8 +384,18 @@ class SecurityRegressionTests(unittest.TestCase):
         profile_response = client.get("/profile")
         self.assertEqual(profile_response.status_code, 200, profile_response.text)
         settings = profile_response.json()["profile"]["settings"]
+        self.assertFalse(settings["has_seen_profile_name_prompt"])
         self.assertFalse(settings["has_seen_combined_summary_email_hint"])
         self.assertFalse(settings["has_seen_single_summary_email_hint"])
+
+        mark_response = client.post(
+            "/profile/ui-hint-seen",
+            json={"hint_key": "has_seen_profile_name_prompt"},
+        )
+        self.assertEqual(mark_response.status_code, 200, mark_response.text)
+        updated_settings = mark_response.json()["profile"]["settings"]
+        self.assertTrue(updated_settings["has_seen_profile_name_prompt"])
+        self.assertFalse(updated_settings["has_seen_combined_summary_email_hint"])
 
         mark_response = client.post(
             "/profile/ui-hint-seen",
@@ -296,6 +409,7 @@ class SecurityRegressionTests(unittest.TestCase):
         persisted_response = client.get("/profile")
         self.assertEqual(persisted_response.status_code, 200, persisted_response.text)
         persisted_settings = persisted_response.json()["profile"]["settings"]
+        self.assertTrue(persisted_settings["has_seen_profile_name_prompt"])
         self.assertTrue(persisted_settings["has_seen_combined_summary_email_hint"])
 
     def test_unknown_email_hint_key_is_rejected(self) -> None:
@@ -572,6 +686,10 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(profile["email"], "outlook-user@example.com")
             self.assertEqual(profile["microsoft_oauth"]["access_token"], "outlook-graph-access-token")
             self.assertTrue(dashboard_api.microsoft_oauth_has_scope(profile, dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE))
+            profile_payload = dashboard_api.profile_response(profile)
+            self.assertEqual(profile_payload["settings"]["first_name"], "")
+            self.assertEqual(profile_payload["settings"]["last_name"], "")
+            self.assertFalse(profile_payload["settings"]["has_seen_profile_name_prompt"])
         finally:
             for key, value in originals.items():
                 if value is None:
@@ -998,11 +1116,11 @@ class SecurityRegressionTests(unittest.TestCase):
 
         response = client.post("/run-summarizer", json={"days_back": 7})
         self.assertEqual(response.status_code, 400, response.text)
-        self.assertIn("Mailbox is not connected yet", response.json()["detail"])
+        self.assertIn("Mailbox connection is not ready", response.json()["detail"])
 
         result = dashboard_api.execute_summarizer_run("needs_mailbox_example_com", 7)
         self.assertFalse(result["success"])
-        self.assertIn("Mailbox is not connected yet", result["stderr"])
+        self.assertIn("Mailbox connection is not ready", result["stderr"])
 
     def test_password_account_cannot_create_schedule_until_mailbox_is_connected(self) -> None:
         client = self.signup("schedule-needs-mailbox@example.com")
@@ -1016,7 +1134,40 @@ class SecurityRegressionTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 400, response.text)
-        self.assertIn("Mailbox is not connected yet", response.json()["detail"])
+        self.assertIn("Mailbox connection is not ready", response.json()["detail"])
+
+    def test_summarizer_job_failure_does_not_expose_raw_traceback(self) -> None:
+        client = self.signup("raw-error@example.com")
+        self.connect_standard_mailbox(client, "raw-error@example.com")
+        fake_result = SimpleNamespace(
+            returncode=1,
+            stdout="2026-05-01 INFO Loaded config\n",
+            stderr="Traceback (most recent call last):\nValueError: database secret token raw failure",
+        )
+
+        with patch.object(dashboard_api.subprocess, "run", return_value=fake_result):
+            result = dashboard_api.execute_summarizer_run("raw_error_example_com", 7)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["stdout"], "")
+        self.assertNotIn("Traceback", result["stderr"])
+        self.assertNotIn("database secret", result["stderr"])
+        self.assertIn("Discere could not finish", result["stderr"])
+
+    def test_sms_endpoint_is_disabled_by_default(self) -> None:
+        client = self.signup("sms-disabled@example.com")
+        response = client.post(
+            "/summaries/combined/send-text",
+            json={"summary_ids": ["anything"], "phone_number": "+14155550123"},
+        )
+
+        self.assertEqual(response.status_code, 404, response.text)
+        self.assertIn("SMS delivery is not available", response.json()["detail"])
+
+    def test_settings_summary_preferences_are_escaped_in_frontend(self) -> None:
+        settings_html = (Path(__file__).resolve().parents[1] / "dashboard_static" / "settings.html").read_text(encoding="utf-8")
+        self.assertIn("function escapeHtml", settings_html)
+        self.assertIn("escapeHtml(preference)", settings_html)
 
     def test_invalid_contact_email_is_rejected(self) -> None:
         client = self.signup("invalid-contact@example.com")
@@ -1300,6 +1451,50 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("linear-gradient", html)
         self.assertNotIn("#f5f3ed", html)
 
+    def test_report_email_formatter_removes_markdown_headings_and_escapes_html(self) -> None:
+        html = dashboard_api.render_markdown_report_email_html(
+            "Daily Report",
+            "\n\n".join(
+                [
+                    "## Person One (person@example.com)",
+                    "Updated: 2026-04-30",
+                    "### Executive Summary",
+                    "<script>alert('bad')</script>",
+                    "### Action Items / Asks",
+                    "- **Call** the client",
+                    "### Empty Section",
+                    "",
+                    "## Person Two",
+                    "### Bottom Line",
+                    "No blockers.",
+                ]
+            ),
+        )
+
+        self.assertNotIn("###", html)
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;alert(&#x27;bad&#x27;)&lt;/script&gt;", html)
+        self.assertIn("Executive Summary", html)
+        self.assertIn("Action Items", html)
+        self.assertIn("<strong>Call</strong> the client", html)
+        self.assertIn("Person One", html)
+        self.assertIn("person@example.com", html)
+        self.assertNotIn("Empty Section", html)
+
+    def test_report_email_text_is_readable_without_markdown_heading_markers(self) -> None:
+        text = dashboard_api.render_markdown_report_text(
+            "Daily Report",
+            "## Person One\nUpdated: 2026-04-30\n### Executive Summary\nSummary text.\n### Deadlines / Dates / Meetings\n- Friday",
+            max_chars=20000,
+        )
+
+        self.assertNotIn("###", text)
+        self.assertNotIn("##", text)
+        self.assertIn("Person One", text)
+        self.assertIn("Executive Summary", text)
+        self.assertIn("Dates & Deadlines", text)
+        self.assertIn("- Friday", text)
+
     def test_refine_selected_summaries_persists_each_checked_summary(self) -> None:
         client = self.signup("batch-refine@example.com")
         user_id = "batch_refine_example_com"
@@ -1392,7 +1587,7 @@ class SecurityRegressionTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 400)
         self.assertEqual(raised.exception.detail["code"], "report_sender_not_configured")
-        self.assertIn("Discere report email sending is not configured", raised.exception.detail["message"])
+        self.assertIn("Discere report email delivery needs attention", raised.exception.detail["message"])
 
     def test_report_sender_does_not_fallback_to_user_mailbox_smtp_credentials(self) -> None:
         config_values = {
@@ -1573,7 +1768,7 @@ class SecurityRegressionTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 500)
         self.assertEqual(raised.exception.detail["code"], "smtp_auth_failed")
-        self.assertIn("could not authenticate", raised.exception.detail["message"])
+        self.assertIn("Discere report email delivery needs attention", raised.exception.detail["message"])
         self.assertNotIn("test-app-password", json.dumps(raised.exception.detail))
 
     def test_report_email_connection_failure_is_classified_cleanly(self) -> None:

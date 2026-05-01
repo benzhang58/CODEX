@@ -2823,28 +2823,28 @@
           return `${message} Try selecting fewer summaries or shortening the request.`;
         }
         if (lower.includes("email sending is not configured") || lower.includes("discere report email sending is not configured")) {
-          return "Discere report email sending is not configured yet. Add the Discere report sender SMTP settings on Render.";
+          return "Discere report email delivery needs attention. Please contact Discere support.";
         }
         if (lower.includes("smtp_auth_failed") || lower.includes("could not authenticate the report sender")) {
-          return "Discere could not authenticate the report sender. Check the Gmail app password on Render, then try again.";
+          return "Discere report email delivery needs attention. Please contact Discere support.";
         }
         if (lower.includes("smtp_recipient_refused") || lower.includes("recipient email was rejected")) {
           return "The recipient email was rejected. Check that your connected account email is valid.";
         }
         if (lower.includes("smtp_sender_refused") || lower.includes("report sender address was rejected")) {
-          return "Discere's report sender address was rejected. Check the report sender From email and SMTP user on Render.";
+          return "Discere report email delivery needs attention. Please contact Discere support.";
         }
         if (lower.includes("smtp_connection_failed") || lower.includes("could not reach the report email provider")) {
           return "Discere could not reach the report email provider. This may be temporary; try again shortly.";
         }
         if (lower.includes("smtp_message_rejected") || lower.includes("provider rejected the report message")) {
-          return "The email provider rejected the report message. Try again, or check the report sender account limits.";
+          return "The email provider rejected the report message. Try again later or contact Discere support.";
         }
         if (lower.includes("smtp_delivery_failed") || lower.includes("could not send the report email")) {
-          return "Discere could not send the report email. Check the Discere report sender SMTP settings on Render.";
+          return "Discere report email delivery needs attention. Please contact Discere support.";
         }
         if (lower.includes("mailbox is not connected yet") || lower.includes("missing imap credentials")) {
-          return "Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.";
+          return "Mailbox connection is not ready. Contact Discere support to finish the private mailbox setup.";
         }
         return message;
       }
@@ -2862,7 +2862,7 @@
             }, 0);
             return friendlyApiMessage(detail.message || fallback);
           }
-          return friendlyApiMessage(detail.stderr || detail.stdout || detail.message || JSON.stringify(detail) || fallback);
+          return friendlyApiMessage(detail.message || fallback);
         }
         return friendlyApiMessage(fallback);
       }
@@ -3427,8 +3427,8 @@
               <a href="/terms" target="_blank" rel="noopener noreferrer"><strong>Read Terms of Service</strong></a><br />
               <a href="/privacy" target="_blank" rel="noopener noreferrer"><strong>Read Privacy Policy</strong></a>
             </p>
-            <label style="display:flex; gap:10px; align-items:flex-start; color:var(--muted); line-height:1.5;">
-              <input id="legalAcceptanceCheckbox" type="checkbox" style="margin-top:3px;" />
+            <label style="display:flex; gap:10px; align-items:center; color:var(--muted); line-height:1.5;">
+              <input id="legalAcceptanceCheckbox" type="checkbox" />
               <span>I agree to the Terms of Service and Privacy Policy.</span>
             </label>
           </div>
@@ -3787,32 +3787,6 @@
         });
       }
 
-      function getProfileNamePromptStateKey(userId) {
-        return `emailDashboardNamePromptState:${String(userId || "").trim()}`;
-      }
-
-      function markProfileNamePromptState(userId, state) {
-        if (!userId) return;
-        const key = getProfileNamePromptStateKey(userId);
-        if (state === "saved") {
-          localStorage.setItem(key, state);
-          sessionStorage.removeItem(key);
-          return;
-        }
-        if (state === "skipped") {
-          sessionStorage.setItem(key, state);
-          return;
-        }
-        localStorage.removeItem(key);
-        sessionStorage.removeItem(key);
-      }
-
-      function readProfileNamePromptState(userId) {
-        if (!userId) return "";
-        const key = getProfileNamePromptStateKey(userId);
-        return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
-      }
-
       function getRunJobStorageKey(userId) {
         return `emailDashboardRunJob:${String(userId || "").trim()}`;
       }
@@ -3895,9 +3869,6 @@
         userIdInput.value = profile.user_id;
         const { firstName, lastName } = getProfileNameParts(profile);
         const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-        if (fullName) {
-          markProfileNamePromptState(profile.user_id, "saved");
-        }
         accountName.textContent = fullName || profile.email || profile.user_id;
         heroLabel.textContent = "Email Dashboard";
         heroWelcome.textContent = firstName ? `Welcome ${firstName}` : (fullName ? `Welcome ${fullName}` : "Welcome");
@@ -3952,11 +3923,7 @@
       async function promptForProfileNameIfNeeded() {
         if (!currentProfile?.user_id) return;
         const { firstName, lastName } = getProfileNameParts(currentProfile);
-        if (firstName || lastName) {
-          markProfileNamePromptState(currentProfile.user_id, "saved");
-          return;
-        }
-        if (readProfileNamePromptState(currentProfile.user_id)) return;
+        if (firstName || lastName || currentProfile?.settings?.has_seen_profile_name_prompt) return;
 
         const result = await openAppModal({
           title: "Welcome",
@@ -3968,13 +3935,13 @@
           cancelLabel: "Skip",
         });
         if (!result?.confirmed) {
-          markProfileNamePromptState(currentProfile.user_id, "skipped");
+          await markUiHintSeen("has_seen_profile_name_prompt");
           return;
         }
 
         const fullName = String(result.value || "").trim();
         if (!fullName) {
-          markProfileNamePromptState(currentProfile.user_id, "skipped");
+          await markUiHintSeen("has_seen_profile_name_prompt");
           return;
         }
         const parts = fullName.split(/\s+/).filter(Boolean);
@@ -3998,7 +3965,6 @@
           }
           if (data.profile) {
             applyProfileToForm(data.profile);
-            markProfileNamePromptState(currentProfile.user_id, "saved");
           }
         } catch (error) {
           setRunStatus(`Failed to save your name: ${error.message}`);
@@ -4140,7 +4106,7 @@
 
         const lines = String(content)
           .split("\n")
-          .map((line) => line.trim())
+          .map((line) => line.trim().replace(/^#{1,6}\s+/, ""))
           .filter(Boolean);
 
         const bulletLines = lines.filter((line) => line.startsWith("- "));
@@ -4811,6 +4777,12 @@
         const summaryIds = [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
+          await openAppModal({
+            title: "Select a Summary First",
+            message: "Choose at least one email summary by clicking the checkbox next to it, then click Send Selected Report again.",
+            confirmLabel: "OK",
+            cancelLabel: "Close",
+          });
           return;
         }
 
@@ -5176,14 +5148,9 @@
           return;
         }
 
-        const savedPreferences = getSavedSummaryPreferences();
-        const preferenceMessage = savedPreferences.length
-          ? `Your saved summary preferences will also be applied:\n- ${savedPreferences.join("\n- ")}`
-          : "You do not have any saved summary preferences yet.";
-
         const refineResult = await openAppModal({
           title: "Refine Summary",
-          message: `How would you like the ${summaryIds.length} selected summary item(s) rewritten?\n\n${preferenceMessage}`,
+          message: `How would you like the ${summaryIds.length} selected summary item(s) rewritten?\n\nYour saved summary preferences will also be applied.`,
           withInput: true,
           inputValue: "",
           inputPlaceholder: "Describe how you want the selected summaries rewritten",

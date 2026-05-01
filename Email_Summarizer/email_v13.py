@@ -36,9 +36,6 @@ from docx import Document
 import html2text
 from openai import OpenAI
 from dotenv import load_dotenv, dotenv_values
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 from security_utils import decrypt_json_payload, encrypt_json_payload
 
@@ -2033,47 +2030,13 @@ class EmailSummarizer:
         return "\n".join(parts)
 
     def send_summary_email(self, contact_summaries: Dict[str, str], run_date: str, run_date_display: str = "", contact_display: Dict[str, str] = None):
-        """Send the master summary as a formatted HTML email via SMTP."""
-        smtp_host     = os.getenv("SMTP_HOST")
-        smtp_port     = int(os.getenv("SMTP_PORT", 465))
-        smtp_user     = os.getenv("SMTP_USER")       # your sending address
-        smtp_password = os.getenv("SMTP_PASSWORD")
-        # Default recipient to the inbox we're already logged into
-        recipient = os.getenv("SUMMARY_RECIPIENT") or os.getenv("IMAP_USER")
+        """Legacy direct SMTP delivery is disabled.
 
-        if not all([smtp_host, smtp_user, smtp_password, recipient]):
-            logger.error(
-                "Missing SMTP config. Set SMTP_HOST, SMTP_PORT, SMTP_USER, "
-                "SMTP_PASSWORD in your .env (SUMMARY_RECIPIENT defaults to IMAP_USER)"
-            )
-            return
-
-        display_date = run_date_display or run_date.replace("_", " ")
-        subject      = f"📬 {display_date}"
-        html_body    = self._build_master_html(contact_summaries, display_date, contact_display or {})
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = smtp_user
-        msg["To"]      = recipient
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-        try:
-            # Port 465 → SSL from the start; port 587 → STARTTLS
-            if smtp_port == 587:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-                    server.ehlo()
-                    server.starttls()
-                    server.login(smtp_user, smtp_password)
-                    server.sendmail(smtp_user, [recipient], msg.as_bytes())
-            else:
-                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
-                    server.login(smtp_user, smtp_password)
-                    server.sendmail(smtp_user, [recipient], msg.as_bytes())
-
-            logger.info("Summary email sent.")
-        except Exception as e:
-            logger.error(f"Failed to send summary email: {e}")
+        Product report emails are sent by dashboard_api.py through Discere's
+        dedicated report sender, never through a user's mailbox credentials.
+        """
+        logger.info("Legacy direct SMTP summary email sending is disabled.")
+        return
 
     # ──────────────────────────────────────────────
     # Main pipeline

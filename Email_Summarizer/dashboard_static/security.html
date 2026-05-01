@@ -58,8 +58,9 @@
             <li><strong>Gmail:</strong> Discere uses Google OAuth to sign you in and read Gmail messages through the Gmail API read-only scope. Gmail OAuth does not use IMAP.</li>
             <li><strong>Microsoft:</strong> Discere uses Microsoft OAuth to sign you in, read mailbox content through Microsoft Graph mailbox access, and refresh tokens for scheduled reports.</li>
             <li><strong>Report emails:</strong> Discere sends requested and scheduled reports from Discere's report email system, not from your connected mailbox. You can choose whether those emails include the full report or only a private notification.</li>
-            <li><strong>Other providers:</strong> Discere uses the mailbox credentials or connection settings you provide to read emails from tracked contacts.</li>
+            <li><strong>Private manual clients:</strong> Manual mailbox connections are not part of the public Gmail/Microsoft product path. They are available only for approved private clients and use encrypted connection details.</li>
             <li><strong>Contacts filter:</strong> The summarizer is designed to process only emails whose actual sender matches your tracked contacts.</li>
+            <li><strong>Tracked contacts:</strong> Adding a tracked contact does not notify that person, and summaries are sent only to your connected account email.</li>
           </ul>
         </section>
 
@@ -139,6 +140,7 @@
           <ul>
             <li><strong>App purpose:</strong> Discere summarizes emails from contacts selected by the user.</li>
             <li><strong>Mailbox read access:</strong> Gmail uses Gmail API read-only access. Microsoft uses Microsoft Graph mailbox access.</li>
+            <li><strong>Tracked contacts:</strong> Discere does not notify contacts when you add them or summarize their emails.</li>
             <li><strong>Report delivery:</strong> Requested and scheduled reports are emailed from Discere, not from the user's connected mailbox. Users can choose Full Report or Private Notification mode.</li>
             <li><strong>Profile/email access:</strong> Used to sign the user in and identify the connected mailbox.</li>
             <li><strong>Offline/refresh access:</strong> Used to keep scheduled reports and mailbox access working without forcing a new login every run.</li>

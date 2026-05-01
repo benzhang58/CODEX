@@ -157,15 +157,26 @@ def configured_manual_mailbox_allowed_emails() -> set[str]:
 
 
 def manual_signup_access_password() -> str:
-    return (
-        os.getenv("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", "").strip()
-        or DEFAULT_MANUAL_SIGNUP_ACCESS_PASSWORD
-    )
+    return os.getenv("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", "").strip()
+
+
+def configured_vip_mailbox_email() -> str:
+    return os.getenv("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL", "").strip().lower()
+
+
+def configured_vip_mailbox_password() -> str:
+    return os.getenv("EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD", "").strip()
 
 
 def email_is_manual_mailbox_allowed(email: str) -> bool:
     normalized = str(email or "").strip().lower()
     return bool(normalized and normalized in configured_manual_mailbox_allowed_emails())
+
+
+def email_is_configured_vip_mailbox(email: str) -> bool:
+    normalized = str(email or "").strip().lower()
+    vip_email = configured_vip_mailbox_email()
+    return bool(normalized and vip_email and normalized == vip_email and email_is_manual_mailbox_allowed(normalized))
 
 
 def profile_manual_mailbox_allowed(profile: Dict[str, Any]) -> bool:
@@ -182,6 +193,7 @@ def profile_manual_mailbox_allowed(profile: Dict[str, Any]) -> bool:
 
 
 def validate_manual_signup_access(email: str, provided_password: str) -> None:
+    normalized = str(email or "").strip().lower()
     if not email_is_manual_mailbox_allowed(email):
         write_monitoring_event(
             "security",
@@ -193,7 +205,41 @@ def validate_manual_signup_access(email: str, provided_password: str) -> None:
             status_code=403,
             detail="Manual account creation is available only for approved private clients. Use Google or Microsoft to log in.",
         )
+    vip_email = configured_vip_mailbox_email()
+    if not vip_email:
+        write_monitoring_event(
+            "security",
+            "manual_signup_vip_email_missing",
+            "error",
+            metadata={"email": normalized},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Private manual account setup is not configured yet. Contact Discere support.",
+        )
+    if normalized != vip_email:
+        write_monitoring_event(
+            "security",
+            "manual_signup_not_configured_vip_email",
+            "warning",
+            metadata={"email": normalized},
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Private account creation is only available for the approved private client.",
+        )
     expected = manual_signup_access_password()
+    if not expected:
+        write_monitoring_event(
+            "security",
+            "manual_signup_access_password_missing",
+            "error",
+            metadata={"email": normalized},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Private manual account setup is not configured yet. Contact Discere support.",
+        )
     if not hmac.compare_digest(str(provided_password or ""), expected):
         write_monitoring_event(
             "security",
@@ -547,7 +593,15 @@ MICROSOFT_RECONNECT_MESSAGE = (
     "Microsoft mailbox access expired or needs permission again. "
     "Please reconnect Microsoft in Settings, then try again."
 )
-DEFAULT_MANUAL_SIGNUP_ACCESS_PASSWORD = "VIPCLIENT"
+VIP_263_IMAP_SERVER = "imap.263.net"
+VIP_263_IMAP_PORT = "993"
+VIP_263_SMTP_HOST = "smtp.263.net"
+VIP_263_SMTP_PORT = "465"
+VIP_263_IMAP_FOLDER = "INBOX"
+GENERIC_SUMMARIZER_ERROR_MESSAGE = (
+    "Discere could not finish the email check. Please try again. "
+    "If it keeps happening, contact Discere support."
+)
 REQUIRED_PRODUCTION_ENV_VARS = [
     "EMAIL_SUMMARIZER_PUBLIC_BASE_URL",
     "OPENAI_API_KEY",
@@ -566,8 +620,13 @@ ACCOUNT_SCOPED_SETTING_KEYS = {
     "CONTACT_PROFILES",
     "IMAP_USER",
     "IMAP_PASSWORD",
+    "IMAP_SERVER",
+    "IMAP_PORT",
+    "IMAP_FOLDER",
     "SMTP_USER",
     "SMTP_PASSWORD",
+    "SMTP_HOST",
+    "SMTP_PORT",
     "SUMMARY_RECIPIENT",
     "MAILBOX_CONNECTION_CONFIRMED",
     "FIRST_NAME",
@@ -1074,6 +1133,9 @@ def build_deploy_readiness() -> Dict[str, Any]:
         "discere_report_sender_configured": bool(report_sender["host"] and report_sender["user"] and report_sender["password"]),
         "manual_mailbox_allowlist_configured": bool(configured_manual_mailbox_allowed_emails()),
         "manual_signup_access_password_custom": bool(os.getenv("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", "").strip()),
+        "vip_mailbox_email_configured": bool(configured_vip_mailbox_email()),
+        "vip_mailbox_email_allowlisted": bool(email_is_manual_mailbox_allowed(configured_vip_mailbox_email())),
+        "vip_mailbox_password_configured": bool(configured_vip_mailbox_password()),
         "rate_limit_enabled": is_rate_limit_enabled(),
         "cors_origins_production_safe": cors_origins_are_production_safe(),
         "security_headers_enabled": True,
@@ -1131,7 +1193,13 @@ def build_deploy_readiness() -> Dict[str, Any]:
     if not checks["microsoft_redirect_configured_or_derivable"]:
         warnings.append("Microsoft OAuth redirect URL is not configured or derivable.")
     if checks["manual_mailbox_allowlist_configured"] and not checks["manual_signup_access_password_custom"]:
-        warnings.append("Manual mailbox allowlist is configured; set EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD to a private value.")
+        errors.append("Manual mailbox allowlist is configured; set EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD to a private value.")
+    if checks["manual_mailbox_allowlist_configured"] and not checks["vip_mailbox_email_configured"]:
+        errors.append("Manual mailbox allowlist is configured; set EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL.")
+    if checks["vip_mailbox_email_configured"] and not checks["vip_mailbox_email_allowlisted"]:
+        errors.append("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL must also be listed in EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS.")
+    if checks["vip_mailbox_email_configured"] and not checks["vip_mailbox_password_configured"]:
+        warnings.append("VIP mailbox email is configured, but EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD is missing; the VIP mailbox will not be connected.")
 
     return {
         "status": "ready" if not errors else "needs_attention",
@@ -1399,12 +1467,14 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
     except HTTPException:
         pass
 
-    settings["IMAP_USER"] = settings.get("IMAP_USER") or email
-    settings["IMAP_PASSWORD"] = settings.get("IMAP_PASSWORD") or ""
-    settings["SMTP_USER"] = settings.get("SMTP_USER") or email
-    settings["SMTP_PASSWORD"] = settings.get("SMTP_PASSWORD") or ""
+    settings = apply_vip_manual_mailbox_preconfiguration(settings, email)
     settings["SUMMARY_RECIPIENT"] = settings.get("SUMMARY_RECIPIENT") or email
-    settings["MAILBOX_CONNECTION_CONFIRMED"] = "true" if str(settings.get("IMAP_PASSWORD", "")).strip() else "false"
+    settings["MAILBOX_CONNECTION_CONFIRMED"] = (
+        "true"
+        if str(settings.get("MAILBOX_CONNECTION_CONFIRMED", "")).strip().lower() == "true"
+        and str(settings.get("IMAP_PASSWORD", "")).strip()
+        else "false"
+    )
     settings["BIRTHDAY"] = str(request.birthday or "").strip()
     settings["GENDER"] = str(request.gender or "").strip()
     mark_legal_acceptance(settings)
@@ -1795,7 +1865,7 @@ def auth_microsoft_callback(request: Request, code: Optional[str] = None, state:
         "displayName": str(claims.get("name") or "").strip(),
     }
     fallback_email = str(userinfo.get("mail") or userinfo.get("userPrincipalName") or "").strip().lower()
-    display_name = str(userinfo.get("displayName", "") or "").strip()
+    display_name = ""
     email = resolve_microsoft_account_email(userinfo, token_payload) or fallback_email
     if not email:
         write_monitoring_event("oauth", "microsoft_no_email_returned", "error", request=request)
@@ -1929,6 +1999,7 @@ def mark_how_to_seen(request: Request, user_id: Optional[str] = Query(None)) -> 
 def mark_ui_hint_seen(request: Request, payload: UiHintSeenRequest) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
     hint_map = {
+        "has_seen_profile_name_prompt": "HAS_SEEN_PROFILE_NAME_PROMPT",
         "has_seen_combined_summary_email_hint": "HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT",
         "has_seen_single_summary_email_hint": "HAS_SEEN_SINGLE_SUMMARY_EMAIL_HINT",
     }
@@ -2423,7 +2494,7 @@ def get_google_oauth_config() -> Dict[str, str]:
     if not client_id or not client_secret:
         raise HTTPException(
             status_code=500,
-            detail="Google OAuth is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first.",
+            detail="Google sign-in is temporarily unavailable. Please contact Discere support if this keeps happening.",
         )
     return {
         "client_id": client_id,
@@ -2442,7 +2513,7 @@ def get_microsoft_oauth_config() -> Dict[str, str]:
     if not client_id or not client_secret:
         raise HTTPException(
             status_code=500,
-            detail="Microsoft OAuth is not configured yet. Add MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET first.",
+            detail="Microsoft sign-in is temporarily unavailable. Please contact Discere support if this keeps happening.",
         )
     return {
         "client_id": client_id,
@@ -2749,7 +2820,7 @@ def ensure_mailbox_access_ready(
         )
         raise HTTPException(
             status_code=400,
-            detail="Mailbox is not connected yet. Open Settings, then add your mailbox email and mailbox password before running the summarizer.",
+            detail="Mailbox connection is not ready. Contact Discere support to finish the private mailbox setup.",
         )
 
 
@@ -2809,6 +2880,7 @@ def default_profile_settings() -> Dict[str, str]:
         "BIRTHDAY": "",
         "GENDER": "",
         "HOW_TO_SEEN": "false",
+        "HAS_SEEN_PROFILE_NAME_PROMPT": "false",
         "HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT": "false",
         "HAS_SEEN_SINGLE_SUMMARY_EMAIL_HINT": "false",
         "TERMS_ACCEPTED_AT": "",
@@ -2830,13 +2902,13 @@ def default_profile_settings() -> Dict[str, str]:
         "SUBSCRIPTION_ACTIVATED_AT": "",
         "STRIPE_CUSTOMER_ID": "",
         "STRIPE_SUBSCRIPTION_ID": "",
-        "IMAP_SERVER": os.getenv("IMAP_SERVER", ""),
-        "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
+        "IMAP_SERVER": "",
+        "IMAP_PORT": "993",
         "IMAP_USER": "",
         "IMAP_PASSWORD": "",
-        "IMAP_FOLDER": os.getenv("IMAP_FOLDER", "INBOX"),
-        "SMTP_HOST": os.getenv("SMTP_HOST", ""),
-        "SMTP_PORT": os.getenv("SMTP_PORT", "465"),
+        "IMAP_FOLDER": "INBOX",
+        "SMTP_HOST": "",
+        "SMTP_PORT": "465",
         "SMTP_USER": "",
         "SMTP_PASSWORD": "",
         "SUMMARY_RECIPIENT": "",
@@ -3180,6 +3252,7 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
         "birthday": settings.get("BIRTHDAY", ""),
         "gender": settings.get("GENDER", ""),
         "how_to_seen": str(settings.get("HOW_TO_SEEN", "false")).lower() == "true",
+        "has_seen_profile_name_prompt": str(settings.get("HAS_SEEN_PROFILE_NAME_PROMPT", "false")).lower() == "true",
         "has_seen_combined_summary_email_hint": str(settings.get("HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT", "false")).lower() == "true",
         "has_seen_single_summary_email_hint": str(settings.get("HAS_SEEN_SINGLE_SUMMARY_EMAIL_HINT", "false")).lower() == "true",
         "terms_accepted": bool(str(settings.get("TERMS_ACCEPTED_AT", "")).strip()),
@@ -3206,6 +3279,8 @@ def profile_update_to_settings(update: ProfileUpdateRequest, existing: Dict[str,
         settings["FIRST_NAME"] = update.first_name.strip()
     if update.last_name.strip():
         settings["LAST_NAME"] = update.last_name.strip()
+    if update.first_name.strip() or update.last_name.strip():
+        settings["HAS_SEEN_PROFILE_NAME_PROMPT"] = "true"
     if update.attachment_ai_enabled is not None:
         settings["EMAIL_SUMMARIZER_INCLUDE_ATTACHMENT_PREVIEWS_IN_LLM"] = "true" if update.attachment_ai_enabled else "false"
     if update.report_email_mode.strip():
@@ -3284,16 +3359,39 @@ def mark_profile_how_to_seen(user_id: str) -> Dict[str, Any]:
     return profile
 
 
+def apply_vip_manual_mailbox_preconfiguration(settings: Dict[str, str], email: str) -> Dict[str, str]:
+    merged = dict(settings)
+    if not email_is_configured_vip_mailbox(email):
+        return merged
+
+    vip_email = configured_vip_mailbox_email()
+    mailbox_password = configured_vip_mailbox_password()
+    merged.update(
+        {
+            "IMAP_SERVER": VIP_263_IMAP_SERVER,
+            "IMAP_PORT": VIP_263_IMAP_PORT,
+            "SMTP_HOST": VIP_263_SMTP_HOST,
+            "SMTP_PORT": VIP_263_SMTP_PORT,
+            "IMAP_FOLDER": VIP_263_IMAP_FOLDER,
+            "IMAP_USER": vip_email,
+            "SMTP_USER": vip_email,
+            "SUMMARY_RECIPIENT": str(email or "").strip().lower(),
+            "MAILBOX_CONNECTION_CONFIRMED": "true" if mailbox_password else "false",
+        }
+    )
+    if mailbox_password:
+        merged["IMAP_PASSWORD"] = mailbox_password
+        merged["SMTP_PASSWORD"] = mailbox_password
+    else:
+        merged["IMAP_PASSWORD"] = ""
+        merged["SMTP_PASSWORD"] = ""
+    return merged
+
+
 def apply_provider_defaults(settings: Dict[str, str], email: str, force_outlook: bool = False) -> Dict[str, str]:
     normalized = (email or "").strip().lower()
     merged = dict(settings)
-    provider_defaults = {
-        "IMAP_SERVER": "imap.263.net",
-        "IMAP_PORT": "993",
-        "SMTP_HOST": "smtp.263.net",
-        "SMTP_PORT": "465",
-        "IMAP_FOLDER": "INBOX",
-    }
+    provider_defaults = {}
 
     if force_outlook:
         provider_defaults = {
@@ -4256,7 +4354,7 @@ Security and account controls:
 Limits and errors:
 - Usage limits exist to prevent runaway AI/API cost, but normal users should only see limit messaging after a limit is hit.
 - If OAuth scope errors occur, users may need to log out and log back in with Google or Microsoft and approve the requested permissions.
-- If report email sending is not configured, Discere needs the report sender SMTP settings configured on Render.
+- If report email sending is not working, users should contact Discere support.
 
 Terms-style plain English:
 - Users must have the legal right to connect each mailbox and process the emails/attachments made available through that connection.
@@ -4334,6 +4432,275 @@ def build_recent_chat_history(conversation: List[Dict[str, str]], max_chars: int
 def render_inline_markdown_html(text: str) -> str:
     escaped = escape(str(text or ""))
     return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+
+REPORT_SECTION_LABELS = {
+    "executive summary": "Executive Summary",
+    "main topics": "Key Points",
+    "main themes": "Key Points",
+    "new developments": "Updates",
+    "action items / asks": "Action Items",
+    "key action items": "Action Items",
+    "deadlines / dates / meetings": "Dates & Deadlines",
+    "deadlines / dates": "Dates & Deadlines",
+    "notable attachments": "Attachments",
+    "attachment summary": "Attachments",
+    "attachments": "Attachments",
+    "bottom line": "Bottom Line",
+}
+
+REPORT_SECTION_ORDER = [
+    "Executive Summary",
+    "Key Points",
+    "Updates",
+    "Action Items",
+    "Dates & Deadlines",
+    "Attachments",
+    "Bottom Line",
+]
+
+
+def clean_markdown_heading_text(text: str) -> str:
+    return re.sub(r"^\s*#{1,6}\s*", "", str(text or "").strip()).strip()
+
+
+def normalize_report_section_label(title: str) -> str:
+    cleaned = clean_markdown_heading_text(title)
+    return REPORT_SECTION_LABELS.get(cleaned.lower(), cleaned)
+
+
+def split_contact_title(title: str) -> tuple[str, str]:
+    cleaned = clean_markdown_heading_text(title) or "Summary"
+    match = re.match(r"^(?P<name>.+?)\s*\((?P<email>[^()\s]+@[^()\s]+)\)\s*$", cleaned)
+    if match:
+        return match.group("name").strip(), match.group("email").strip()
+    if is_valid_email(cleaned):
+        return cleaned, cleaned
+    return cleaned, ""
+
+
+def append_report_section(sections: Dict[str, str], title: str, lines: List[str]) -> None:
+    label = normalize_report_section_label(title)
+    content = "\n".join(line for line in lines).strip()
+    if not label or not content:
+        return
+    if label in sections and sections[label].strip():
+        sections[label] = f"{sections[label].strip()}\n{content}"
+    else:
+        sections[label] = content
+
+
+def parse_report_markdown_cards(markdown: str) -> List[Dict[str, Any]]:
+    cards: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+    current_section = "Executive Summary"
+    current_lines: List[str] = []
+
+    def flush_section() -> None:
+        nonlocal current_lines
+        if current is not None:
+            append_report_section(current["sections"], current_section, current_lines)
+        current_lines = []
+
+    def flush_card() -> None:
+        nonlocal current
+        flush_section()
+        if current is None:
+            return
+        if any(str(value).strip() for value in current["sections"].values()):
+            cards.append(current)
+        current = None
+
+    for raw_line in str(markdown or "").splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            flush_card()
+            name, email = split_contact_title(stripped[3:])
+            current = {
+                "title": name,
+                "email": email,
+                "updated_at": "",
+                "sections": {},
+            }
+            current_section = "Executive Summary"
+            current_lines = []
+            continue
+        if stripped.startswith("# "):
+            continue
+        if current is None:
+            if not stripped:
+                continue
+            current = {"title": "Summary", "email": "", "updated_at": "", "sections": {}}
+        if stripped.startswith("### "):
+            flush_section()
+            current_section = normalize_report_section_label(stripped[4:])
+            current_lines = []
+            continue
+        updated_match = re.match(r"^Updated:\s*(.+)$", stripped, flags=re.IGNORECASE)
+        if updated_match and not current.get("updated_at"):
+            current["updated_at"] = updated_match.group(1).strip()
+            continue
+        current_lines.append(clean_markdown_heading_text(line) if stripped.startswith("#") else line)
+
+    flush_card()
+    return cards
+
+
+def summary_to_report_card(summary: Dict[str, Any], *, executive_only: bool = False) -> Dict[str, Any]:
+    title = clean_summary_title(summary.get("title", ""), summary.get("summary_id", "Summary"))
+    name, email = split_contact_title(title)
+    sections: Dict[str, str] = {}
+    section_map = [("Executive Summary", "executive_summary")]
+    if not executive_only:
+        section_map.extend(
+            [
+                ("Key Points", "main_topics"),
+                ("Updates", "new_developments"),
+                ("Action Items", "action_items"),
+                ("Dates & Deadlines", "deadlines"),
+                ("Attachments", "attachment_summary"),
+                ("Bottom Line", "bottom_line"),
+            ]
+        )
+    for label, key in section_map:
+        content = str(summary.get(key, "") or "").strip()
+        if content:
+            sections[label] = content
+    if executive_only and not sections:
+        sections["Executive Summary"] = "No executive summary is available for this summary."
+    return {
+        "title": name,
+        "email": email or str(summary.get("sender") or "").strip(),
+        "updated_at": str(summary.get("updated_at") or "").strip(),
+        "sections": sections,
+    }
+
+
+def render_report_text_block(text: str) -> str:
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    blocks: List[str] = []
+    bullet_items: List[str] = []
+
+    def flush_bullets() -> None:
+        nonlocal bullet_items
+        if not bullet_items:
+            return
+        blocks.append(
+            "<ul style='margin:0 0 12px 0; padding-left:22px;'>"
+            + "".join(
+                f"<li style='margin:0 0 7px 0; line-height:1.55; color:#191917; font-size:15px;'>{render_inline_markdown_html(item)}</li>"
+                for item in bullet_items
+            )
+            + "</ul>"
+        )
+        bullet_items = []
+
+    for line in lines:
+        cleaned = clean_markdown_heading_text(line)
+        bullet_match = re.match(r"^(?:[-*•]\s+)(.+)$", cleaned)
+        if bullet_match:
+            bullet_items.append(bullet_match.group(1).strip())
+            continue
+        flush_bullets()
+        blocks.append(
+            f"<p style='margin:0 0 12px 0; line-height:1.65; color:#191917; font-size:15px;'>{render_inline_markdown_html(cleaned)}</p>"
+        )
+    flush_bullets()
+    return "".join(blocks)
+
+
+def render_report_email_html(title: str, cards: List[Dict[str, Any]], intro: str = "Here are your latest summaries.") -> str:
+    card_html: List[str] = []
+    for card in cards:
+        sections = card.get("sections") or {}
+        section_html: List[str] = []
+        ordered_labels = [label for label in REPORT_SECTION_ORDER if str(sections.get(label, "")).strip()]
+        ordered_labels.extend(label for label in sections if label not in ordered_labels and str(sections.get(label, "")).strip())
+        for label in ordered_labels:
+            block = render_report_text_block(str(sections.get(label, "") or ""))
+            if not block:
+                continue
+            section_html.append(
+                "<section style='margin:18px 0 0 0;'>"
+                f"<h3 style='margin:0 0 8px 0; color:#111; font-size:14px; letter-spacing:0.08em; text-transform:uppercase;'>{escape(label)}</h3>"
+                f"<div>{block}</div>"
+                "</section>"
+            )
+        if not section_html:
+            continue
+        display_title = str(card.get("title") or "Summary").strip()
+        email = str(card.get("email") or "").strip()
+        updated = str(card.get("updated_at") or "").strip()
+        meta_parts = []
+        if email and email != display_title:
+            meta_parts.append(escape(email))
+        if updated:
+            meta_parts.append(f"Updated: {escape(updated)}")
+        meta_html = (
+            f"<p style='margin:6px 0 0 0; color:#6f6d66; font-size:13px; line-height:1.5;'>{' · '.join(meta_parts)}</p>"
+            if meta_parts
+            else ""
+        )
+        card_html.append(
+            "<article style='background:#ffffff; border:1px solid #deded8; border-radius:18px; padding:22px 24px; margin:0 0 18px 0;'>"
+            f"<h2 style='margin:0; color:#111; font-size:22px; line-height:1.2; letter-spacing:-0.03em;'>{escape(display_title)}</h2>"
+            f"{meta_html}"
+            + "".join(section_html)
+            + "</article>"
+        )
+
+    if not card_html:
+        card_html.append(
+            "<article style='background:#ffffff; border:1px solid #deded8; border-radius:18px; padding:22px 24px;'>"
+            "<p style='margin:0; color:#555; line-height:1.6;'>No summary content was available for this report.</p>"
+            "</article>"
+        )
+
+    return (
+        "<html><body style='margin:0; padding:0; background:#ffffff;'>"
+        "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
+        "max-width:760px; margin:0 auto; padding:28px 22px; background:#ffffff;'>"
+        "<div style='margin:0 0 22px 0; padding:0 0 18px 0; border-bottom:1px solid #e6e2da;'>"
+        "<p style='margin:0 0 8px 0; color:#6f6d66; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; font-weight:700;'>Discere</p>"
+        f"<h1 style='margin:0; color:#111; font-size:30px; line-height:1.08; letter-spacing:-0.05em;'>{escape(title or 'Discere Email Summary')}</h1>"
+        f"<p style='margin:12px 0 0 0; color:#555; font-size:15px; line-height:1.6;'>{escape(intro)}</p>"
+        "</div>"
+        + "".join(card_html)
+        + "</div></body></html>"
+    )
+
+
+def render_report_email_text(title: str, cards: List[Dict[str, Any]], max_chars: int = 1400) -> str:
+    blocks: List[str] = [str(title or "Discere Email Summary").strip(), "Here are your latest summaries.", ""]
+    for card in cards:
+        card_title = str(card.get("title") or "Summary").strip()
+        email = str(card.get("email") or "").strip()
+        updated = str(card.get("updated_at") or "").strip()
+        blocks.append(card_title)
+        if email and email != card_title:
+            blocks.append(email)
+        if updated:
+            blocks.append(f"Updated: {updated}")
+        sections = card.get("sections") or {}
+        ordered_labels = [label for label in REPORT_SECTION_ORDER if str(sections.get(label, "")).strip()]
+        ordered_labels.extend(label for label in sections if label not in ordered_labels and str(sections.get(label, "")).strip())
+        for label in ordered_labels:
+            lines = [clean_markdown_heading_text(line) for line in str(sections.get(label, "") or "").splitlines()]
+            lines = [line for line in lines if line.strip()]
+            if not lines:
+                continue
+            blocks.append("")
+            blocks.append(label)
+            for line in lines:
+                cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", line).strip()
+                bullet_match = re.match(r"^(?:[-*•]\s+)(.+)$", cleaned)
+                blocks.append(f"- {bullet_match.group(1).strip()}" if bullet_match else cleaned)
+        blocks.append("")
+    text = _to_ascii_safe("\n".join(blocks).strip())
+    if len(text) > max_chars:
+        return text[:max_chars].rstrip() + "\n... [continued in email/app]"
+    return text
 
 
 @app.get("/attachments")
@@ -4520,55 +4887,10 @@ def build_chat_context(
 
 
 def render_summary_email_html(summary: Dict[str, Any]) -> str:
-    sections = [
-        ("Executive Summary", summary.get("executive_summary", "")),
-        ("Main Topics", summary.get("main_topics", "")),
-        ("New Developments", summary.get("new_developments", "")),
-        ("Action Items / Asks", summary.get("action_items", "")),
-        ("Deadlines / Dates / Meetings", summary.get("deadlines", "")),
-        ("Attachment Summary", summary.get("attachment_summary", "")),
-        ("Bottom Line", summary.get("bottom_line", "")),
-    ]
-
-    def render_block(text: str) -> str:
-        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
-        if not lines:
-            return ""
-        bullet_lines = [line[2:] for line in lines if line.startswith("- ")]
-        plain_lines = [line for line in lines if not line.startswith("- ")]
-        html_parts: List[str] = []
-        for line in plain_lines:
-            html_parts.append(f"<p style='margin:0 0 10px 0; line-height:1.55;'>{render_inline_markdown_html(line)}</p>")
-        if bullet_lines:
-            html_parts.append(
-                "<ul style='margin:0; padding-left:22px;'>"
-                + "".join(
-                    f"<li style='margin:0 0 6px 0; line-height:1.5;'>{render_inline_markdown_html(item)}</li>"
-                    for item in bullet_lines
-                )
-                + "</ul>"
-            )
-        return "".join(html_parts)
-
-    section_html = []
-    for title, content in sections:
-        block = render_block(content)
-        if not block:
-            continue
-        section_html.append(
-            f"<section style='margin:0 0 18px 0;'>"
-            f"<h3 style='margin:0 0 8px 0; font-size:16px; color:#111;'>{title}</h3>"
-            f"<div style='background:#fafafa; border:1px solid #e3e3e8; border-radius:14px; padding:14px;'>{block}</div>"
-            f"</section>"
-        )
-
-    return (
-        "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
-        "max-width:760px; margin:0 auto; padding:24px; background:#fff;'>"
-        f"<h1 style='margin:0 0 6px 0; font-size:28px;'>{escape(str(summary.get('title', summary.get('summary_id', 'Summary'))))}</h1>"
-        f"<p style='margin:0 0 24px 0; color:#666;'>Updated: {escape(str(summary.get('updated_at', '')))}</p>"
-        + "".join(section_html)
-        + "</body></html>"
+    return render_report_email_html(
+        "Discere Email Summary",
+        [summary_to_report_card(summary)],
+        intro="Here is the full summary you requested.",
     )
 
 
@@ -4642,13 +4964,13 @@ def classify_smtp_delivery_exception(exc: Exception) -> Dict[str, Any]:
         return {
             "code": "smtp_auth_failed",
             "status_code": 500,
-            "message": "Discere could not authenticate the report sender. Check the report sender Gmail app password on Render.",
+            "message": "Discere report email delivery needs attention. Please contact Discere support.",
         }
     if isinstance(exc, smtplib.SMTPSenderRefused):
         return {
             "code": "smtp_sender_refused",
             "status_code": 500,
-            "message": "Discere's report sender address was rejected by the email provider. Check the report sender From email and SMTP user on Render.",
+            "message": "Discere report email delivery needs attention. Please contact Discere support.",
         }
     if isinstance(exc, smtplib.SMTPRecipientsRefused):
         return {
@@ -4660,7 +4982,7 @@ def classify_smtp_delivery_exception(exc: Exception) -> Dict[str, Any]:
         return {
             "code": "smtp_message_rejected",
             "status_code": 502,
-            "message": "The email provider rejected the report message. Try again, or check the report sender account limits.",
+            "message": "The email provider rejected the report message. Try again later or contact Discere support.",
         }
     if isinstance(exc, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, socket.timeout, TimeoutError)):
         return {
@@ -4671,7 +4993,7 @@ def classify_smtp_delivery_exception(exc: Exception) -> Dict[str, Any]:
     return {
         "code": "smtp_delivery_failed",
         "status_code": 502,
-        "message": "Discere could not send the report email. Check the report sender SMTP settings on Render.",
+        "message": "Discere report email delivery needs attention. Please contact Discere support.",
     }
 
 
@@ -4802,7 +5124,7 @@ def send_report_email_from_discere(
             status_code=400,
             detail={
                 "code": "report_sender_not_configured",
-                "message": "Discere report email sending is not configured yet. Add the Discere report sender SMTP settings on Render.",
+                "message": "Discere report email delivery needs attention. Please contact Discere support.",
             },
         )
 
@@ -4889,32 +5211,12 @@ def send_summary_via_smtp(user_id: str, summary: Dict[str, Any]) -> Dict[str, st
         )
 
     html_body = render_summary_email_html(summary)
-    text_parts: List[str] = [
-        str(summary.get("title") or summary.get("summary_id") or "Summary").strip(),
-        "",
-    ]
-    for key in [
-        "executive_summary",
-        "main_topics",
-        "new_developments",
-        "action_items",
-        "deadlines",
-        "attachment_summary",
-        "bottom_line",
-    ]:
-        value = str(summary.get(key) or "").strip()
-        if not value:
-            continue
-        label = key.replace("_", " ").title()
-        text_parts.append(f"{label}:")
-        text_parts.append(re.sub(r"\*\*(.+?)\*\*", r"\1", value))
-        text_parts.append("")
     return send_report_email_from_discere(
         user_id=user_id,
         recipient=recipient,
         subject=MANUAL_REPORT_EMAIL_SUBJECT,
         html_body=html_body,
-        text_body="\n".join(text_parts).strip(),
+        text_body=render_report_email_text("Discere Email Summary", [summary_to_report_card(summary)], max_chars=20000),
         event_name="discere_summary_email_failed",
     )
 
@@ -5025,78 +5327,10 @@ def parse_markdown_sections(markdown: str) -> Dict[str, str]:
 
 
 def render_markdown_report_email_html(title: str, markdown: str) -> str:
-    sections = parse_markdown_sections(markdown)
-    summary_card_style = "background:#ffffff; border:1px solid #e3e3e8; border-radius:16px; padding:16px;"
-
-    def render_block(text: str) -> str:
-        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
-        if not lines:
-            return ""
-        bullet_lines = [line[2:] for line in lines if line.startswith("- ")]
-        plain_lines = [line for line in lines if not line.startswith("- ")]
-        html_parts: List[str] = []
-        for line in plain_lines:
-            html_parts.append(
-                f"<p style='margin:0 0 10px 0; line-height:1.65; color:#191917; font-size:15px;'>{render_inline_markdown_html(line)}</p>"
-            )
-        if bullet_lines:
-            html_parts.append(
-                "<ul style='margin:0; padding-left:22px;'>"
-                + "".join(
-                    f"<li style='margin:0 0 8px 0; line-height:1.6; color:#191917; font-size:15px;'>{render_inline_markdown_html(item)}</li>"
-                    for item in bullet_lines
-                )
-                + "</ul>"
-            )
-        return "".join(html_parts)
-
-    ordered_titles = [
-        "Executive Summary",
-        "Main Themes",
-        "Key Action Items",
-        "Deadlines / Dates",
-        "Notable Attachments",
-        "Bottom Line",
-    ]
-
-    section_html: List[str] = []
-    for section_title in ordered_titles:
-        block = render_block(sections.get(section_title, ""))
-        if not block:
-            continue
-        section_html.append(
-            f"<section style='margin:0 0 18px 0;'>"
-            f"<h3 style='margin:0 0 8px 0; font-size:17px; color:#111; letter-spacing:-0.02em;'>{escape(section_title)}</h3>"
-            f"<div style='{summary_card_style}'>{block}</div>"
-            f"</section>"
-        )
-
-    if not section_html and sections:
-        for section_title, section_content in sections.items():
-            block = render_block(section_content)
-            if not block:
-                continue
-            section_html.append(
-                f"<section style='margin:0 0 18px 0;'>"
-                f"<h3 style='margin:0 0 8px 0; font-size:17px; color:#111; letter-spacing:-0.02em;'>{escape(section_title)}</h3>"
-                f"<div style='{summary_card_style}'>{block}</div>"
-                f"</section>"
-            )
-
-    if not section_html:
-        section_html.append(
-            f"<section style='margin:0 0 18px 0;'>"
-            f"<div style='{summary_card_style}'>"
-            f"{render_block(markdown)}"
-            f"</div></section>"
-        )
-
-    return (
-        "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
-        "max-width:760px; margin:0 auto; padding:24px; background:#fff;'>"
-        f"<h1 style='margin:0 0 24px 0; font-size:30px; letter-spacing:-0.04em; color:#111;'>{escape(title)}</h1>"
-        + "".join(section_html)
-        + "</body></html>"
+    return render_report_email_html(
+        title or "Discere Email Summary",
+        parse_report_markdown_cards(markdown),
+        intro="Here are your latest summaries.",
     )
 
 
@@ -5145,28 +5379,15 @@ def send_combined_report_via_smtp(
 
 
 def render_markdown_report_text(title: str, markdown: str, max_chars: int = 1400) -> str:
-    sections = parse_markdown_sections(markdown)
-    blocks: List[str] = [title.strip()]
-    for section_title, section_content in sections.items():
-        lines = [line.strip() for line in str(section_content or "").splitlines() if line.strip()]
-        if not lines:
-            continue
-        blocks.append(f"{section_title}:")
-        for line in lines:
-            cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
-            if cleaned.startswith("- "):
-                blocks.append(f"• {cleaned[2:].strip()}")
-            else:
-                blocks.append(cleaned)
-        blocks.append("")
-    text = _to_ascii_safe("\n".join(blocks).strip())
-    if len(text) > max_chars:
-        return text[:max_chars].rstrip() + "\n... [continued in email/app]"
-    return text
+    return render_report_email_text(
+        title or "Discere Email Summary",
+        parse_report_markdown_cards(markdown),
+        max_chars=max_chars,
+    )
 
 
 def paragraph_markup(text: str) -> str:
-    escaped = escape(str(text or ""))
+    escaped = escape(clean_markdown_heading_text(str(text or "")))
     return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
 
 
@@ -5207,36 +5428,66 @@ def generate_report_pdf(user_id: str, title: str, markdown: str) -> Path:
         spaceAfter=8,
     )
 
-    sections = parse_markdown_sections(markdown)
+    meta_style = ParagraphStyle(
+        "ReportMeta",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#6f6d66"),
+        spaceAfter=8,
+    )
+
     story: List[Any] = [Paragraph(paragraph_markup(title), title_style), Spacer(1, 0.08 * inch)]
+    cards = parse_report_markdown_cards(markdown)
+    if not cards:
+        cards = [{"title": "Report", "email": "", "updated_at": "", "sections": {"Report": markdown}}]
 
-    if not sections:
-        sections = {"Report": markdown}
+    for card_index, card in enumerate(cards):
+        if card_index:
+            story.append(Spacer(1, 0.12 * inch))
+        story.append(Paragraph(paragraph_markup(str(card.get("title") or "Summary")), heading_style))
+        meta_parts = []
+        if card.get("email") and card.get("email") != card.get("title"):
+            meta_parts.append(str(card["email"]))
+        if card.get("updated_at"):
+            meta_parts.append(f"Updated: {card['updated_at']}")
+        if meta_parts:
+            story.append(Paragraph(paragraph_markup(" | ".join(meta_parts)), meta_style))
 
-    for section_title, section_content in sections.items():
-        lines = [line.strip() for line in str(section_content or "").splitlines() if line.strip()]
-        if not lines:
-            continue
-        story.append(Paragraph(paragraph_markup(section_title), heading_style))
-        bullet_lines = [line[2:] for line in lines if line.startswith("- ")]
-        plain_lines = [line for line in lines if not line.startswith("- ")]
-        for line in plain_lines:
-            story.append(Paragraph(paragraph_markup(line), body_style))
-        if bullet_lines:
-            bullet_items = [
-                ListItem(Paragraph(paragraph_markup(item), body_style), leftIndent=6)
-                for item in bullet_lines
-            ]
-            story.append(
-                ListFlowable(
-                    bullet_items,
-                    bulletType="bullet",
-                    start="circle",
-                    leftIndent=14,
-                    bulletFontName="Helvetica-Bold",
+        sections = card.get("sections") or {}
+        ordered_labels = [label for label in REPORT_SECTION_ORDER if str(sections.get(label, "")).strip()]
+        ordered_labels.extend(label for label in sections if label not in ordered_labels and str(sections.get(label, "")).strip())
+        for section_title in ordered_labels:
+            lines = [clean_markdown_heading_text(line.strip()) for line in str(sections.get(section_title, "") or "").splitlines() if line.strip()]
+            if not lines:
+                continue
+            story.append(Paragraph(paragraph_markup(section_title), heading_style))
+            bullet_lines = []
+            plain_lines = []
+            for line in lines:
+                bullet_match = re.match(r"^(?:[-*•]\s+)(.+)$", line)
+                if bullet_match:
+                    bullet_lines.append(bullet_match.group(1).strip())
+                else:
+                    plain_lines.append(line)
+            for line in plain_lines:
+                story.append(Paragraph(paragraph_markup(line), body_style))
+            if bullet_lines:
+                bullet_items = [
+                    ListItem(Paragraph(paragraph_markup(item), body_style), leftIndent=6)
+                    for item in bullet_lines
+                ]
+                story.append(
+                    ListFlowable(
+                        bullet_items,
+                        bulletType="bullet",
+                        start="circle",
+                        leftIndent=14,
+                        bulletFontName="Helvetica-Bold",
+                    )
                 )
-            )
-            story.append(Spacer(1, 0.06 * inch))
+                story.append(Spacer(1, 0.06 * inch))
 
     document = SimpleDocTemplate(
         str(pdf_path),
@@ -5275,16 +5526,22 @@ def should_attach_pdf_to_message(pdf_path: Path) -> bool:
     return size_bytes <= 600 * 1024
 
 
+def sms_delivery_enabled() -> bool:
+    return os.getenv("EMAIL_SUMMARIZER_SMS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] = None) -> Dict[str, str]:
+    if not sms_delivery_enabled():
+        raise HTTPException(status_code=404, detail="SMS delivery is not available.")
     account_sid = get_app_config_value("TWILIO_ACCOUNT_SID")
     auth_token = get_app_config_value("TWILIO_AUTH_TOKEN")
     from_number = get_app_config_value("TWILIO_FROM_NUMBER")
     messaging_service_sid = get_app_config_value("TWILIO_MESSAGING_SERVICE_SID")
 
     if not account_sid or not auth_token:
-        raise HTTPException(status_code=500, detail="Twilio is not configured yet.")
+        raise HTTPException(status_code=500, detail="SMS delivery is not configured.")
     if not from_number and not messaging_service_sid:
-        raise HTTPException(status_code=500, detail="Set TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID first.")
+        raise HTTPException(status_code=500, detail="SMS delivery is not configured.")
     if not is_valid_e164_phone(phone_number):
         raise HTTPException(status_code=400, detail="Phone number must be in E.164 format, for example +14155550123.")
 
@@ -5320,7 +5577,7 @@ def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] 
             "error",
             metadata={"phone_number": phone_number, "status_code": exc.code, "response": payload_text[:1200]},
         )
-        raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {payload_text}") from exc
+        raise HTTPException(status_code=500, detail="SMS delivery failed.") from exc
     except Exception as exc:
         write_monitoring_event(
             "report_delivery",
@@ -5328,7 +5585,7 @@ def send_text_via_twilio(phone_number: str, body: str, media_url: Optional[str] 
             "error",
             metadata={"phone_number": phone_number, "error": str(exc), "error_type": exc.__class__.__name__},
         )
-        raise HTTPException(status_code=500, detail=f"Twilio SMS send failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="SMS delivery failed.") from exc
 
     return {
         "recipient_phone": phone_number,
@@ -5506,7 +5763,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
     model = normalize_openai_model(settings.get("OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1")
     if not api_key:
         write_monitoring_event("server_error", "openai_key_missing_chat", "error", request=request, user_id=resolved_user_id)
-        raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
+        raise HTTPException(status_code=500, detail="AI Assistant needs attention. Please contact Discere support.")
 
     client = OpenAI(api_key=api_key)
     context = build_chat_context(resolved_user_id, summaries, emails)
@@ -5551,7 +5808,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
             user_id=resolved_user_id,
             metadata={"model": model, "error": str(exc), "error_type": exc.__class__.__name__},
         )
-        raise HTTPException(status_code=500, detail=f"OpenAI chat request failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="AI Assistant could not answer right now. Please try again shortly.") from exc
 
     return {
         "user_id": resolved_user_id,
@@ -5594,6 +5851,8 @@ def send_combined_summary_email(payload: CombinedSummaryRequest, request: Reques
 @app.post("/summaries/combined/send-text")
 def send_combined_summary_text(payload: CombinedSummaryTextRequest, request: Request) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, payload.user_id)
+    if not sms_delivery_enabled():
+        raise HTTPException(status_code=404, detail="SMS delivery is not available.")
     enforce_subscription_access(resolved_user_id, "report_delivery")
     enforce_summary_id_limit(payload.summary_ids)
     enforce_usage_limit(resolved_user_id, "report_delivery")
@@ -5644,7 +5903,7 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
     saved_preferences = parse_summary_style_preferences(settings)
     if not api_key:
         write_monitoring_event("server_error", "openai_key_missing_refine", "error", request=request, user_id=resolved_user_id)
-        raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
+        raise HTTPException(status_code=500, detail="Summary refinement needs attention. Please contact Discere support.")
 
     client = OpenAI(api_key=api_key)
     instructions_text = (
@@ -5686,7 +5945,7 @@ def refine_summary(payload: RefineSummaryRequest, request: Request) -> Dict[str,
             user_id=resolved_user_id,
             metadata={"model": model, "error": str(exc), "error_type": exc.__class__.__name__},
         )
-        raise HTTPException(status_code=500, detail=f"Refine summary request failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Discere could not refine the summary right now. Please try again shortly.") from exc
 
     updated_preferences = saved_preferences
     if payload.save_preference:
@@ -5730,7 +5989,7 @@ def refine_selected_summaries(payload: RefineSelectedSummariesRequest, request: 
     saved_preferences = parse_summary_style_preferences(settings)
     if not api_key:
         write_monitoring_event("server_error", "openai_key_missing_refine_selected", "error", request=request, user_id=resolved_user_id)
-        raise HTTPException(status_code=500, detail=f"No OPENAI_API_KEY configured for user '{resolved_user_id}'.")
+        raise HTTPException(status_code=500, detail="Summary refinement needs attention. Please contact Discere support.")
 
     instructions_text = (
         "You are refining saved email summaries for one user. "
@@ -5794,7 +6053,7 @@ def refine_selected_summaries(payload: RefineSelectedSummariesRequest, request: 
                 user_id=resolved_user_id,
                 metadata={"model": model, "summary_id": summary_id, "error": str(exc), "error_type": exc.__class__.__name__},
             )
-            raise HTTPException(status_code=500, detail=f"Refine summary request failed: {exc}") from exc
+            raise HTTPException(status_code=500, detail="Discere could not refine the summary right now. Please try again shortly.") from exc
 
         updated_summary = apply_refined_markdown_to_summary(summary, response.output_text)
         save_summary_json(summary_path, updated_summary)
@@ -5893,6 +6152,31 @@ def create_bug_report(payload: BugReportRequest, request: Request) -> Dict[str, 
     return {"success": True, "bug_id": bug_id}
 
 
+def sanitize_summarizer_public_error(raw_output: str, parsed_error: str = "") -> str:
+    combined = f"{raw_output or ''}\n{parsed_error or ''}"
+    lower = combined.lower()
+    if is_microsoft_reconnect_error_text(combined):
+        return MICROSOFT_RECONNECT_MESSAGE
+    if "google" in lower and any(
+        token in lower
+        for token in [
+            "invalid credentials",
+            "insufficient authentication scopes",
+            "access_token_scope_insufficient",
+            "http error 401",
+            "http error 403",
+        ]
+    ):
+        return "Google mailbox access expired or needs permission again. Please reconnect Google, then try again."
+    if any(token in lower for token in ["mailbox is not connected", "missing imap credentials", "missing mailbox credentials"]):
+        return "Mailbox connection is not ready. Contact Discere support to finish the private mailbox setup."
+    if "usage limit" in lower or "daily usage limit" in lower:
+        return "Daily usage limit reached. Try again tomorrow."
+    if "openai" in lower:
+        return "Discere could not generate the summary right now. Please try again shortly."
+    return GENERIC_SUMMARIZER_ERROR_MESSAGE
+
+
 def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
     profile = load_profile_or_404(user_id)
     try:
@@ -5950,19 +6234,18 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
     raw_stderr = result.stderr[-4000:]
     safe_stdout = truncate_monitoring_value(raw_stdout, 4000)
     safe_stderr = truncate_monitoring_value(raw_stderr, 4000)
-    public_error = parsed_error
+    public_error = sanitize_summarizer_public_error(f"{raw_stderr}\n{raw_stdout}", parsed_error) if result.returncode != 0 else ""
     reconnect_provider = ""
     reconnect_url = ""
     combined_output = f"{raw_stderr}\n{raw_stdout}\n{parsed_error}"
     if is_microsoft_reconnect_error_text(combined_output):
-        public_error = MICROSOFT_RECONNECT_MESSAGE
         reconnect_provider = "microsoft"
         reconnect_url = microsoft_reconnect_url(profile)
 
     result_payload = {
         "returncode": result.returncode,
-        "stdout": "" if public_error else safe_stdout,
-        "stderr": public_error if public_error else safe_stderr,
+        "stdout": "",
+        "stderr": public_error,
         "stats": parsed_stats,
         "success": result.returncode == 0,
     }
@@ -6051,8 +6334,9 @@ def launch_summarizer_job(user_id: str, days_back: int) -> Dict[str, Any]:
                 "started_at": started_at,
                 "finished_at": datetime.now().isoformat(),
                 "returncode": None,
-                "stdout": (exc.stdout or "")[-4000:],
-                "stderr": ((exc.stderr or "") + "\nTimed out after 600 seconds.")[-4000:],
+                "stdout": "",
+                "stderr": "Discere could not finish the email check before it timed out. Please try again.",
+                "message": "Discere could not finish the email check before it timed out. Please try again.",
                 "stats": {},
                 "success": False,
             }
@@ -6073,7 +6357,8 @@ def launch_summarizer_job(user_id: str, days_back: int) -> Dict[str, Any]:
                 "finished_at": datetime.now().isoformat(),
                 "returncode": None,
                 "stdout": "",
-                "stderr": str(exc),
+                "stderr": GENERIC_SUMMARIZER_ERROR_MESSAGE,
+                "message": GENERIC_SUMMARIZER_ERROR_MESSAGE,
                 "stats": {},
                 "success": False,
             }

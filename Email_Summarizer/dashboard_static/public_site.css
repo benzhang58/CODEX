@@ -183,18 +183,18 @@ a {
 }
 
 .hero-panel {
-  padding: 28px;
+  padding: 38px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 28px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: 22px;
+  justify-content: center;
+  gap: 30px;
 }
 
 .hero-panel-title {
-  font-size: 1.45rem;
+  font-size: clamp(1.95rem, 2.65vw, 2.85rem);
   font-weight: 800;
   margin: 0;
   line-height: 1.08;
@@ -204,12 +204,13 @@ a {
   margin: 0;
   padding-left: 20px;
   display: grid;
-  gap: 18px;
+  gap: 24px;
   color: #34312d;
+  font-size: clamp(1.18rem, 1.55vw, 1.55rem);
 }
 
 .hero-list li {
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 .feature-grid {

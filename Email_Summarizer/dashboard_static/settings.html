@@ -732,7 +732,7 @@
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
-          <p class="inline-note">Private client mailbox connection. For 263 email, use a client authorization code or app password if available instead of your main mailbox password.</p>
+          <p class="inline-note">Private client mailbox connection. Discere configures the approved 263 connection with a client authorization code or app password instead of your main mailbox password.</p>
           <div id="mailboxConnectionStatus" class="connection-status disconnected">
             <span class="dot" aria-hidden="true"></span>
             <span id="mailboxConnectionStatusText">Not Connected</span>
@@ -742,7 +742,7 @@
               <strong id="mailboxConnectedLabel">Mailbox connected</strong>
               <span id="mailboxConnectedEmail">Connected</span>
             </div>
-            <button id="changeMailboxButton" type="button" class="secondary">Change Email Connection</button>
+            <button id="changeMailboxButton" type="button" class="secondary" hidden>Change Email Connection</button>
           </div>
           <div id="mailboxStatus" class="status"></div>
         </div>
@@ -1187,6 +1187,15 @@
         });
       }
 
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
       function renderSummaryPreferences(preferences) {
         const items = Array.isArray(preferences) ? preferences : [];
         if (!items.length) {
@@ -1198,8 +1207,8 @@
           .map(
             (preference) => `
               <div class="preference-item">
-                <span>${preference}</span>
-                <button class="preference-remove" type="button" data-preference="${preference}">×</button>
+                <span>${escapeHtml(preference)}</span>
+                <button class="preference-remove" type="button" data-preference="${escapeHtml(preference)}">×</button>
               </div>
             `
           )
@@ -1378,8 +1387,10 @@
 
         mailboxConnectedSummary.hidden = false;
         mailboxConnectedLabel.textContent = showConnectedState ? "Mailbox connected" : "No mailbox connected";
-        mailboxConnectedEmail.textContent = showConnectedState ? (connectedEmail || "Connected") : "Add your mailbox login to continue.";
-        changeMailboxButton.textContent = showConnectedState ? "Change Email Connection" : "Add Email Connection";
+        mailboxConnectedEmail.textContent = showConnectedState
+          ? "Mailbox connection is configured."
+          : "Mailbox connection is not ready. Contact Discere support.";
+        changeMailboxButton.hidden = true;
       }
 
       function setMailboxConnectionStatus(connected) {

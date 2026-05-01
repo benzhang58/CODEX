@@ -222,13 +222,13 @@
         const code = String(errorCode || "").trim();
         const lower = code.toLowerCase();
         if (lower === "not_configured") {
-          return `${label} sign-in is not configured yet. Add the ${label} OAuth client ID and secret first.`;
+          return `${label} sign-in is temporarily unavailable. Please contact Discere support if this keeps happening.`;
         }
         if (lower === "invalid_callback") {
-          return `${label} sign-in failed because the callback did not match this browser session. Try again from this login page. If it keeps happening, confirm the production callback URL is configured in ${label}.`;
+          return `${label} sign-in could not be completed from this browser session. Try again from this login page.`;
         }
         if (lower === "token_exchange_failed") {
-          return `${label} sign-in failed while exchanging the login code. Confirm the OAuth secret and redirect URL are correct, then try again.`;
+          return `${label} sign-in could not be completed. Please try again, or contact Discere support if it keeps happening.`;
         }
         if (lower.includes("access_denied") || lower.includes("consent") || lower.includes("permission")) {
           return `${label} sign-in needs the requested permissions to continue. Try again and approve the permissions shown on the ${label} consent screen.`;
