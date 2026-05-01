@@ -25,6 +25,7 @@ os.environ["SMTP_PASSWORD"] = "global-smtp-password"
 os.environ["SUMMARY_RECIPIENT"] = "global-recipient@example.com"
 os.environ["EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY"] = "100"
 os.environ["EMAIL_SUMMARIZER_LIMIT_RUN_SUMMARIZER_PER_DAY"] = "10"
+os.environ["EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD"] = "VIPCLIENT"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -64,11 +65,19 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def signup(self, email: str) -> TestClient:
         client = TestClient(dashboard_api.app, base_url="https://discere-test.example")
+        existing_allowlist = {
+            item.strip().lower()
+            for item in os.environ.get("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", "").split(",")
+            if item.strip()
+        }
+        existing_allowlist.add(email.strip().lower())
+        os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = ",".join(sorted(existing_allowlist))
         response = client.post(
             "/auth/signup",
             json={
                 "email": email,
                 "password": "StrongPass123!",
+                "manual_access_password": "VIPCLIENT",
                 "accept_terms": True,
                 "accept_privacy": True,
             },
@@ -110,6 +119,162 @@ class SecurityRegressionTests(unittest.TestCase):
         response = client.get("/login", follow_redirects=False)
         self.assertEqual(response.status_code, 307, response.text)
         self.assertEqual(response.headers.get("location"), "/dashboard")
+
+    def test_public_signup_route_redirects_to_login(self) -> None:
+        response = self.client.get("/signup", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(response.headers.get("location"), "/login")
+
+        manual_response = self.client.get("/manual-signup")
+        self.assertEqual(manual_response.status_code, 200, manual_response.text)
+        self.assertIn("Private Client Signup", manual_response.text)
+
+    def test_manual_signup_requires_allowlisted_email_and_private_password(self) -> None:
+        blocked_response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "public-blocked@example.com",
+                "password": "StrongPass123!",
+                "manual_access_password": "VIPCLIENT",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+        self.assertEqual(blocked_response.status_code, 403, blocked_response.text)
+
+        os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "approved-private@example.com"
+        wrong_password_response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "approved-private@example.com",
+                "password": "StrongPass123!",
+                "manual_access_password": "wrong",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+        self.assertEqual(wrong_password_response.status_code, 403, wrong_password_response.text)
+
+        allowed_response = self.client.post(
+            "/auth/signup",
+            json={
+                "email": "approved-private@example.com",
+                "password": "StrongPass123!",
+                "manual_access_password": "VIPCLIENT",
+                "accept_terms": True,
+                "accept_privacy": True,
+            },
+        )
+        self.assertEqual(allowed_response.status_code, 200, allowed_response.text)
+        self.assertTrue(allowed_response.json()["profile"]["manual_mailbox_allowed"])
+
+    def test_non_allowlisted_user_cannot_save_manual_mailbox_password(self) -> None:
+        original_allowlist = os.environ.get("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", "")
+        try:
+            os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "temporary-standard@example.com"
+            client = TestClient(dashboard_api.app, base_url="https://discere-test.example")
+            signup_response = client.post(
+                "/auth/signup",
+                json={
+                    "email": "temporary-standard@example.com",
+                    "password": "StrongPass123!",
+                    "manual_access_password": "VIPCLIENT",
+                    "accept_terms": True,
+                    "accept_privacy": True,
+                },
+            )
+            self.assertEqual(signup_response.status_code, 200, signup_response.text)
+            os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = ""
+
+            response = client.put(
+                "/profile",
+                json={
+                    "email": "temporary-standard@example.com",
+                    "imap_user": "temporary-standard@example.com",
+                    "imap_password": "MailboxPass123!",
+                },
+            )
+            self.assertEqual(response.status_code, 403, response.text)
+        finally:
+            os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = original_allowlist
+
+    def test_login_and_mailbox_passwords_are_encrypted_and_not_returned(self) -> None:
+        client = self.signup("password-storage@example.com")
+        self.connect_standard_mailbox(client, "password-storage@example.com")
+
+        profile_response = client.get("/auth/me")
+        self.assertEqual(profile_response.status_code, 200, profile_response.text)
+        serialized_profile = json.dumps(profile_response.json())
+        self.assertNotIn("StrongPass123!", serialized_profile)
+        self.assertNotIn("MailboxPass123!", serialized_profile)
+        self.assertNotIn("password_hash", serialized_profile)
+        self.assertNotIn("password_salt", serialized_profile)
+        self.assertNotIn("imap_password", serialized_profile.lower())
+        self.assertNotIn("smtp_password", serialized_profile.lower())
+
+        with dashboard_api.get_db_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT password_hash, password_salt, settings_json
+                FROM users
+                WHERE user_id = ?
+                """,
+                ("password_storage_example_com",),
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        self.assertNotEqual(row["password_hash"], "StrongPass123!")
+        self.assertTrue(row["password_salt"])
+        self.assertTrue(str(row["settings_json"]).startswith("enc::"))
+        self.assertNotIn("MailboxPass123!", row["settings_json"])
+        self.assertNotIn("password-storage@example.com", row["settings_json"])
+
+    def test_oauth_tokens_are_encrypted_and_not_returned(self) -> None:
+        client = self.signup("oauth-secret-storage@example.com")
+        profile = dashboard_api.load_profile_or_404("oauth_secret_storage_example_com")
+        profile["google_oauth"] = {
+            "provider": "google",
+            "email": "oauth-secret-storage@example.com",
+            "access_token": "google-access-secret",
+            "refresh_token": "google-refresh-secret",
+            "id_token": "google-id-secret",
+        }
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "oauth-secret-storage@example.com",
+            "access_token": "microsoft-access-secret",
+            "refresh_token": "microsoft-refresh-secret",
+            "id_token": "microsoft-id-secret",
+        }
+        dashboard_api.save_profile(profile)
+
+        profile_response = client.get("/auth/me")
+        self.assertEqual(profile_response.status_code, 200, profile_response.text)
+        serialized_profile = json.dumps(profile_response.json())
+        for secret in [
+            "google-access-secret",
+            "google-refresh-secret",
+            "google-id-secret",
+            "microsoft-access-secret",
+            "microsoft-refresh-secret",
+            "microsoft-id-secret",
+        ]:
+            self.assertNotIn(secret, serialized_profile)
+
+        with dashboard_api.get_db_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT google_oauth_json, microsoft_oauth_json
+                FROM users
+                WHERE user_id = ?
+                """,
+                ("oauth_secret_storage_example_com",),
+            ).fetchone()
+
+        self.assertTrue(str(row["google_oauth_json"]).startswith("enc::"))
+        self.assertTrue(str(row["microsoft_oauth_json"]).startswith("enc::"))
+        self.assertNotIn("google-refresh-secret", row["google_oauth_json"])
+        self.assertNotIn("microsoft-refresh-secret", row["microsoft_oauth_json"])
 
     def test_email_hint_flags_default_false_and_persist_true(self) -> None:
         client = self.signup("email-hints@example.com")
@@ -1901,7 +2066,15 @@ class SecurityRegressionTests(unittest.TestCase):
             "manual_secret_test",
             "warning",
             user_id="monitor_example_com",
-            metadata={"api_key": "should-redact", "safe": "visible"},
+            metadata={
+                "api_key": "should-redact",
+                "safe": "visible",
+                "detail": (
+                    "Authorization: Bearer abcdefghijklmnopqrstuvwxyz "
+                    "IMAP_PASSWORD=mailbox-secret "
+                    '{"refresh_token":"refresh-secret","safe":"kept"}'
+                ),
+            },
         )
 
         with dashboard_api.get_db_connection() as connection:
@@ -1918,6 +2091,10 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertIn("manual_secret_test", serialized)
         self.assertIn("[redacted]", serialized)
         self.assertNotIn("should-redact", serialized)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz", serialized)
+        self.assertNotIn("mailbox-secret", serialized)
+        self.assertNotIn("refresh-secret", serialized)
+        self.assertIn("visible", serialized)
 
 
 if __name__ == "__main__":

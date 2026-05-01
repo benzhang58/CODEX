@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Create Account</title>
+    <title>Private Client Signup</title>
     <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
     <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
     <style>
@@ -159,8 +159,13 @@
   </head>
   <body>
     <main class="card">
-      <h1>Create Account</h1>
-      <p>If you use Gmail or Outlook, you do not need to create an account. Go straight to Log In.</p>
+      <h1>Private Client Signup</h1>
+      <p>This page is only for approved private clients. Gmail and Outlook users should log in normally.</p>
+
+      <div class="field">
+        <label for="accessPasswordInput">Private Access Password</label>
+        <input id="accessPasswordInput" type="password" placeholder="Private access password" autocomplete="off" />
+      </div>
 
       <div class="field">
         <label for="emailInput">Email</label>
@@ -197,8 +202,8 @@
       </label>
 
       <div class="actions">
-        <button id="createButton" type="button">Create Account</button>
-        <a class="secondary-button" href="/login">Back to Login</a>
+        <button id="createButton" type="button">Create Private Account</button>
+        <a class="secondary-button" href="/manual-login">Back to Private Login</a>
       </div>
 
       <div id="status" class="status"></div>
@@ -207,6 +212,7 @@
     <script>
       const emailInput = document.getElementById("emailInput");
       const passwordInput = document.getElementById("passwordInput");
+      const accessPasswordInput = document.getElementById("accessPasswordInput");
       const birthdayInput = document.getElementById("birthdayInput");
       const genderInput = document.getElementById("genderInput");
       const acceptTermsInput = document.getElementById("acceptTermsInput");
@@ -220,11 +226,12 @@
       async function signup() {
         const email = emailInput.value.trim();
         const password = passwordInput.value;
+        const manualAccessPassword = accessPasswordInput.value;
         const birthday = birthdayInput.value.trim();
         const gender = genderInput.value.trim();
         const accepted = acceptTermsInput.checked;
 
-        if (!email || !password || !birthday || !gender) {
+        if (!manualAccessPassword || !email || !password || !birthday || !gender) {
           status.textContent = "Complete all fields first.";
           return;
         }
@@ -244,18 +251,26 @@
           const response = await fetch("/auth/signup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password, birthday, gender, accept_terms: true, accept_privacy: true }),
+            body: JSON.stringify({
+              email,
+              password,
+              manual_access_password: manualAccessPassword,
+              birthday,
+              gender,
+              accept_terms: true,
+              accept_privacy: true,
+            }),
           });
           const data = await response.json();
 
           if (!response.ok) {
-            status.textContent = data.detail || "Failed to create account.";
+            status.textContent = data.detail || "Failed to create private account.";
             return;
           }
 
           window.location.href = "/dashboard";
         } catch (error) {
-          status.textContent = `Failed to create account: ${error.message}`;
+          status.textContent = `Failed to create private account: ${error.message}`;
         } finally {
           createButton.disabled = false;
         }

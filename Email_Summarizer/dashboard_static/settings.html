@@ -732,7 +732,7 @@
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
-          <p class="inline-note">Use this only if your email is not Gmail or Outlook. This updates the mailbox credentials the summarizer uses. It does not change your dashboard login password.</p>
+          <p class="inline-note">Private client mailbox connection. For 263 email, use a client authorization code or app password if available instead of your main mailbox password.</p>
           <div id="mailboxConnectionStatus" class="connection-status disconnected">
             <span class="dot" aria-hidden="true"></span>
             <span id="mailboxConnectionStatusText">Not Connected</span>
@@ -756,7 +756,7 @@
               <div class="howto-step">1</div>
               <div class="howto-copy">
                 <strong>Connect your mailbox</strong>
-                <p>Gmail and Outlook are connected by login. Other email providers connect in Settings.</p>
+                <p>Gmail and Outlook are connected by login.</p>
               </div>
             </div>
 
@@ -1358,10 +1358,12 @@
       }
 
       function syncMailboxConnectionUI() {
+        const canUseManualMailbox = Boolean(currentProfile?.manual_mailbox_allowed);
         const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
-        mailboxSection.hidden = !isPasswordBased;
-        mailboxSection.style.display = isPasswordBased ? "" : "none";
-        if (!isPasswordBased) {
+        const showMailboxSettings = isPasswordBased && canUseManualMailbox;
+        mailboxSection.hidden = !showMailboxSettings;
+        mailboxSection.style.display = showMailboxSettings ? "" : "none";
+        if (!showMailboxSettings) {
           mailboxConnectedSummary.hidden = true;
           mailboxStatus.textContent = "";
           mailboxConnectionStatus.classList.remove("connected", "disconnected");
@@ -1387,8 +1389,9 @@
       }
 
       async function refreshMailboxConnectionStatus() {
+        const canUseManualMailbox = Boolean(currentProfile?.manual_mailbox_allowed);
         const isPasswordBased = currentProfile && !currentProfile.google_connected && !currentProfile.microsoft_connected;
-        if (!isPasswordBased || !currentProfile?.user_id) {
+        if (!isPasswordBased || !canUseManualMailbox || !currentProfile?.user_id) {
           mailboxSection.hidden = true;
           mailboxSection.style.display = "none";
           return;

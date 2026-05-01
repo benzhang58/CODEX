@@ -147,6 +147,67 @@ def cors_origins_are_production_safe() -> bool:
     return "*" not in APP_CORS_ORIGINS and all(origin.startswith("https://") for origin in non_local_origins)
 
 
+def configured_manual_mailbox_allowed_emails() -> set[str]:
+    raw_value = os.getenv("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", "")
+    return {
+        item.strip().lower()
+        for item in raw_value.split(",")
+        if item.strip()
+    }
+
+
+def manual_signup_access_password() -> str:
+    return (
+        os.getenv("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", "").strip()
+        or DEFAULT_MANUAL_SIGNUP_ACCESS_PASSWORD
+    )
+
+
+def email_is_manual_mailbox_allowed(email: str) -> bool:
+    normalized = str(email or "").strip().lower()
+    return bool(normalized and normalized in configured_manual_mailbox_allowed_emails())
+
+
+def profile_manual_mailbox_allowed(profile: Dict[str, Any]) -> bool:
+    candidates = {
+        str(profile.get("email", "") or "").strip().lower(),
+        str((profile.get("google_oauth") or {}).get("email", "") or "").strip().lower(),
+        str((profile.get("microsoft_oauth") or {}).get("email", "") or "").strip().lower(),
+    }
+    normalized_microsoft = normalize_microsoft_display_email(str((profile.get("microsoft_oauth") or {}).get("email", "") or ""))
+    if normalized_microsoft:
+        candidates.add(normalized_microsoft.strip().lower())
+    allowed = configured_manual_mailbox_allowed_emails()
+    return bool(allowed and (candidates & allowed))
+
+
+def validate_manual_signup_access(email: str, provided_password: str) -> None:
+    if not email_is_manual_mailbox_allowed(email):
+        write_monitoring_event(
+            "security",
+            "manual_signup_email_not_allowlisted",
+            "warning",
+            metadata={"email": email},
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Manual account creation is available only for approved private clients. Use Google or Microsoft to log in.",
+        )
+    expected = manual_signup_access_password()
+    if not hmac.compare_digest(str(provided_password or ""), expected):
+        write_monitoring_event(
+            "security",
+            "manual_signup_access_denied",
+            "warning",
+            metadata={"email": email},
+        )
+        raise HTTPException(status_code=403, detail="Incorrect private signup access password.")
+
+
+def request_contains_manual_mailbox_update(payload: "ProfileUpdateRequest") -> bool:
+    return bool(str(payload.imap_password or "").strip() or str(payload.smtp_password or "").strip())
+
+
 def get_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for", "")
     if forwarded_for:
@@ -158,23 +219,55 @@ def monitoring_enabled() -> bool:
     return os.getenv("EMAIL_SUMMARIZER_MONITORING_ENABLED", "true").lower() != "false"
 
 
+SENSITIVE_METADATA_KEY_TERMS = ("token", "secret", "password", "authorization", "cookie", "api_key", "key")
+SENSITIVE_TEXT_PATTERNS = [
+    re.compile(r"(?i)\b(bearer)\s+[a-z0-9._~+/=-]{12,}"),
+    re.compile(
+        r"(?i)(\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|AUTHORIZATION|COOKIE|API_KEY|KEY)[A-Z0-9_]*\b\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;}\]]+)"
+    ),
+    re.compile(
+        r"(?i)((?:\"|')?(?:access_token|refresh_token|id_token|client_secret|password|api_key)(?:\"|')?\s*:\s*)(\"[^\"]*\"|'[^']*'|[^\s,;}\]]+)"
+    ),
+]
+
+
+def redact_sensitive_text(value: str) -> str:
+    text = str(value or "")
+    redacted = text
+    redacted = SENSITIVE_TEXT_PATTERNS[0].sub(r"\1 [redacted]", redacted)
+    for pattern in SENSITIVE_TEXT_PATTERNS[1:]:
+        redacted = pattern.sub(r"\1[redacted]", redacted)
+    return redacted
+
+
+def truncate_monitoring_value(value: str, max_chars: int = 1200) -> str:
+    text = redact_sensitive_text(value)
+    return text[:max_chars] + ("...[truncated]" if len(text) > max_chars else "")
+
+
+def safe_monitoring_value(key_text: str, value: Any) -> Any:
+    if any(term in key_text.lower() for term in SENSITIVE_METADATA_KEY_TERMS):
+        return "[redacted]"
+    if isinstance(value, str):
+        return truncate_monitoring_value(value)
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {
+            str(child_key): safe_monitoring_value(str(child_key), child_value)
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [safe_monitoring_value(key_text, item) for item in value][:50]
+    serialized = json.dumps(value, ensure_ascii=False, default=str)
+    return truncate_monitoring_value(serialized)
+
+
 def safe_monitoring_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    blocked_terms = ("token", "secret", "password", "authorization", "cookie", "key")
     safe: Dict[str, Any] = {}
     for key, value in (metadata or {}).items():
         key_text = str(key)
-        if any(term in key_text.lower() for term in blocked_terms):
-            safe[key_text] = "[redacted]"
-            continue
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            text_value = str(value) if isinstance(value, str) else value
-            if isinstance(text_value, str) and len(text_value) > 1200:
-                safe[key_text] = text_value[:1200] + "...[truncated]"
-            else:
-                safe[key_text] = text_value
-        else:
-            serialized = json.dumps(value, ensure_ascii=False, default=str)
-            safe[key_text] = serialized[:1200] + ("...[truncated]" if len(serialized) > 1200 else "")
+        safe[key_text] = safe_monitoring_value(key_text, value)
     return safe
 
 
@@ -454,6 +547,7 @@ MICROSOFT_RECONNECT_MESSAGE = (
     "Microsoft mailbox access expired or needs permission again. "
     "Please reconnect Microsoft in Settings, then try again."
 )
+DEFAULT_MANUAL_SIGNUP_ACCESS_PASSWORD = "VIPCLIENT"
 REQUIRED_PRODUCTION_ENV_VARS = [
     "EMAIL_SUMMARIZER_PUBLIC_BASE_URL",
     "OPENAI_API_KEY",
@@ -856,6 +950,7 @@ class SignupRequest(BaseModel):
     user_id: Optional[str] = None
     email: str
     password: str
+    manual_access_password: str = ""
     birthday: str = ""
     gender: str = ""
     accept_terms: bool = False
@@ -977,6 +1072,8 @@ def build_deploy_readiness() -> Dict[str, Any]:
         "google_redirect_configured_or_derivable": bool(get_app_config_value("GOOGLE_REDIRECT_URI") or PUBLIC_BASE_URL),
         "microsoft_redirect_configured_or_derivable": bool(get_app_config_value("MICROSOFT_REDIRECT_URI") or PUBLIC_BASE_URL),
         "discere_report_sender_configured": bool(report_sender["host"] and report_sender["user"] and report_sender["password"]),
+        "manual_mailbox_allowlist_configured": bool(configured_manual_mailbox_allowed_emails()),
+        "manual_signup_access_password_custom": bool(os.getenv("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", "").strip()),
         "rate_limit_enabled": is_rate_limit_enabled(),
         "cors_origins_production_safe": cors_origins_are_production_safe(),
         "security_headers_enabled": True,
@@ -1033,6 +1130,8 @@ def build_deploy_readiness() -> Dict[str, Any]:
         warnings.append("Google OAuth redirect URL is not configured or derivable.")
     if not checks["microsoft_redirect_configured_or_derivable"]:
         warnings.append("Microsoft OAuth redirect URL is not configured or derivable.")
+    if checks["manual_mailbox_allowlist_configured"] and not checks["manual_signup_access_password_custom"]:
+        warnings.append("Manual mailbox allowlist is configured; set EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD to a private value.")
 
     return {
         "status": "ready" if not errors else "needs_attention",
@@ -1242,8 +1341,18 @@ def settings_page() -> FileResponse:
 
 
 @app.get("/signup")
-def signup_page() -> FileResponse:
+def signup_page() -> RedirectResponse:
+    return RedirectResponse("/login")
+
+
+@app.get("/manual-signup")
+def manual_signup_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "signup.html")
+
+
+@app.get("/manual-login")
+def manual_login_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "login.html")
 
 
 @app.get("/privacy")
@@ -1273,6 +1382,7 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Email is required.")
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Incorrect email.")
+    validate_manual_signup_access(email, request.manual_access_password)
     user_id = _slugify_user_id(request.user_id) if request.user_id and request.user_id.strip() else user_id_from_email(email)
     if len(request.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
@@ -1328,6 +1438,17 @@ def login(request: LoginRequest, response: Response) -> Dict[str, Any]:
 
     if not profile or not _verify_password(request.password, profile["password_hash"], profile["password_salt"]):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
+    if not google_connected and not microsoft_connected and not profile_manual_mailbox_allowed(profile):
+        write_monitoring_event(
+            "security",
+            "manual_login_email_not_allowlisted",
+            "warning",
+            user_id=str(profile.get("user_id", "")),
+            metadata={"email": profile.get("email", "")},
+        )
+        raise HTTPException(status_code=403, detail="This account must use Google or Microsoft sign-in.")
 
     create_session(response, profile["user_id"])
     return {"success": True, "profile": profile_response(profile)}
@@ -1780,6 +1901,16 @@ def get_profile(request: Request, user_id: Optional[str] = Query(None)) -> Dict[
 def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Optional[str] = Query(None)) -> Dict[str, Any]:
     resolved_user_id = resolve_user_id(request, user_id)
     profile = load_profile_or_404(resolved_user_id)
+    if request_contains_manual_mailbox_update(payload) and not profile_manual_mailbox_allowed(profile):
+        write_monitoring_event(
+            "security",
+            "manual_mailbox_update_not_allowlisted",
+            "warning",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"email": profile.get("email", "")},
+        )
+        raise HTTPException(status_code=403, detail="Manual mailbox connection is available only for approved private clients.")
     if payload.email.strip():
         profile["email"] = payload.email.strip()
     profile["settings"] = profile_update_to_settings(payload, {**default_profile_settings(), **(profile.get("settings") or {})})
@@ -2053,6 +2184,12 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
             "connected": True,
             "status": "Connected",
             "reason": "oauth_connected",
+        }
+    if not profile_manual_mailbox_allowed(profile):
+        return {
+            "connected": False,
+            "status": "Not Available",
+            "reason": "manual_mailbox_not_allowed",
         }
 
     settings = apply_provider_defaults(
@@ -2590,6 +2727,17 @@ def ensure_mailbox_access_ready(
         if refresh_oauth:
             refresh_microsoft_access_token(profile)
         return
+
+    if not profile_manual_mailbox_allowed(profile):
+        write_monitoring_event(
+            "security",
+            "password_mailbox_run_not_allowlisted",
+            "warning",
+            request=request,
+            user_id=user_id,
+            metadata={"email": profile.get("email", "")},
+        )
+        raise HTTPException(status_code=403, detail="Use Google or Microsoft sign-in to connect your mailbox.")
 
     if not password_mailbox_is_configured(profile):
         write_monitoring_event(
@@ -3317,6 +3465,7 @@ def profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
         "contact_profiles": contact_profiles,
         "google_connected": google_connected,
         "microsoft_connected": microsoft_connected,
+        "manual_mailbox_allowed": profile_manual_mailbox_allowed(profile),
         "auth_provider": auth_provider,
         "subscription": subscription,
         "settings": response_settings,
@@ -4062,8 +4211,8 @@ Contacts and summarization behavior:
 - Discere is designed to process trigger emails only when the actual parsed From email matches a tracked contact.
 - Gmail OAuth uses Gmail API read-only access to find and read relevant Gmail messages. Gmail OAuth does not use IMAP.
 - Microsoft OAuth uses Microsoft Graph mailbox access plus refresh/offline access for scheduled runs.
-- Non-OAuth providers such as 263.com use the mailbox credentials/IMAP settings the user enters in Mailbox Connection.
-- Gmail and Microsoft OAuth users do not need the Mailbox Connection module. Standard/non-OAuth users use Mailbox Connection.
+- The public product supports Gmail and Microsoft/Outlook only.
+- Approved private clients may have a separate manual mailbox setup, but normal public users do not see or use Mailbox Connection.
 - The summarizer reconstructs thread context so a summary can include relevant messages and attachments in the thread, not only the single trigger email.
 
 Read, done, delete, and re-summarization:
@@ -5799,6 +5948,8 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
 
     raw_stdout = result.stdout[-4000:]
     raw_stderr = result.stderr[-4000:]
+    safe_stdout = truncate_monitoring_value(raw_stdout, 4000)
+    safe_stderr = truncate_monitoring_value(raw_stderr, 4000)
     public_error = parsed_error
     reconnect_provider = ""
     reconnect_url = ""
@@ -5810,8 +5961,8 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
 
     result_payload = {
         "returncode": result.returncode,
-        "stdout": "" if public_error else raw_stdout,
-        "stderr": public_error if public_error else raw_stderr,
+        "stdout": "" if public_error else safe_stdout,
+        "stderr": public_error if public_error else safe_stderr,
         "stats": parsed_stats,
         "success": result.returncode == 0,
     }
@@ -5845,8 +5996,8 @@ def execute_summarizer_run(user_id: str, days_back: int) -> Dict[str, Any]:
             metadata={
                 "days_back": days_back,
                 "returncode": result_payload.get("returncode"),
-                "stderr_tail": raw_stderr[-1200:],
-                "stdout_tail": raw_stdout[-1200:],
+                "stderr_tail": safe_stderr[-1200:],
+                "stdout_tail": safe_stdout[-1200:],
                 "public_error": public_error,
             },
         )

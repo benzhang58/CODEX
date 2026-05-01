@@ -84,22 +84,20 @@
 
       .actions {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: 1fr 1fr;
         gap: 12px;
         margin-top: 20px;
       }
 
-      .create-account-row {
-        margin-top: 14px;
-        text-align: center;
+      .manual-login-panel {
+        display: none;
+        margin-top: 22px;
+        padding-top: 22px;
+        border-top: 1px solid var(--border);
       }
 
-      .create-account-link {
-        display: inline-block;
-        font-size: 13px;
-        color: var(--muted);
-        text-decoration: underline;
-        text-underline-offset: 3px;
+      .manual-login-panel.is-visible {
+        display: block;
       }
 
       button,
@@ -143,26 +141,26 @@
   <body>
     <main class="card">
       <h1>Email Dashboard</h1>
-      <p>Log in with Gmail or Outlook. If you have a different email address, create an account.</p>
-
-      <div class="field">
-        <label for="emailInput">Email</label>
-        <input id="emailInput" type="email" placeholder="you@example.com" />
-      </div>
-
-      <div class="field">
-        <label for="passwordInput">Password</label>
-        <input id="passwordInput" type="password" placeholder="Password" />
-      </div>
+      <p>Log in with Gmail or Outlook.</p>
 
       <div class="actions">
-        <button id="loginButton" type="button">Log In</button>
         <a id="googleOauthButton" class="secondary-button" href="/auth/google/start">Continue with Google</a>
         <a id="microsoftOauthButton" class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
       </div>
 
-      <div class="create-account-row">
-        <a class="create-account-link" href="/signup">Create account</a>
+      <div id="manualLoginPanel" class="manual-login-panel" hidden>
+        <p>Approved private clients can sign in below.</p>
+        <div class="field">
+          <label for="emailInput">Email</label>
+          <input id="emailInput" type="email" placeholder="you@example.com" />
+        </div>
+
+        <div class="field">
+          <label for="passwordInput">Password</label>
+          <input id="passwordInput" type="password" placeholder="Password" />
+        </div>
+
+        <button id="loginButton" type="button">Log In</button>
       </div>
 
       <div id="status" class="status"></div>
@@ -172,9 +170,16 @@
       const emailInput = document.getElementById("emailInput");
       const passwordInput = document.getElementById("passwordInput");
       const loginButton = document.getElementById("loginButton");
+      const manualLoginPanel = document.getElementById("manualLoginPanel");
       const googleOauthButton = document.getElementById("googleOauthButton");
       const microsoftOauthButton = document.getElementById("microsoftOauthButton");
       const status = document.getElementById("status");
+      const manualLoginMode = window.location.pathname === "/manual-login";
+
+      if (manualLoginMode) {
+        manualLoginPanel.hidden = false;
+        manualLoginPanel.classList.add("is-visible");
+      }
 
       function getNextDestination() {
         const params = new URLSearchParams(window.location.search);

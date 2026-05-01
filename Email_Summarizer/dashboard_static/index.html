@@ -3518,7 +3518,7 @@
           {
             complete: hasMailboxAccess,
             title: "Connect your mailbox",
-            copy: "Gmail and Outlook are connected by login. Other email providers connect in Settings.",
+            copy: "Gmail and Outlook are connected by login.",
           },
           {
             complete: hasName,
@@ -3744,7 +3744,7 @@
 
       function requireSignedIn() {
         if (currentUserId) return true;
-        setRunStatus("Log in or create an account first.");
+        setRunStatus("Log in with Gmail or Microsoft first.");
         return false;
       }
 
