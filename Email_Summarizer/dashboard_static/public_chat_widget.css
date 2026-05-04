@@ -1,0 +1,193 @@
+/* Discere public chat widget. Remove this file and its page includes to remove the widget. */
+.public-chat-launcher {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  border: 1px solid #121212;
+  border-radius: 999px;
+  background: #121212;
+  color: #fff;
+  min-height: 56px;
+  padding: 0 22px;
+  box-shadow: 0 18px 50px rgba(18, 18, 18, 0.18);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.public-chat-window {
+  position: fixed;
+  right: 24px;
+  bottom: 94px;
+  z-index: 81;
+  width: min(410px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 120px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(18, 18, 18, 0.12);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 28px 90px rgba(18, 18, 18, 0.22);
+}
+
+.public-chat-window[hidden] {
+  display: none;
+}
+
+.public-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(18, 18, 18, 0.08);
+  cursor: grab;
+  user-select: none;
+}
+
+.public-chat-window.is-dragging .public-chat-header {
+  cursor: grabbing;
+}
+
+.public-chat-kicker {
+  color: #6e6a63;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.public-chat-title {
+  margin-top: 2px;
+  color: #121212;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.public-chat-close {
+  border: 1px solid rgba(18, 18, 18, 0.1);
+  border-radius: 14px;
+  background: #fff;
+  color: #121212;
+  width: 42px;
+  height: 42px;
+  font-size: 1.3rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.public-chat-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.public-chat-messages {
+  display: grid;
+  gap: 10px;
+  min-height: 220px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.public-chat-message {
+  border-radius: 18px;
+  padding: 12px 14px;
+  color: #2d2a26;
+  line-height: 1.45;
+  font-size: 0.96rem;
+  white-space: pre-wrap;
+}
+
+.public-chat-message.assistant {
+  justify-self: start;
+  background: #f5f0e8;
+}
+
+.public-chat-message.user {
+  justify-self: end;
+  background: #121212;
+  color: #fff;
+}
+
+.public-chat-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.public-chat-prompt {
+  border: 1px solid rgba(18, 18, 18, 0.1);
+  border-radius: 999px;
+  background: #fff;
+  color: #121212;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.public-chat-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.public-chat-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid rgba(18, 18, 18, 0.12);
+  border-radius: 16px;
+  background: #fff;
+  color: #121212;
+  padding: 13px 14px;
+  font: inherit;
+}
+
+.public-chat-send {
+  border: 1px solid #121212;
+  border-radius: 16px;
+  background: #121212;
+  color: #fff;
+  padding: 0 16px;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.public-chat-status {
+  min-height: 20px;
+  margin-top: 10px;
+  color: #6e6a63;
+  font-size: 0.85rem;
+}
+
+.public-chat-launcher:focus-visible,
+.public-chat-close:focus-visible,
+.public-chat-prompt:focus-visible,
+.public-chat-input:focus-visible,
+.public-chat-send:focus-visible {
+  outline: 3px solid rgba(18, 18, 18, 0.24);
+  outline-offset: 3px;
+}
+
+@media (max-width: 620px) {
+  .public-chat-launcher {
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .public-chat-window {
+    right: 16px;
+    bottom: 84px;
+    max-height: calc(100vh - 104px);
+  }
+}

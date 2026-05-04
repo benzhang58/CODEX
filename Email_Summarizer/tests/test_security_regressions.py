@@ -1913,6 +1913,37 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(exempt_checkout.status_code, 200, exempt_checkout.text)
         self.assertIn("No billing is required", exempt_checkout.json()["message"])
 
+    def test_public_chat_is_unauthenticated_and_does_not_include_user_email_data(self) -> None:
+        summaries_dir = dashboard_api.get_user_json_summaries_dir("private_user_example_com")
+        summaries_dir.mkdir(parents=True, exist_ok=True)
+        (summaries_dir / "private_summary.json").write_text(
+            json.dumps(
+                {
+                    "summary_id": "private_summary",
+                    "sender": "sender@example.com",
+                    "title": "Private Summary",
+                    "executive_summary": "Secret board meeting details should never appear in public chat context.",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        mock_client = MagicMock()
+        mock_client.responses.create.return_value = MagicMock(
+            output_text="Discere helps you choose important senders, then summarizes those emails."
+        )
+
+        with patch.object(dashboard_api, "OpenAI", return_value=mock_client):
+            response = self.client.post("/public-chat", json={"question": "How do I start?"})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("Discere helps", response.json()["answer"])
+        self.assertEqual(mock_client.responses.create.call_count, 1)
+        input_text = mock_client.responses.create.call_args.kwargs["input"]
+        self.assertIn("PUBLIC DISCERE KNOWLEDGE", input_text)
+        self.assertNotIn("Secret board meeting", input_text)
+        self.assertNotIn("private_user_example_com", input_text)
+
     def test_billing_checkout_is_stripe_ready_without_fake_success(self) -> None:
         client = self.signup("checkout@example.com")
         response = client.post("/billing/checkout")

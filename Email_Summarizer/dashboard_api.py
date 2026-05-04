@@ -77,6 +77,7 @@ RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_RULES = [
     ("POST", "/auth/login", 20, 300),
     ("POST", "/auth/signup", 10, 3600),
+    ("POST", "/public-chat", 20, 3600),
     ("POST", "/run-summarizer", 12, 3600),
     ("POST", "/chat", 30, 3600),
     ("POST", "/summaries/refine", 20, 3600),
@@ -85,6 +86,7 @@ RATE_LIMIT_RULES = [
     ("POST", "/bug-reports", 8, 3600),
 ]
 MAX_REQUEST_BODY_BYTES = int(os.getenv("EMAIL_SUMMARIZER_MAX_REQUEST_BODY_BYTES", str(1024 * 1024)))
+MAX_PUBLIC_CHAT_QUESTION_CHARS = 800
 MAX_CHAT_QUESTION_CHARS = 1200
 MAX_REFINE_MARKDOWN_CHARS = 50000
 MAX_REFINE_INSTRUCTIONS_CHARS = 2000
@@ -967,6 +969,11 @@ class ContactProfileUpdateRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     user_id: Optional[str] = None
+    question: str
+    conversation: List[Dict[str, str]] = []
+
+
+class PublicChatRequest(BaseModel):
     question: str
     conversation: List[Dict[str, str]] = []
 
@@ -4411,6 +4418,61 @@ def is_discere_product_question(question: str) -> bool:
     return any(term in text for term in product_terms)
 
 
+PUBLIC_DISCERE_CHAT_KNOWLEDGE = """
+PUBLIC DISCERE KNOWLEDGE
+
+What Discere does:
+- Discere helps busy people keep up with important email conversations.
+- Users choose important senders/contacts. Discere checks emails from those people and turns the useful parts into organized summaries.
+- Discere is not meant to summarize the whole inbox by default.
+- If there are no tracked contacts, users should add contacts before running the summarizer.
+- Tracked contacts are not notified when they are added or summarized.
+
+Who it is for:
+- Discere is designed for people who get too many important emails and want the main point, actions, deadlines, and updates quickly.
+- Explain things simply for adults who may not follow every new AI tool but can benefit from easier email review.
+
+How to start:
+- Click Log In.
+- Sign in with Gmail or Microsoft/Outlook.
+- Add important contacts.
+- Run the summarizer with the play button.
+- Open summaries, mark handled emails as done, and use scheduled summaries if the user wants routine email reports.
+
+Main features:
+- Contacts: the people whose emails Discere should watch.
+- Summarizer: checks recent emails from tracked contacts and creates summaries.
+- AI Assistant: inside the dashboard, users can ask questions about their saved summaries and emails.
+- Scheduled summaries: users can receive routine Discere report emails.
+- Reports: sent from Discere to the user's connected account email, not from the user's personal mailbox.
+- Full Report includes summary content in the email. Private Notification sends a simple ready message without summary content.
+
+Privacy and data:
+- Gmail uses Gmail API read-only access.
+- Microsoft/Outlook uses Microsoft OAuth and Microsoft Graph mailbox read access.
+- Discere reads mailbox data needed to find and summarize emails from tracked contacts.
+- Relevant email text is sent to OpenAI through the OpenAI API to generate summaries and AI answers.
+- Attachment contents are sent to AI only if AI Attachment Access is turned on. If it is off, Discere only uses basic attachment references such as filenames.
+- Discere stores account settings, contacts, schedules, summaries, summarized email IDs, and limited source email data needed to operate the service.
+- Read or done summaries have source email bodies and saved attachments purged after 20 days, while summarized email IDs can remain to avoid duplicate summaries.
+- Discere does not sell Google or Microsoft user data and does not use mailbox data for advertising.
+- Users can delete individual summaries or delete their account in Settings.
+
+Billing:
+- New accounts receive a 7-day free trial without entering payment information.
+- After the trial, continued access to summarization, AI Assistant, report delivery, and scheduled reports requires a paid subscription.
+- The introductory plan is $4.99 per month unless checkout shows a different price.
+
+Public chat limits:
+- This public website chat can explain Discere, but it cannot see a visitor's inbox, account, summaries, contacts, schedules, or billing status.
+- For account-specific help, tell users to log in and use the dashboard or contact discereresearch@gmail.com.
+""".strip()
+
+
+def build_public_chat_history(conversation: List[Dict[str, str]], max_chars: int = 2500) -> str:
+    return build_recent_chat_history(conversation, max_chars=max_chars)
+
+
 def build_recent_chat_history(conversation: List[Dict[str, str]], max_chars: int = 6000) -> str:
     blocks: List[str] = []
     total = 0
@@ -5730,6 +5792,67 @@ def schedule_runner_loop() -> None:
 
 
 threading.Thread(target=schedule_runner_loop, daemon=True).start()
+
+
+# PUBLIC SITE CHAT WIDGET ENDPOINT
+# Remove this block plus dashboard_static/public_chat_widget.{js,css} and the two page includes
+# if the public education chatbot is removed later.
+@app.post("/public-chat")
+def public_chat(payload: PublicChatRequest, request: Request) -> Dict[str, Any]:
+    question = enforce_text_limit(payload.question, "Question", MAX_PUBLIC_CHAT_QUESTION_CHARS)
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        write_monitoring_event("server_error", "openai_key_missing_public_chat", "error", request=request)
+        raise HTTPException(status_code=500, detail="Ask Discere is temporarily unavailable. Please try again later.")
+
+    model = normalize_openai_model(os.getenv("OPENAI_MODEL") or "gpt-5.1")
+    recent_history = build_public_chat_history(payload.conversation)
+    instructions = (
+        "You are Ask Discere, a public website assistant for Discere. "
+        "Answer only questions about what Discere does, how to use it, privacy/security basics, Gmail/Microsoft login, reports, schedules, trial/pricing, and account deletion. "
+        "You cannot access the visitor's account, inbox, summaries, contacts, schedules, or billing status. Say that clearly if asked. "
+        "Write for busy adults age 40+ who may not follow new AI tools. Use simple words, short sentences, and concrete steps. "
+        "Be concise: usually 2-5 short sentences. Use bullets only when steps are useful. "
+        "Do not use jargon like OAuth unless the user asks; say 'secure Google/Microsoft sign-in' instead. "
+        "Do not provide legal, medical, financial, or security advice. For sensitive business decisions, suggest reviewing Privacy/Security pages or contacting Discere support. "
+        "If a question is unrelated to Discere, briefly say you can help with Discere questions."
+    )
+    input_text = (
+        "DISCERE PUBLIC KNOWLEDGE\n"
+        f"{PUBLIC_DISCERE_CHAT_KNOWLEDGE}\n\n"
+        "RECENT WEBSITE CHAT HISTORY\n"
+        f"{recent_history or '[No prior chat history]'}\n\n"
+        "VISITOR QUESTION\n"
+        f"{_to_ascii_safe(question)}\n"
+    )
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.responses.create(
+            model=model,
+            instructions=instructions,
+            input=input_text,
+            temperature=0.1,
+            max_output_tokens=420,
+        )
+    except Exception as exc:
+        write_monitoring_event(
+            "server_error",
+            "openai_public_chat_failed",
+            "error",
+            request=request,
+            metadata={"model": model, "error": str(exc), "error_type": exc.__class__.__name__},
+        )
+        raise HTTPException(status_code=500, detail="Ask Discere could not answer right now. Please try again shortly.") from exc
+
+    answer = str(getattr(response, "output_text", "") or "").strip()
+    if not answer:
+        answer = "I could not answer that clearly. Try asking in a simpler way, or contact discereresearch@gmail.com."
+
+    return {"answer": answer}
 
 
 @app.post("/chat")
