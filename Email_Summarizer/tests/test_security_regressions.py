@@ -65,7 +65,6 @@ class SecurityRegressionTests(unittest.TestCase):
         os.environ["EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD"] = "test-private-invite"
         os.environ.pop("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", None)
         os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL", None)
-        os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD", None)
         os.environ.pop("EMAIL_SUMMARIZER_SMS_ENABLED", None)
         dashboard_api.initialize_database()
         self.client = TestClient(dashboard_api.app, base_url="https://discere-test.example")
@@ -199,7 +198,6 @@ class SecurityRegressionTests(unittest.TestCase):
     def test_manual_signup_only_preconfigures_configured_vip_email(self) -> None:
         os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "vip-client@263.com,other-client@example.com"
         os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "vip-client@263.com"
-        os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD"] = "vip-mailbox-app-password"
 
         blocked_response = self.client.post(
             "/auth/signup",
@@ -226,22 +224,64 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(allowed_response.status_code, 200, allowed_response.text)
         profile_payload = allowed_response.json()["profile"]
         settings = profile_payload["settings"]
-        self.assertTrue(settings["mailbox_connected"])
+        self.assertFalse(settings["mailbox_connected"])
         self.assertEqual(settings["imap_user"], "vip-client@263.com")
         self.assertEqual(settings["imap_server"], "imap.263.net")
         self.assertEqual(settings["imap_port"], "993")
-        self.assertNotIn("vip-mailbox-app-password", json.dumps(profile_payload))
 
         profile = dashboard_api.load_profile_or_404("vip_client_263_com")
         stored_settings = profile["settings"]
         self.assertEqual(stored_settings["SMTP_HOST"], "smtp.263.net")
         self.assertEqual(stored_settings["SMTP_PORT"], "465")
-        self.assertEqual(stored_settings["IMAP_PASSWORD"], "vip-mailbox-app-password")
+        self.assertEqual(stored_settings["IMAP_PASSWORD"], "")
 
-    def test_missing_vip_mailbox_password_does_not_crash_signup(self) -> None:
+    def test_vip_saves_own_mailbox_password_after_signup(self) -> None:
+        client = self.signup("vip-own-password@263.com")
+
+        response = client.post(
+            "/mailbox/vip-password",
+            json={"mailbox_password": "vip-user-entered-app-password"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        profile_payload = response.json()["profile"]
+        self.assertTrue(profile_payload["settings"]["mailbox_connected"])
+        serialized_profile = json.dumps(profile_payload)
+        self.assertNotIn("vip-user-entered-app-password", serialized_profile)
+        self.assertNotIn("mailbox_password", serialized_profile.lower())
+        self.assertNotIn("imap_password", serialized_profile.lower())
+        self.assertNotIn("smtp_password", serialized_profile.lower())
+
+        profile = dashboard_api.load_profile_or_404("vip_own_password_263_com")
+        self.assertEqual(profile["settings"]["IMAP_PASSWORD"], "vip-user-entered-app-password")
+        self.assertEqual(profile["settings"]["SMTP_PASSWORD"], "vip-user-entered-app-password")
+        self.assertEqual(profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"], "true")
+
+        with dashboard_api.get_db_connection() as connection:
+            row = connection.execute(
+                "SELECT settings_json FROM users WHERE user_id = ?",
+                ("vip_own_password_263_com",),
+            ).fetchone()
+        self.assertTrue(str(row["settings_json"]).startswith("enc::"))
+        self.assertNotIn("vip-user-entered-app-password", row["settings_json"])
+
+    def test_vip_mailbox_password_endpoint_rejects_non_vip_accounts(self) -> None:
+        client = self.signup("approved-vip@263.com")
+        profile = dashboard_api.load_profile_or_404("approved_vip_263_com")
+        profile["google_oauth"] = {"email": "approved-vip@263.com", "access_token": "token"}
+        dashboard_api.save_profile(profile)
+
+        response = client.post(
+            "/mailbox/vip-password",
+            json={"mailbox_password": "should-not-save"},
+        )
+        self.assertEqual(response.status_code, 403, response.text)
+        refreshed = dashboard_api.load_profile_or_404("approved_vip_263_com")
+        self.assertNotIn("should-not-save", json.dumps(refreshed.get("settings", {})))
+
+    def test_vip_signup_without_mailbox_password_does_not_crash(self) -> None:
         os.environ["EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS"] = "vip-missing@263.com"
         os.environ["EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL"] = "vip-missing@263.com"
-        os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD", None)
 
         response = self.client.post(
             "/auth/signup",

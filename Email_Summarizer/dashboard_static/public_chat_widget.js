@@ -62,10 +62,14 @@
 
   function hideStarterPrompts(elements) {
     promptsHidden = true;
-    if (elements.prompts) {
-      elements.prompts.hidden = true;
-      elements.prompts.classList.add("is-hidden");
-      elements.prompts.style.display = "none";
+    const prompts = elements.prompts;
+    if (prompts) {
+      prompts.hidden = true;
+      prompts.classList.add("is-hidden");
+      prompts.style.setProperty("display", "none", "important");
+      prompts.replaceChildren();
+      prompts.remove();
+      elements.prompts = null;
     }
   }
 

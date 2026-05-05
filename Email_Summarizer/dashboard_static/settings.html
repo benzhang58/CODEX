@@ -759,7 +759,7 @@
       <section id="mailboxSection" class="section" hidden>
         <h2>Mailbox Connection</h2>
         <div class="card">
-          <p class="inline-note">Private client mailbox connection. Discere configures the approved 263 connection with a client authorization code or app password instead of your main mailbox password.</p>
+          <p class="inline-note">Private client mailbox connection. Enter a 263 client authorization code or app password here instead of sharing it with anyone.</p>
           <div id="mailboxConnectionStatus" class="connection-status disconnected">
             <span class="dot" aria-hidden="true"></span>
             <span id="mailboxConnectionStatusText">Not Connected</span>
@@ -769,7 +769,7 @@
               <strong id="mailboxConnectedLabel">Mailbox connected</strong>
               <span id="mailboxConnectedEmail">Connected</span>
             </div>
-            <button id="changeMailboxButton" type="button" class="secondary" hidden>Change Email Connection</button>
+            <button id="changeMailboxButton" type="button" class="secondary" hidden>Enter 263 Password</button>
           </div>
           <div id="mailboxStatus" class="status"></div>
         </div>
@@ -1003,22 +1003,22 @@
         <div class="modal-card">
           <div>
             <h3>Email Connection</h3>
-            <p>Enter the mailbox email and password the summarizer should use.</p>
+            <p>Enter your 263 mail password or client authorization code. Discere encrypts it and never shows it back.</p>
           </div>
           <div class="field-grid">
             <div class="field">
-              <label for="mailboxModalEmailInput">Mailbox Email</label>
+              <label for="mailboxModalEmailInput">263 Mailbox Email</label>
               <input id="mailboxModalEmailInput" type="email" placeholder="you@example.com" />
             </div>
             <div class="field">
-              <label for="mailboxModalPasswordInput">Mailbox Password</label>
-              <input id="mailboxModalPasswordInput" type="password" placeholder="Enter your real email password" />
+              <label for="mailboxModalPasswordInput">263 Mail Password or Authorization Code</label>
+              <input id="mailboxModalPasswordInput" type="password" placeholder="Enter 263 mail password or authorization code" autocomplete="off" />
             </div>
           </div>
           <div id="mailboxModalStatus" class="status"></div>
           <div class="modal-actions">
             <button id="cancelMailboxModalButton" type="button" class="secondary">Cancel</button>
-            <button id="saveMailboxModalButton" type="button">Save Mailbox</button>
+            <button id="saveMailboxModalButton" type="button">Save Connection</button>
           </div>
         </div>
       </div>
@@ -1362,10 +1362,11 @@
       function openMailboxModal() {
         const connectedEmail = currentProfile?.settings?.imap_user || currentProfile?.email || "";
         mailboxModalEmailInput.value = connectedEmail;
+        mailboxModalEmailInput.disabled = true;
         mailboxModalPasswordInput.value = "";
         mailboxModalStatus.textContent = "";
         mailboxModal.hidden = false;
-        mailboxModalEmailInput.focus();
+        mailboxModalPasswordInput.focus();
       }
 
       function closeMailboxModal() {
@@ -1432,8 +1433,8 @@
         mailboxConnectedLabel.textContent = showConnectedState ? "Mailbox connected" : "No mailbox connected";
         mailboxConnectedEmail.textContent = showConnectedState
           ? "Mailbox connection is configured."
-          : "Mailbox connection is not ready. Contact Discere support.";
-        changeMailboxButton.hidden = true;
+          : "Mailbox connection is not ready. Enter your 263 mail password or authorization code.";
+        changeMailboxButton.hidden = showConnectedState;
       }
 
       function setMailboxConnectionStatus(connected) {
@@ -1590,26 +1591,24 @@
 
       async function saveMailboxSettings() {
         if (!currentProfile) return;
-        const email = mailboxModalEmailInput.value.trim();
         const password = mailboxModalPasswordInput.value;
-        if (!email || !password) {
-          mailboxModalStatus.textContent = "Enter the mailbox email and password first.";
+        if (!password.trim()) {
+          mailboxModalStatus.textContent = "Enter your 263 mail password or authorization code first.";
           return;
         }
 
         saveMailboxModalButton.disabled = true;
-        mailboxModalStatus.textContent = "Saving mailbox settings...";
+        mailboxModalStatus.textContent = "Saving encrypted mailbox connection...";
         try {
-          const response = await fetch(`/profile?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
-            method: "PUT",
+          const response = await fetch(`/mailbox/vip-password?user_id=${encodeURIComponent(currentProfile.user_id)}`, {
+            method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              email: currentProfile.email || email,
-              imap_user: email,
-              imap_password: password,
+              mailbox_password: password,
             }),
           });
           const data = await response.json();
+          mailboxModalPasswordInput.value = "";
           if (!response.ok) {
             mailboxModalStatus.textContent = data.detail || "Failed to save mailbox settings.";
             return;
@@ -1617,10 +1616,10 @@
           currentProfile = data.profile;
           syncMailboxConnectionUI();
           await refreshMailboxConnectionStatus();
-          mailboxStatus.textContent = "Mailbox settings saved.";
+          mailboxStatus.textContent = "Mailbox connection saved.";
           closeMailboxModal();
         } catch (error) {
-          mailboxModalStatus.textContent = `Failed to save mailbox settings: ${error.message}`;
+          mailboxModalStatus.textContent = "Failed to save mailbox connection. Please try again.";
         } finally {
           saveMailboxModalButton.disabled = false;
         }

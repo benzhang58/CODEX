@@ -166,10 +166,6 @@ def configured_vip_mailbox_email() -> str:
     return os.getenv("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL", "").strip().lower()
 
 
-def configured_vip_mailbox_password() -> str:
-    return os.getenv("EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD", "").strip()
-
-
 def email_is_manual_mailbox_allowed(email: str) -> bool:
     normalized = str(email or "").strip().lower()
     return bool(normalized and normalized in configured_manual_mailbox_allowed_emails())
@@ -1050,6 +1046,10 @@ class ProfileUpdateRequest(BaseModel):
     summary_recipient: str = ""
 
 
+class VipMailboxPasswordRequest(BaseModel):
+    mailbox_password: str
+
+
 class ReportScheduleRequest(BaseModel):
     user_id: Optional[str] = None
     name: str = "Scheduled Report"
@@ -1142,7 +1142,6 @@ def build_deploy_readiness() -> Dict[str, Any]:
         "manual_signup_access_password_custom": bool(os.getenv("EMAIL_SUMMARIZER_MANUAL_SIGNUP_ACCESS_PASSWORD", "").strip()),
         "vip_mailbox_email_configured": bool(configured_vip_mailbox_email()),
         "vip_mailbox_email_allowlisted": bool(email_is_manual_mailbox_allowed(configured_vip_mailbox_email())),
-        "vip_mailbox_password_configured": bool(configured_vip_mailbox_password()),
         "rate_limit_enabled": is_rate_limit_enabled(),
         "cors_origins_production_safe": cors_origins_are_production_safe(),
         "security_headers_enabled": True,
@@ -1205,8 +1204,6 @@ def build_deploy_readiness() -> Dict[str, Any]:
         errors.append("Manual mailbox allowlist is configured; set EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL.")
     if checks["vip_mailbox_email_configured"] and not checks["vip_mailbox_email_allowlisted"]:
         errors.append("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL must also be listed in EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS.")
-    if checks["vip_mailbox_email_configured"] and not checks["vip_mailbox_password_configured"]:
-        warnings.append("VIP mailbox email is configured, but EMAIL_SUMMARIZER_VIP_MAILBOX_PASSWORD is missing; the VIP mailbox will not be connected.")
 
     return {
         "status": "ready" if not errors else "needs_attention",
@@ -1988,6 +1985,19 @@ def update_profile(request: Request, payload: ProfileUpdateRequest, user_id: Opt
             metadata={"email": profile.get("email", "")},
         )
         raise HTTPException(status_code=403, detail="Manual mailbox connection is available only for approved private clients.")
+    if request_contains_manual_mailbox_update(payload):
+        profile_email = str(profile.get("email", "") or "").strip().lower()
+        requested_mailbox = str(payload.imap_user or profile_email).strip().lower()
+        if not email_is_configured_vip_mailbox(profile_email) or requested_mailbox != configured_vip_mailbox_email():
+            write_monitoring_event(
+                "security",
+                "manual_mailbox_update_wrong_vip_email",
+                "warning",
+                request=request,
+                user_id=resolved_user_id,
+                metadata={"email": profile_email, "requested_mailbox": requested_mailbox},
+            )
+            raise HTTPException(status_code=403, detail="Private mailbox connection is restricted to the approved mailbox.")
     if payload.email.strip():
         profile["email"] = payload.email.strip()
     profile["settings"] = profile_update_to_settings(payload, {**default_profile_settings(), **(profile.get("settings") or {})})
@@ -2320,6 +2330,45 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
         "status": "Connected",
         "reason": "ok",
     }
+
+
+@app.post("/mailbox/vip-password")
+def save_vip_mailbox_password(
+    payload: VipMailboxPasswordRequest,
+    request: Request,
+    user_id: Optional[str] = Query(None),
+) -> Dict[str, Any]:
+    resolved_user_id = resolve_user_id(request, user_id)
+    profile = load_profile_or_404(resolved_user_id)
+    email = str(profile.get("email", "") or "").strip().lower()
+    google_connected = bool((profile.get("google_oauth") or {}).get("refresh_token") or (profile.get("google_oauth") or {}).get("access_token"))
+    microsoft_connected = bool((profile.get("microsoft_oauth") or {}).get("refresh_token") or (profile.get("microsoft_oauth") or {}).get("access_token"))
+
+    if google_connected or microsoft_connected or not email_is_configured_vip_mailbox(email):
+        write_monitoring_event(
+            "security",
+            "vip_mailbox_password_update_denied",
+            "warning",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"email": email},
+        )
+        raise HTTPException(status_code=403, detail="Private mailbox setup is available only for the approved private client.")
+
+    mailbox_password = str(payload.mailbox_password or "")
+    if not mailbox_password.strip():
+        raise HTTPException(status_code=400, detail="Enter your 263 mail password or authorization code first.")
+
+    settings = apply_vip_manual_mailbox_preconfiguration(
+        merge_stored_settings(default_profile_settings(), profile.get("settings") or {}),
+        email,
+    )
+    settings["IMAP_PASSWORD"] = mailbox_password
+    settings["SMTP_PASSWORD"] = mailbox_password
+    settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"
+    profile["settings"] = settings
+    save_profile(profile)
+    return {"success": True, "profile": profile_response(profile)}
 
 
 def _slugify_user_id(value: str) -> str:
@@ -3372,7 +3421,6 @@ def apply_vip_manual_mailbox_preconfiguration(settings: Dict[str, str], email: s
         return merged
 
     vip_email = configured_vip_mailbox_email()
-    mailbox_password = configured_vip_mailbox_password()
     merged.update(
         {
             "IMAP_SERVER": VIP_263_IMAP_SERVER,
@@ -3383,15 +3431,11 @@ def apply_vip_manual_mailbox_preconfiguration(settings: Dict[str, str], email: s
             "IMAP_USER": vip_email,
             "SMTP_USER": vip_email,
             "SUMMARY_RECIPIENT": str(email or "").strip().lower(),
-            "MAILBOX_CONNECTION_CONFIRMED": "true" if mailbox_password else "false",
+            "MAILBOX_CONNECTION_CONFIRMED": "false",
+            "IMAP_PASSWORD": "",
+            "SMTP_PASSWORD": "",
         }
     )
-    if mailbox_password:
-        merged["IMAP_PASSWORD"] = mailbox_password
-        merged["SMTP_PASSWORD"] = mailbox_password
-    else:
-        merged["IMAP_PASSWORD"] = ""
-        merged["SMTP_PASSWORD"] = ""
     return merged
 
 

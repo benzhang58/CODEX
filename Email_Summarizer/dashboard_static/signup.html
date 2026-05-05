@@ -155,6 +155,42 @@
         color: var(--muted);
         min-height: 22px;
       }
+
+      .modal-shell {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(17, 17, 17, 0.36);
+        z-index: 20;
+      }
+
+      .modal-shell[hidden] {
+        display: none;
+      }
+
+      .modal-card {
+        width: min(100%, 520px);
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: 0 24px 70px rgba(17, 17, 17, 0.18);
+      }
+
+      .modal-card h2 {
+        margin: 0 0 10px;
+        font-size: 30px;
+        letter-spacing: -0.04em;
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 18px;
+      }
     </style>
   </head>
   <body>
@@ -209,6 +245,22 @@
       <div id="status" class="status"></div>
     </main>
 
+    <div id="mailboxPasswordModal" class="modal-shell" hidden>
+      <div class="modal-card">
+        <h2>Connect 263 Mail</h2>
+        <p>Enter your 263 mail password or client authorization code. Discere encrypts it and does not show it back to anyone.</p>
+        <div class="field">
+          <label for="mailboxPasswordInput">263 Mail Password or Authorization Code</label>
+          <input id="mailboxPasswordInput" type="password" placeholder="Enter 263 mail password or authorization code" autocomplete="off" />
+        </div>
+        <div id="mailboxPasswordStatus" class="status"></div>
+        <div class="modal-actions">
+          <button id="skipMailboxPasswordButton" type="button" class="secondary-button">Enter Later</button>
+          <button id="saveMailboxPasswordButton" type="button">Save and Continue</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const emailInput = document.getElementById("emailInput");
       const passwordInput = document.getElementById("passwordInput");
@@ -218,9 +270,56 @@
       const acceptTermsInput = document.getElementById("acceptTermsInput");
       const createButton = document.getElementById("createButton");
       const status = document.getElementById("status");
+      const mailboxPasswordModal = document.getElementById("mailboxPasswordModal");
+      const mailboxPasswordInput = document.getElementById("mailboxPasswordInput");
+      const mailboxPasswordStatus = document.getElementById("mailboxPasswordStatus");
+      const saveMailboxPasswordButton = document.getElementById("saveMailboxPasswordButton");
+      const skipMailboxPasswordButton = document.getElementById("skipMailboxPasswordButton");
 
       function looksLikeEmail(value) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+      }
+
+      function openMailboxPasswordModal() {
+        mailboxPasswordInput.value = "";
+        mailboxPasswordStatus.textContent = "";
+        mailboxPasswordModal.hidden = false;
+        mailboxPasswordInput.focus();
+      }
+
+      function goToDashboard() {
+        window.location.href = "/dashboard";
+      }
+
+      async function saveMailboxPassword() {
+        const mailboxPassword = mailboxPasswordInput.value;
+        if (!mailboxPassword.trim()) {
+          mailboxPasswordStatus.textContent = "Enter your 263 mail password or authorization code first.";
+          return;
+        }
+
+        saveMailboxPasswordButton.disabled = true;
+        skipMailboxPasswordButton.disabled = true;
+        mailboxPasswordStatus.textContent = "Saving encrypted mailbox connection...";
+        try {
+          const response = await fetch("/mailbox/vip-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mailbox_password: mailboxPassword }),
+          });
+          mailboxPasswordInput.value = "";
+          const data = await response.json();
+          if (!response.ok) {
+            mailboxPasswordStatus.textContent = data.detail || "Could not save mailbox connection.";
+            return;
+          }
+          goToDashboard();
+        } catch (error) {
+          mailboxPasswordStatus.textContent = "Could not save mailbox connection. Please try again.";
+        } finally {
+          saveMailboxPasswordButton.disabled = false;
+          skipMailboxPasswordButton.disabled = false;
+        }
       }
 
       async function signup() {
@@ -268,7 +367,12 @@
             return;
           }
 
-          window.location.href = "/dashboard";
+          if (data.profile?.manual_mailbox_allowed && !data.profile?.settings?.mailbox_connected) {
+            openMailboxPasswordModal();
+            return;
+          }
+
+          goToDashboard();
         } catch (error) {
           status.textContent = `Failed to create private account: ${error.message}`;
         } finally {
@@ -277,6 +381,14 @@
       }
 
       createButton.addEventListener("click", signup);
+      saveMailboxPasswordButton.addEventListener("click", saveMailboxPassword);
+      skipMailboxPasswordButton.addEventListener("click", goToDashboard);
+      mailboxPasswordInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveMailboxPassword();
+        }
+      });
       passwordInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
