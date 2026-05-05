@@ -76,10 +76,11 @@
   function cleanAssistantText(text) {
     return String(text || "")
       .replace(/^#{1,6}\s+/gm, "")
-      .replace(/^\s*[-*]\s+/gm, "")
       .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/(^|[^\w])\*(.*?)\*([^\w]|$)/g, "$1$2$3")
       .replace(/`([^`]+)`/g, "$1")
+      .replace(/^\s*[-*]\s+/gm, "• ")
+      .replace(/\n{3,}/g, "\n\n")
       .trim();
   }
 

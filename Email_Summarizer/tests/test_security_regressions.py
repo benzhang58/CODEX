@@ -2157,6 +2157,26 @@ class SecurityRegressionTests(unittest.TestCase):
         instructions = mock_client.responses.create.call_args.kwargs["instructions"]
         self.assertIn("Do not use markdown formatting", instructions)
 
+    def test_dashboard_chat_answers_discere_questions_without_summaries(self) -> None:
+        client = self.signup("empty-chat@example.com")
+        mock_client = MagicMock()
+        mock_client.responses.create.return_value = MagicMock(
+            output_text="### Add contacts\n\n1. Click the plus button.\n2. Enter the sender email.\n3. Run the summarizer."
+        )
+
+        with patch.object(dashboard_api, "OpenAI", return_value=mock_client):
+            response = client.post("/chat", json={"question": "How do I add new contacts?"})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["summary_count"], 0)
+        self.assertIn("Add contacts", payload["answer"])
+        self.assertNotIn("###", payload["answer"])
+        self.assertNotIn("empty_chat_example_com", payload["answer"])
+        input_text = mock_client.responses.create.call_args.kwargs["input"]
+        self.assertIn("No saved summaries yet", input_text)
+        self.assertIn("DISCERE PRODUCT KNOWLEDGE", input_text)
+
     def test_billing_checkout_is_stripe_ready_without_fake_success(self) -> None:
         client = self.signup("checkout@example.com")
         response = client.post("/billing/checkout")
@@ -2525,11 +2545,16 @@ class SecurityRegressionTests(unittest.TestCase):
         original_chat_limit = os.environ.get("EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY", "")
         os.environ["EMAIL_SUMMARIZER_LIMIT_CHAT_PER_DAY"] = "1"
         try:
-            first_response = client.post(
-                "/chat",
-                json={"user_id": "usage_example_com", "question": "What happened?"},
+            mock_client = MagicMock()
+            mock_client.responses.create.return_value = MagicMock(
+                output_text="No saved summaries yet. Add contacts, run the summarizer, then ask again."
             )
-            self.assertEqual(first_response.status_code, 404, first_response.text)
+            with patch.object(dashboard_api, "OpenAI", return_value=mock_client):
+                first_response = client.post(
+                    "/chat",
+                    json={"user_id": "usage_example_com", "question": "What happened?"},
+                )
+            self.assertEqual(first_response.status_code, 200, first_response.text)
 
             usage_response = client.get("/usage")
             self.assertEqual(usage_response.status_code, 200, usage_response.text)

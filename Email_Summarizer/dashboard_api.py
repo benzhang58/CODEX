@@ -4538,6 +4538,17 @@ def build_public_chat_history(conversation: List[Dict[str, str]], max_chars: int
     return build_recent_chat_history(conversation, max_chars=max_chars)
 
 
+def clean_chat_answer_text(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = re.sub(r"(?m)^\s*#{1,6}\s*", "", cleaned)
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"(?<!\w)\*(.*?)\*(?!\w)", r"\1", cleaned)
+    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
+    cleaned = re.sub(r"(?m)^\s*[-*]\s+", "• ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def build_recent_chat_history(conversation: List[Dict[str, str]], max_chars: int = 6000) -> str:
     blocks: List[str] = []
     total = 0
@@ -5003,11 +5014,13 @@ def build_chat_context(
         blocks.append(block)
         total_chars += len(block) + 2
 
+    if not blocks:
+        return ""
+
     header = (
-        f"USER: {user_id}\n"
         f"TOTAL SUMMARIES INCLUDED: {len(summaries)}\n"
         f"TOTAL EMAIL RECORDS INCLUDED: {len(emails)}\n"
-        "These are saved historical summaries and linked source emails for this user. "
+        "These are saved historical summaries and linked source emails for this account. "
         "Answer only from this context.\n"
     )
     return _to_ascii_safe(header + "\n\n".join(blocks))
@@ -5915,7 +5928,7 @@ def public_chat(payload: PublicChatRequest, request: Request) -> Dict[str, Any]:
         )
         raise HTTPException(status_code=500, detail="Ask Discere could not answer right now. Please try again shortly.") from exc
 
-    answer = str(getattr(response, "output_text", "") or "").strip()
+    answer = clean_chat_answer_text(str(getattr(response, "output_text", "") or ""))
     if not answer:
         answer = "I could not answer that clearly. Try asking in a simpler way, or contact discereresearch@gmail.com."
 
@@ -5932,9 +5945,6 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     summaries = get_chat_ready_summaries(resolved_user_id)
-    product_question = is_discere_product_question(question)
-    if not summaries and not product_question:
-        raise HTTPException(status_code=404, detail=f"No saved summaries found for user '{resolved_user_id}'.")
     emails = get_chat_ready_emails(resolved_user_id, summaries)
     attachment_matches = find_attachment_matches(resolved_user_id, emails, payload.question)
     attachment_intent = bool(re.search(r"\b(show|open|display|pull up|bring up|view|download)\b", question, flags=re.IGNORECASE))
@@ -5964,11 +5974,12 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
         "Address the user as 'you' rather than by name. "
         "For email-specific questions, answer only from the provided summaries and email bodies. Do not invent facts, deadlines, requests, attachments, or email text. "
         "For Discere product, privacy, security, terms, and workflow questions, answer only from the Discere product knowledge provided. "
+        "If there are no saved summaries yet, do not mention the internal user ID. For email-specific questions, briefly say there are no saved summaries yet and explain the next step: add contacts, run the summarizer, then ask again. "
         "If the answer is not in the provided context or product knowledge, say so clearly and suggest checking Settings, Privacy, Security FAQ, Terms, or contacting discereresearch@gmail.com. "
         "If the user asks where something was said, quote the exact relevant email text when available. "
         "If the user asks about attachments, mention attachment filenames explicitly when available. "
         "If the user asks why deleted summaries/emails appear again, explain that deleting a summary removes the identifier so it can be rediscovered; marking it done keeps the identifier so it should not be re-summarized accidentally. "
-        "Prefer practical, concise answers."
+        "Prefer practical, concise answers. Use short paragraphs or simple numbered steps. Do not use markdown formatting, # headings, asterisks, code fences, or dense blocks of text."
     )
     input_text = (
         "DISCERE PRODUCT KNOWLEDGE\n"
@@ -5976,7 +5987,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
         "RECENT CHAT HISTORY\n"
         f"{recent_history or '[No prior chat history provided]'}\n\n"
         "USER EMAIL SUMMARY CONTEXT\n"
-        f"{context or '[No saved email summaries available]'}\n\n"
+        f"{context or '[No saved summaries yet. The assistant should still answer Discere how-to questions from product knowledge.]'}\n\n"
         "QUESTION\n"
         f"{_to_ascii_safe(question)}\n"
     )
@@ -6002,7 +6013,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
 
     return {
         "user_id": resolved_user_id,
-        "answer": response.output_text,
+        "answer": clean_chat_answer_text(response.output_text),
         "summary_count": len(summaries),
         "email_count": len(emails),
         "attachment_matches": attachment_matches,
