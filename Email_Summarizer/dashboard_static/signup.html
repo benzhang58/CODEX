@@ -310,7 +310,7 @@
           mailboxPasswordInput.value = "";
           const data = await response.json();
           if (!response.ok) {
-            mailboxPasswordStatus.textContent = data.detail || "Could not save mailbox connection.";
+            mailboxPasswordStatus.textContent = data.detail || "Incorrect 263 mail password or authorization code.";
             return;
           }
           goToDashboard();

@@ -2306,18 +2306,7 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
             "reason": "missing_credentials",
         }
 
-    try:
-        mail = imaplib.IMAP4_SSL(server, port)
-        try:
-            mail.login(email, password)
-            mail.logout()
-        except Exception:
-            try:
-                mail.shutdown()
-            except Exception:
-                pass
-            raise
-    except Exception:
+    if not mailbox_login_succeeds(server, port, email, password):
         mark_mailbox_unconfirmed()
         return {
             "connected": False,
@@ -2330,6 +2319,23 @@ def get_mailbox_status(request: Request, user_id: Optional[str] = Query(None)) -
         "status": "Connected",
         "reason": "ok",
     }
+
+
+def mailbox_login_succeeds(server: str, port: int, email: str, password: str) -> bool:
+    try:
+        mail = imaplib.IMAP4_SSL(server, port)
+        try:
+            mail.login(email, password)
+            mail.logout()
+            return True
+        except Exception:
+            try:
+                mail.shutdown()
+            except Exception:
+                pass
+            return False
+    except Exception:
+        return False
 
 
 @app.post("/mailbox/vip-password")
@@ -2363,6 +2369,20 @@ def save_vip_mailbox_password(
         merge_stored_settings(default_profile_settings(), profile.get("settings") or {}),
         email,
     )
+    server = str(settings.get("IMAP_SERVER", VIP_263_IMAP_SERVER)).strip() or VIP_263_IMAP_SERVER
+    port = int(str(settings.get("IMAP_PORT", VIP_263_IMAP_PORT)).strip() or VIP_263_IMAP_PORT)
+    mailbox_user = str(settings.get("IMAP_USER", email)).strip() or email
+    if not mailbox_login_succeeds(server, port, mailbox_user, mailbox_password):
+        write_monitoring_event(
+            "summarizer",
+            "vip_mailbox_password_validation_failed",
+            "warning",
+            request=request,
+            user_id=resolved_user_id,
+            metadata={"email": email, "imap_server": server, "imap_port": port},
+        )
+        raise HTTPException(status_code=400, detail="Incorrect 263 mail password or authorization code.")
+
     settings["IMAP_PASSWORD"] = mailbox_password
     settings["SMTP_PASSWORD"] = mailbox_password
     settings["MAILBOX_CONNECTION_CONFIRMED"] = "true"

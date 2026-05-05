@@ -238,12 +238,18 @@ class SecurityRegressionTests(unittest.TestCase):
     def test_vip_saves_own_mailbox_password_after_signup(self) -> None:
         client = self.signup("vip-own-password@263.com")
 
-        response = client.post(
-            "/mailbox/vip-password",
-            json={"mailbox_password": "vip-user-entered-app-password"},
-        )
+        with patch("dashboard_api.imaplib.IMAP4_SSL") as mock_imap:
+            mock_mail = MagicMock()
+            mock_imap.return_value = mock_mail
+            response = client.post(
+                "/mailbox/vip-password",
+                json={"mailbox_password": "vip-user-entered-app-password"},
+            )
 
         self.assertEqual(response.status_code, 200, response.text)
+        mock_imap.assert_called_once_with("imap.263.net", 993)
+        mock_mail.login.assert_called_once_with("vip-own-password@263.com", "vip-user-entered-app-password")
+        mock_mail.logout.assert_called_once()
         profile_payload = response.json()["profile"]
         self.assertTrue(profile_payload["settings"]["mailbox_connected"])
         serialized_profile = json.dumps(profile_payload)
@@ -264,6 +270,24 @@ class SecurityRegressionTests(unittest.TestCase):
             ).fetchone()
         self.assertTrue(str(row["settings_json"]).startswith("enc::"))
         self.assertNotIn("vip-user-entered-app-password", row["settings_json"])
+
+    def test_vip_mailbox_password_endpoint_rejects_bad_password_without_saving(self) -> None:
+        client = self.signup("vip-bad-password@263.com")
+
+        with patch("dashboard_api.imaplib.IMAP4_SSL") as mock_imap:
+            mock_mail = MagicMock()
+            mock_mail.login.side_effect = Exception("bad credentials")
+            mock_imap.return_value = mock_mail
+            response = client.post(
+                "/mailbox/vip-password",
+                json={"mailbox_password": "wrong-password"},
+            )
+
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("Incorrect 263 mail password", response.text)
+        profile = dashboard_api.load_profile_or_404("vip_bad_password_263_com")
+        self.assertEqual(profile["settings"]["IMAP_PASSWORD"], "")
+        self.assertEqual(profile["settings"]["MAILBOX_CONNECTION_CONFIRMED"], "false")
 
     def test_vip_mailbox_password_endpoint_rejects_non_vip_accounts(self) -> None:
         client = self.signup("approved-vip@263.com")

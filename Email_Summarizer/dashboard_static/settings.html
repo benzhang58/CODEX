@@ -1610,7 +1610,7 @@
           const data = await response.json();
           mailboxModalPasswordInput.value = "";
           if (!response.ok) {
-            mailboxModalStatus.textContent = data.detail || "Failed to save mailbox settings.";
+            mailboxModalStatus.textContent = data.detail || "Incorrect 263 mail password or authorization code.";
             return;
           }
           currentProfile = data.profile;
