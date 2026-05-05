@@ -593,7 +593,7 @@ MICROSOFT_MAILBOX_TOKEN_SCOPES = [
 ]
 MICROSOFT_RECONNECT_MESSAGE = (
     "Microsoft mailbox access expired or needs permission again. "
-    "Please reconnect Microsoft in Settings, then try again."
+    "Reconnect Microsoft and approve mailbox access. If this keeps happening, the Microsoft account may need admin approval."
 )
 VIP_263_IMAP_SERVER = "imap.263.net"
 VIP_263_IMAP_PORT = "993"
@@ -2696,7 +2696,7 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
             raise reconnect_error(
                 "microsoft",
                 "consent_required",
-                "Microsoft mailbox access needs approval. Reconnect Microsoft and approve the requested mailbox permission.",
+                "Microsoft mailbox access needs approval. Reconnect Microsoft and approve mailbox access. If this keeps happening, the Microsoft account may need admin approval.",
                 microsoft_reconnect_url(profile),
             ) from exc
         raise
@@ -2721,7 +2721,7 @@ def refresh_microsoft_access_token(profile: Dict[str, Any]) -> str:
         raise reconnect_error(
             "microsoft",
             "read_mailbox",
-            "Microsoft mailbox access needs approval. Reconnect Microsoft and approve the requested mailbox permission.",
+            "Microsoft mailbox access needs approval. Reconnect Microsoft and approve mailbox access. If this keeps happening, the Microsoft account may need admin approval.",
             microsoft_reconnect_url(profile),
         )
     microsoft_oauth["updated_at"] = datetime.now().isoformat()
@@ -4106,6 +4106,7 @@ def load_processed_uids_for_user(user_id: str) -> List[str]:
 
 def save_processed_uids_for_user(user_id: str, uids: List[str]) -> None:
     path = get_user_processed_state_path(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "processed_uids": sorted(set(str(uid).strip() for uid in uids if str(uid).strip())),
         "last_run": __import__("datetime").datetime.now().isoformat(),

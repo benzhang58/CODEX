@@ -1,8 +1,5 @@
 // Discere public chat widget. Remove this file and its page includes to remove the widget.
 (() => {
-  const STORAGE_POSITION_KEY = "discerePublicChatPosition";
-  const STORAGE_HISTORY_KEY = "discerePublicChatHistory";
-  const STORAGE_PROMPTS_HIDDEN_KEY = "discerePublicChatPromptsHidden";
   const MAX_HISTORY = 10;
 
   const starterPrompts = [
@@ -12,8 +9,9 @@
     "What does AI see?",
   ];
 
-  let conversation = loadConversation();
-  let promptsHidden = localStorage.getItem(STORAGE_PROMPTS_HIDDEN_KEY) === "true" || conversation.some((entry) => entry.role === "user");
+  clearLegacyStoredChat();
+  let conversation = [];
+  let promptsHidden = false;
   let isSending = false;
   let dragState = null;
 
@@ -24,50 +22,21 @@
     return element;
   }
 
-  function loadConversation() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_HISTORY_KEY) || "[]");
-      if (!Array.isArray(parsed)) return [];
-      return parsed
-        .filter((entry) => entry && ["user", "assistant"].includes(entry.role) && typeof entry.text === "string")
-        .slice(-MAX_HISTORY);
-    } catch {
-      return [];
-    }
-  }
-
-  function saveConversation() {
-    localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(conversation.slice(-MAX_HISTORY)));
-  }
-
-  function loadPosition() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_POSITION_KEY) || "{}");
-      if (Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) return parsed;
-    } catch {
-      return null;
-    }
-    return null;
-  }
-
-  function savePosition(windowElement) {
-    const rect = windowElement.getBoundingClientRect();
-    localStorage.setItem(STORAGE_POSITION_KEY, JSON.stringify({ left: rect.left, top: rect.top }));
+  function clearLegacyStoredChat() {
+    localStorage.removeItem("discerePublicChatHistory");
+    localStorage.removeItem("discerePublicChatPromptsHidden");
+    localStorage.removeItem("discerePublicChatPosition");
   }
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
   }
 
-  function applyPosition(windowElement, position) {
-    if (!position) return;
-    const rect = windowElement.getBoundingClientRect();
-    const left = clamp(position.left, 12, window.innerWidth - rect.width - 12);
-    const top = clamp(position.top, 12, window.innerHeight - rect.height - 12);
-    windowElement.style.left = `${left}px`;
-    windowElement.style.top = `${top}px`;
-    windowElement.style.right = "auto";
-    windowElement.style.bottom = "auto";
+  function resetPosition(windowElement) {
+    windowElement.style.left = "";
+    windowElement.style.top = "";
+    windowElement.style.right = "";
+    windowElement.style.bottom = "";
   }
 
   function renderMessages(messagesElement) {
@@ -85,7 +54,6 @@
       messagesElement.appendChild(message);
     });
     messagesElement.scrollTop = messagesElement.scrollHeight;
-    saveConversation();
   }
 
   function setStatus(statusElement, text) {
@@ -94,9 +62,10 @@
 
   function hideStarterPrompts(elements) {
     promptsHidden = true;
-    localStorage.setItem(STORAGE_PROMPTS_HIDDEN_KEY, "true");
     if (elements.prompts) {
       elements.prompts.hidden = true;
+      elements.prompts.classList.add("is-hidden");
+      elements.prompts.style.display = "none";
     }
   }
 
@@ -178,6 +147,10 @@
     const messages = createElement("div", "public-chat-messages");
     const prompts = createElement("div", "public-chat-prompts");
     prompts.hidden = promptsHidden;
+    prompts.classList.toggle("is-hidden", promptsHidden);
+    if (promptsHidden) {
+      prompts.style.display = "none";
+    }
     starterPrompts.forEach((prompt) => {
       const button = createElement("button", "public-chat-prompt", prompt);
       button.type = "button";
@@ -204,7 +177,9 @@
     launcher.addEventListener("click", () => {
       windowElement.hidden = false;
       renderMessages(messages);
-      applyPosition(windowElement, loadPosition());
+      if (!windowElement.dataset.hasBeenMoved) {
+        resetPosition(windowElement);
+      }
       setTimeout(() => input.focus(), 0);
     });
 
@@ -240,17 +215,19 @@
       windowElement.style.top = `${top}px`;
       windowElement.style.right = "auto";
       windowElement.style.bottom = "auto";
+      windowElement.dataset.hasBeenMoved = "true";
     });
 
     header.addEventListener("pointerup", (event) => {
       if (!dragState || dragState.pointerId !== event.pointerId) return;
       dragState = null;
       windowElement.classList.remove("is-dragging");
-      savePosition(windowElement);
     });
 
     window.addEventListener("resize", () => {
-      if (!windowElement.hidden) applyPosition(windowElement, loadPosition());
+      if (!windowElement.hidden && !windowElement.dataset.hasBeenMoved) {
+        resetPosition(windowElement);
+      }
     });
   }
 

@@ -6,6 +6,33 @@
     <title>Settings</title>
     <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
     <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
+    <script>
+      (() => {
+        const themes = {
+          default: ["#f3f3f0", "#ecebe6", "#efeee9", "#e7e5de"],
+          white: ["#ffffff", "#f2f2f2", "#f8f8f8", "#ededed"],
+          blue: ["#cfe0ff", "#aac5ff", "#bdd3ff", "#7da3ff"],
+          pink: ["#ffc9de", "#ff9fc6", "#ffb8d3", "#f26ca6"],
+          red: ["#ffd1d1", "#ffaaaa", "#ffc1c1", "#ef6a6a"],
+          stone: ["#ead8bf", "#dcb88a", "#e4ceab", "#c89859"],
+          mist: ["#cce7ef", "#a7d6e4", "#b9e0eb", "#74b9cf"],
+          green: ["#c8f0cf", "#9be2aa", "#b5e9bf", "#6cc681"],
+          purple: ["#dbc9ff", "#c1a5ff", "#ceb8ff", "#9e77ef"],
+          ocean: ["#bfe4f6", "#8fd0ef", "#acddf2", "#50abd8"],
+          rose: ["#f7c9d6", "#ec9cb3", "#f2b8ca", "#db6a91"],
+          amber: ["#f6ddb0", "#efc86e", "#f2d296", "#db9b2a"],
+          slate: ["#d6dde8", "#b7c4d6", "#c8d2df", "#889ab4"],
+        };
+        try {
+          const theme = localStorage.getItem("discere:backgroundTheme") || "default";
+          const values = themes[theme] || themes.default;
+          document.documentElement.style.setProperty("--bg", values[0]);
+          document.documentElement.style.setProperty("--accent-soft", values[1]);
+          document.documentElement.style.setProperty("--surface-soft", values[2]);
+          document.documentElement.style.setProperty("--surface-soft-2", values[3]);
+        } catch (_) {}
+      })();
+    </script>
     <style>
       :root {
         --bg: #f3f3f0;
@@ -1092,8 +1119,21 @@
         if (!profile) return;
         const provider = profile.google_connected ? "google" : profile.microsoft_connected ? "microsoft" : "";
         if (!provider) return;
-        localStorage.setItem("oauth:lastProvider", provider);
+        sessionStorage.setItem("oauth:lastProvider", provider);
         sessionStorage.setItem("oauth:lastEmail", String(profile.email || "").trim().toLowerCase());
+      }
+
+      function clearBrowserStateForUser(userId) {
+        const scopedUserId = String(userId || "").trim();
+        if (!scopedUserId) return;
+        localStorage.removeItem(`schedulePreferredTimezone:${scopedUserId}`);
+        localStorage.removeItem(`emailDashboardRunJob:${scopedUserId}`);
+        const onboardingPrefix = `emailDashboardOnboarding:${scopedUserId}:`;
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith(onboardingPrefix)) {
+            localStorage.removeItem(key);
+          }
+        });
       }
       let currentProfile = null;
 
@@ -1115,6 +1155,9 @@
       function applyTheme(theme) {
         currentTheme = theme || "default";
         theme = currentTheme;
+        try {
+          localStorage.setItem("discere:backgroundTheme", theme);
+        } catch (_) {}
         if (theme === "white") {
           document.documentElement.style.setProperty("--bg", "#ffffff");
           document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
@@ -1740,7 +1783,8 @@
             deleteAccountButton.disabled = false;
             return;
           }
-          localStorage.removeItem("oauth:lastProvider");
+          clearBrowserStateForUser(currentProfile.user_id);
+          sessionStorage.removeItem("oauth:lastProvider");
           localStorage.setItem("oauth:forceAccountPicker", "true");
           sessionStorage.removeItem("oauth:lastEmail");
           sessionStorage.removeItem("oauth:attemptProvider");
@@ -1804,6 +1848,7 @@
         try {
           await fetch("/auth/logout", { method: "POST" });
         } finally {
+          sessionStorage.removeItem("oauth:lastProvider");
           sessionStorage.removeItem("oauth:lastEmail");
           sessionStorage.removeItem("oauth:attemptProvider");
           sessionStorage.removeItem("oauth:attemptMode");

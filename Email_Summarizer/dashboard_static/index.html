@@ -6,6 +6,33 @@
     <title>Email Dashboard</title>
     <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
     <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
+    <script>
+      (() => {
+        const themes = {
+          default: ["#f3f3f0", "#ecebe6", "#efeee9", "#e7e5de"],
+          white: ["#ffffff", "#f2f2f2", "#f8f8f8", "#ededed"],
+          blue: ["#cfe0ff", "#aac5ff", "#bdd3ff", "#7da3ff"],
+          pink: ["#ffc9de", "#ff9fc6", "#ffb8d3", "#f26ca6"],
+          red: ["#ffd1d1", "#ffaaaa", "#ffc1c1", "#ef6a6a"],
+          stone: ["#ead8bf", "#dcb88a", "#e4ceab", "#c89859"],
+          mist: ["#cce7ef", "#a7d6e4", "#b9e0eb", "#74b9cf"],
+          green: ["#c8f0cf", "#9be2aa", "#b5e9bf", "#6cc681"],
+          purple: ["#dbc9ff", "#c1a5ff", "#ceb8ff", "#9e77ef"],
+          ocean: ["#bfe4f6", "#8fd0ef", "#acddf2", "#50abd8"],
+          rose: ["#f7c9d6", "#ec9cb3", "#f2b8ca", "#db6a91"],
+          amber: ["#f6ddb0", "#efc86e", "#f2d296", "#db9b2a"],
+          slate: ["#d6dde8", "#b7c4d6", "#c8d2df", "#889ab4"],
+        };
+        try {
+          const theme = localStorage.getItem("discere:backgroundTheme") || "default";
+          const values = themes[theme] || themes.default;
+          document.documentElement.style.setProperty("--bg", values[0]);
+          document.documentElement.style.setProperty("--accent-soft", values[1]);
+          document.documentElement.style.setProperty("--surface-soft", values[2]);
+          document.documentElement.style.setProperty("--surface-soft-2", values[3]);
+        } catch (_) {}
+      })();
+    </script>
     <style>
       :root {
         --bg: #f3f3f0;
@@ -1180,7 +1207,7 @@
       }
 
       .chat-modal-card {
-        width: min(860px, 100%);
+        width: min(520px, calc(100vw - 32px));
       }
 
       .chat-modal-shell {
@@ -1193,6 +1220,53 @@
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 12px;
         align-items: end;
+      }
+
+      #chatModal {
+        inset: 0;
+        padding: 0;
+        background: transparent;
+        pointer-events: none;
+        z-index: 1200;
+      }
+
+      #chatModal .chat-modal-card {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        max-height: min(720px, calc(100vh - 48px));
+        overflow: hidden;
+        pointer-events: auto;
+        grid-template-rows: auto minmax(0, 1fr);
+        padding: 0;
+      }
+
+      #chatModal .contacts-modal-header {
+        padding: 20px 20px 0;
+        cursor: grab;
+        user-select: none;
+      }
+
+      #chatModal.is-dragging .contacts-modal-header {
+        cursor: grabbing;
+      }
+
+      #chatModal .chat-modal-shell {
+        min-height: 0;
+        padding: 0 20px 20px;
+      }
+
+      #chatModal .chat-log {
+        max-height: min(430px, calc(100vh - 250px));
+      }
+
+      @media (max-width: 620px) {
+        #chatModal .chat-modal-card {
+          right: 16px;
+          bottom: 16px;
+          width: calc(100vw - 32px);
+          max-height: calc(100vh - 32px);
+        }
       }
 
       .schedule-modal-card {
@@ -2278,8 +2352,8 @@
     </div>
 
     <div id="chatModal" class="modal-overlay" hidden>
-      <div class="modal-card chat-modal-card">
-        <div class="contacts-modal-header">
+      <div id="chatModalCard" class="modal-card chat-modal-card">
+        <div id="chatModalHeader" class="contacts-modal-header">
           <h3>AI Assistant</h3>
         </div>
         <div class="chat-modal-shell">
@@ -2467,6 +2541,8 @@
       const contactsModalAddButton = document.getElementById("contactsModalAddButton");
       const contactsModalCloseButton = document.getElementById("contactsModalCloseButton");
       const chatModal = document.getElementById("chatModal");
+      const chatModalCard = document.getElementById("chatModalCard");
+      const chatModalHeader = document.getElementById("chatModalHeader");
       const chatModalCloseButton = document.getElementById("chatModalCloseButton");
       const scheduleModal = document.getElementById("scheduleModal");
       const scheduleModalCloseButton = document.getElementById("scheduleModalCloseButton");
@@ -2520,6 +2596,7 @@
       let editingScheduleActive = true;
       let currentTimeTimer = null;
       let chatConversation = [];
+      let chatDragState = null;
       let subscriptionModalShown = false;
       let logoutInProgress = false;
       const SCHEDULE_TIMEZONE_LABELS = {
@@ -2538,7 +2615,7 @@
         if (!profile) return;
         const provider = profile.google_connected ? "google" : profile.microsoft_connected ? "microsoft" : "";
         if (!provider) return;
-        localStorage.setItem("oauth:lastProvider", provider);
+        sessionStorage.setItem("oauth:lastProvider", provider);
         sessionStorage.setItem("oauth:lastEmail", String(profile.email || "").trim().toLowerCase());
       }
 
@@ -2550,8 +2627,37 @@
         return Boolean(String(summary?.done_at || "").trim());
       }
 
+      function onboardingAccountKey(userId = currentUserId, profile = currentProfile) {
+        const scopedUserId = String(userId || "anonymous").trim() || "anonymous";
+        const accountCreatedAt = String(profile?.created_at || "current").trim() || "current";
+        return `${scopedUserId}:${accountCreatedAt}`;
+      }
+
       function onboardingActionKey(action) {
-        return `emailDashboardOnboarding:${currentUserId || "anonymous"}:${action}`;
+        return `emailDashboardOnboarding:${onboardingAccountKey()}:${action}`;
+      }
+
+      function scheduleTimezoneStorageKey(userId = currentUserId) {
+        const scopedUserId = String(userId || "").trim();
+        return scopedUserId ? `schedulePreferredTimezone:${scopedUserId}` : "";
+      }
+
+      function clearLegacySharedBrowserState() {
+        localStorage.removeItem("schedulePreferredTimezone");
+        localStorage.removeItem("oauth:lastProvider");
+      }
+
+      function clearBrowserStateForUser(userId) {
+        const scopedUserId = String(userId || "").trim();
+        if (!scopedUserId) return;
+        localStorage.removeItem(`schedulePreferredTimezone:${scopedUserId}`);
+        localStorage.removeItem(`emailDashboardRunJob:${scopedUserId}`);
+        const onboardingPrefix = `emailDashboardOnboarding:${scopedUserId}:`;
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith(onboardingPrefix)) {
+            localStorage.removeItem(key);
+          }
+        });
       }
 
       function markOnboardingActionComplete(action) {
@@ -2666,6 +2772,9 @@
       function applyTheme(theme) {
         currentTheme = theme || "default";
         theme = currentTheme;
+        try {
+          localStorage.setItem("discere:backgroundTheme", theme);
+        } catch (_) {}
         if (theme === "white") {
           document.documentElement.style.setProperty("--bg", "#ffffff");
           document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
@@ -2914,14 +3023,38 @@
         contactsModal.hidden = true;
       }
 
+      function clampChatPanelPosition(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function resetChatPanelPosition() {
+        chatModalCard.style.left = "";
+        chatModalCard.style.top = "";
+        chatModalCard.style.right = "";
+        chatModalCard.style.bottom = "";
+      }
+
       function openChatModal() {
+        if (!chatModal.hidden) {
+          chatInput.focus();
+          return;
+        }
         renderChatConversation();
         chatModal.hidden = false;
+        openAiButton.disabled = true;
+        openAiButton.setAttribute("aria-disabled", "true");
+        if (!chatModalCard.dataset.hasBeenMoved) {
+          resetChatPanelPosition();
+        }
         setTimeout(() => chatInput.focus(), 0);
       }
 
       function closeChatModal() {
         chatModal.hidden = true;
+        openAiButton.disabled = false;
+        openAiButton.setAttribute("aria-disabled", "false");
+        chatDragState = null;
+        chatModal.classList.remove("is-dragging");
       }
 
       function closeScheduleModal() {
@@ -2949,7 +3082,8 @@
       function getPreferredDashboardTimezone() {
         const selected = String(scheduleTimezoneInput?.value || "").trim();
         if (selected) return selected;
-        const remembered = String(localStorage.getItem("schedulePreferredTimezone") || "").trim();
+        const storageKey = scheduleTimezoneStorageKey();
+        const remembered = storageKey ? String(localStorage.getItem(storageKey) || "").trim() : "";
         return remembered || getLocalTimezone();
       }
 
@@ -2992,7 +3126,10 @@
 
       function setScheduleTimezoneValue(timezone) {
         scheduleTimezoneInput.value = ensureScheduleTimezoneOption(timezone);
-        localStorage.setItem("schedulePreferredTimezone", scheduleTimezoneInput.value);
+        const storageKey = scheduleTimezoneStorageKey();
+        if (storageKey) {
+          localStorage.setItem(storageKey, scheduleTimezoneInput.value);
+        }
         refreshCurrentTime();
       }
 
@@ -3215,7 +3352,10 @@
             savedSchedulesStatus.textContent = errorText;
             return false;
           }
-          localStorage.setItem("schedulePreferredTimezone", String(data.schedule?.timezone || body.timezone || getLocalTimezone()));
+          const storageKey = scheduleTimezoneStorageKey();
+          if (storageKey) {
+            localStorage.setItem(storageKey, String(data.schedule?.timezone || body.timezone || getLocalTimezone()));
+          }
           markOnboardingActionComplete("scheduledReport");
           refreshCurrentTime();
           scheduleStatus.textContent = editingScheduleId && !silentReload ? "Schedule updated." : "Schedule created.";
@@ -3297,6 +3437,7 @@
         withInput = false,
         inputValue = "",
         inputPlaceholder = "",
+        hideCancel = false,
       }) {
         renderOpenAppModalContent({
           title,
@@ -3308,6 +3449,7 @@
           withInput,
           inputValue,
           inputPlaceholder,
+          hideCancel,
         });
         appModal.hidden = false;
 
@@ -3351,6 +3493,7 @@
         withInput = false,
         inputValue = "",
         inputPlaceholder = "",
+        hideCancel = false,
       }) {
         const isHowToModal = title === "How To" || title === "Getting Started" || String(messageHtml || "").includes("onboarding-shell");
         appModalTitle.textContent = title || "Confirm";
@@ -3362,6 +3505,7 @@
         }
         appModalConfirmButton.textContent = confirmLabel;
         appModalCancelButton.textContent = cancelLabel;
+        appModalCancelButton.hidden = Boolean(hideCancel);
         appModalAltButton.hidden = !altLabel;
         appModalAltButton.textContent = altLabel || "";
         appModalInput.hidden = !withInput;
@@ -3755,11 +3899,13 @@
       async function showSubscriptionRequiredModal() {
         if (!currentProfile?.subscription?.requires_subscription) return;
         const price = currentProfile.subscription.price_label || "$4.99";
+        const trialDays = currentProfile.subscription.trial_days || 7;
         const result = await openAppModal({
-          title: "Subscription Required",
-          message: `Your free trial has ended. Subscribe for ${price}/month to keep using Discere.`,
-          confirmLabel: "Manage Subscription",
-          cancelLabel: "Not Now",
+          title: "Free Trial Ended",
+          message: `Your ${trialDays}-day free trial has ended. Become a member for ${price}/month to continue using Discere.`,
+          confirmLabel: "Become a Member",
+          cancelLabel: "",
+          hideCancel: true,
         });
         if (result) {
           await openBillingPage();
@@ -4021,6 +4167,7 @@
 
       async function logout() {
         await fetch("/auth/logout", { method: "POST" });
+        sessionStorage.removeItem("oauth:lastProvider");
         sessionStorage.removeItem("oauth:lastEmail");
         sessionStorage.removeItem("oauth:attemptProvider");
         sessionStorage.removeItem("oauth:attemptMode");
@@ -4837,6 +4984,12 @@
         const summaryIds = [...selectedSummaryIds];
         if (!summaryIds.length) {
           setRunStatus("Select at least one summary first.");
+          await openAppModal({
+            title: "Select a Summary First",
+            message: "Choose at least one email summary by clicking the checkbox next to it, then click Refine Summary again.",
+            confirmLabel: "OK",
+            cancelLabel: "Close",
+          });
           return;
         }
 
@@ -5426,13 +5579,48 @@
       contactsModalAddButton.addEventListener("click", addContactFromModal);
       contactsModalCloseButton.addEventListener("click", closeContactsModal);
       chatModalCloseButton.addEventListener("click", closeChatModal);
+      chatModalHeader.addEventListener("pointerdown", (event) => {
+        if (event.target === chatModalCloseButton || window.innerWidth < 620) return;
+        const rect = chatModalCard.getBoundingClientRect();
+        chatDragState = {
+          pointerId: event.pointerId,
+          offsetX: event.clientX - rect.left,
+          offsetY: event.clientY - rect.top,
+        };
+        chatModal.classList.add("is-dragging");
+        chatModalHeader.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      chatModalHeader.addEventListener("pointermove", (event) => {
+        if (!chatDragState || chatDragState.pointerId !== event.pointerId) return;
+        const rect = chatModalCard.getBoundingClientRect();
+        const left = clampChatPanelPosition(event.clientX - chatDragState.offsetX, 12, window.innerWidth - rect.width - 12);
+        const top = clampChatPanelPosition(event.clientY - chatDragState.offsetY, 12, window.innerHeight - rect.height - 12);
+        chatModalCard.style.left = `${left}px`;
+        chatModalCard.style.top = `${top}px`;
+        chatModalCard.style.right = "auto";
+        chatModalCard.style.bottom = "auto";
+        chatModalCard.dataset.hasBeenMoved = "true";
+      });
+      chatModalHeader.addEventListener("pointerup", (event) => {
+        if (!chatDragState || chatDragState.pointerId !== event.pointerId) return;
+        chatDragState = null;
+        chatModal.classList.remove("is-dragging");
+      });
+      chatModalHeader.addEventListener("pointercancel", () => {
+        chatDragState = null;
+        chatModal.classList.remove("is-dragging");
+      });
       scheduleModalCloseButton.addEventListener("click", closeScheduleModal);
       scheduleModalCloseTopButton.addEventListener("click", closeScheduleModal);
       savedSchedulesCloseButton.addEventListener("click", closeSavedSchedulesModal);
       savedSchedulesCloseTopButton.addEventListener("click", closeSavedSchedulesModal);
       savedSchedulesAddButton.addEventListener("click", openCreateScheduleFromSaved);
       scheduleTimezoneInput.addEventListener("change", () => {
-        localStorage.setItem("schedulePreferredTimezone", scheduleTimezoneInput.value || getLocalTimezone());
+        const storageKey = scheduleTimezoneStorageKey();
+        if (storageKey) {
+          localStorage.setItem(storageKey, scheduleTimezoneInput.value || getLocalTimezone());
+        }
         refreshCurrentTime();
       });
       scheduleViewSavedButton.addEventListener("click", openSavedSchedulesModal);
@@ -5465,11 +5653,6 @@
           closeContactsModal();
         }
       });
-      chatModal.addEventListener("click", (event) => {
-        if (event.target === chatModal) {
-          closeChatModal();
-        }
-      });
       scheduleModal.addEventListener("click", (event) => {
         if (event.target === scheduleModal) {
           closeScheduleModal();
@@ -5481,6 +5664,7 @@
         }
       });
       setPulseCollapsed(false);
+      clearLegacySharedBrowserState();
       resetScheduleForm();
       syncDoneViewControls();
       applyTheme(currentTheme);

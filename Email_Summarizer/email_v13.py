@@ -19,7 +19,7 @@ import base64
 import hashlib
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from typing import List, Dict, Optional, Set, Tuple, Any
@@ -47,7 +47,7 @@ APP_STORAGE_DIR = Path(os.getenv("EMAIL_SUMMARIZER_STORAGE_DIR", str(APP_BASE_DI
 OUTPUT_ROOT_DIR = Path(os.getenv("EMAIL_SUMMARIZER_OUTPUT_DIR", str(APP_BASE_DIR / "email_summaries_output"))).resolve()
 MICROSOFT_RECONNECT_MESSAGE = (
     "Microsoft mailbox access expired or needs permission again. "
-    "Please reconnect Microsoft in Settings, then try again."
+    "Reconnect Microsoft and approve mailbox access. If this keeps happening, the Microsoft account may need admin approval."
 )
 GOOGLE_RECONNECT_MESSAGE = (
     "Google mailbox access expired or needs permission again. "
@@ -1270,31 +1270,52 @@ class EmailSummarizer:
             }
 
         logger.info("Running Microsoft Graph search for tracked senders.")
-        since_dt = datetime.utcnow() - timedelta(days=days_back)
+        since_dt = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(days=days_back)
         since_iso = since_dt.replace(microsecond=0).isoformat() + "Z"
 
         candidate_items: List[Dict[str, str]] = []
         seen_candidate_ids: Set[str] = set()
-        for tracked_sender in self.whitelist:
-            params = {
-                "$select": "id,conversationId,receivedDateTime,from",
-                "$top": "100",
-                "$filter": f"receivedDateTime ge {since_iso} and from/emailAddress/address eq '{self._odata_string(tracked_sender)}'",
-            }
-            payload = self._microsoft_graph_request("messages", params)
-            while True:
-                for item in payload.get("value", []):
-                    graph_id = str(item.get("id", "")).strip()
-                    if graph_id and graph_id not in seen_candidate_ids:
-                        seen_candidate_ids.add(graph_id)
-                        candidate_items.append({
-                            "id": graph_id,
-                            "conversationId": str(item.get("conversationId", "")).strip(),
-                        })
-                next_link = payload.get("@odata.nextLink")
-                if not next_link:
-                    break
-                payload = self._microsoft_graph_request(next_link)
+        params = {
+            "$select": "id,conversationId,receivedDateTime,from",
+            "$top": "100",
+            "$orderby": "receivedDateTime desc",
+        }
+        payload = self._microsoft_graph_request("messages", params)
+        pages_read = 0
+        max_pages = 10
+        while True:
+            pages_read += 1
+            reached_older_messages = False
+            for item in payload.get("value", []):
+                received_text = str(item.get("receivedDateTime", "") or "").strip()
+                try:
+                    received_dt = datetime.fromisoformat(received_text.replace("Z", "+00:00"))
+                except ValueError:
+                    received_dt = None
+                if received_dt and received_dt < since_dt:
+                    reached_older_messages = True
+                    continue
+
+                sender = (
+                    str(((item.get("from") or {}).get("emailAddress") or {}).get("address") or "")
+                    .strip()
+                    .lower()
+                )
+                if sender and not self._is_tracked_sender(sender):
+                    continue
+
+                graph_id = str(item.get("id", "")).strip()
+                if graph_id and graph_id not in seen_candidate_ids:
+                    seen_candidate_ids.add(graph_id)
+                    candidate_items.append({
+                        "id": graph_id,
+                        "conversationId": str(item.get("conversationId", "")).strip(),
+                    })
+
+            next_link = payload.get("@odata.nextLink")
+            if not next_link or reached_older_messages or pages_read >= max_pages:
+                break
+            payload = self._microsoft_graph_request(next_link)
 
         logger.info(f"Microsoft Graph returned {len(candidate_items)} candidate message(s)")
         msgs: List[Message] = []

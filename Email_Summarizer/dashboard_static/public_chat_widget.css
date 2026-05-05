@@ -123,6 +123,11 @@
   margin-top: 14px;
 }
 
+.public-chat-prompts[hidden],
+.public-chat-prompts.is-hidden {
+  display: none;
+}
+
 .public-chat-prompt {
   border: 1px solid rgba(18, 18, 18, 0.1);
   border-radius: 999px;

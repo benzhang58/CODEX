@@ -7,6 +7,7 @@ import smtplib
 import sys
 import unittest
 from pathlib import Path
+from typing import List, Optional
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -32,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 
 import dashboard_api
+import email_v13
 
 
 def decoded_mime_text(raw_message: str) -> str:
@@ -950,6 +952,151 @@ class SecurityRegressionTests(unittest.TestCase):
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+    def test_microsoft_graph_search_filters_to_tracked_senders_locally(self) -> None:
+        summarizer = object.__new__(email_v13.EmailSummarizer)
+        summarizer.whitelist = ["tracked@example.com"]
+        summarizer.whitelist_set = {"tracked@example.com"}
+        summarizer._uid_token = email_v13.EmailSummarizer._uid_token
+        summarizer._microsoft_numeric_uid = staticmethod(email_v13.EmailSummarizer._microsoft_numeric_uid)
+        summarizer._message_sender = email_v13.EmailSummarizer._message_sender.__get__(summarizer, email_v13.EmailSummarizer)
+        summarizer._is_tracked_sender = email_v13.EmailSummarizer._is_tracked_sender.__get__(summarizer, email_v13.EmailSummarizer)
+
+        raw_messages = {
+            "tracked-id": "From: Tracked Person <tracked@example.com>\nSubject: Important\n\nTracked body",
+            "blank-id": "From: Tracked Person <tracked@example.com>\nSubject: Blank metadata\n\nTracked body",
+        }
+        fetched_paths: List[str] = []
+
+        def fake_graph_request(path_or_url: str, params: Optional[dict] = None, raw: bool = False):
+            if raw:
+                raise AssertionError("Raw Microsoft Graph fetches should go through _microsoft_graph_raw_message.")
+            self.assertEqual(path_or_url, "messages")
+            self.assertNotIn("$filter", params or {})
+            return {
+                "value": [
+                    {
+                        "id": "tracked-id",
+                        "conversationId": "conversation-tracked",
+                        "receivedDateTime": "2026-05-05T15:00:00Z",
+                        "from": {"emailAddress": {"address": "tracked@example.com"}},
+                    },
+                    {
+                        "id": "untracked-id",
+                        "conversationId": "conversation-untracked",
+                        "receivedDateTime": "2026-05-05T15:00:00Z",
+                        "from": {"emailAddress": {"address": "untracked@example.com"}},
+                    },
+                    {
+                        "id": "blank-id",
+                        "conversationId": "conversation-blank",
+                        "receivedDateTime": "2026-05-05T14:00:00Z",
+                        "from": {"emailAddress": {"address": ""}},
+                    },
+                    {
+                        "id": "old-id",
+                        "conversationId": "conversation-old",
+                        "receivedDateTime": "2026-04-01T14:00:00Z",
+                        "from": {"emailAddress": {"address": "tracked@example.com"}},
+                    },
+                ]
+            }
+
+        def fake_raw_message(graph_message_id: str, conversation_id: str = ""):
+            fetched_paths.append(graph_message_id)
+            message = email.message_from_string(raw_messages[graph_message_id])
+            message.microsoft_message_id = graph_message_id
+            message.microsoft_conversation_id = conversation_id
+            return message
+
+        summarizer._microsoft_graph_request = fake_graph_request
+        summarizer._microsoft_graph_raw_message = fake_raw_message
+
+        messages, stats = summarizer.fetch_trigger_emails_microsoft_graph(days_back=7, processed_uids=set())
+
+        self.assertEqual([message.get("Subject") for message in messages], ["Important", "Blank metadata"])
+        self.assertEqual(fetched_paths, ["tracked-id", "blank-id"])
+        self.assertEqual(stats["candidate_trigger_count"], 2)
+        self.assertEqual(stats["untracked_sender_count"], 0)
+
+    def test_microsoft_saved_summary_uses_standard_dashboard_lifecycle(self) -> None:
+        client = self.signup("microsoft-summary@example.com")
+        user_id = "microsoft_summary_example_com"
+        contact = "tracked@example.com"
+        whitelist_response = client.post("/whitelist", json={"contacts": [contact]})
+        self.assertEqual(whitelist_response.status_code, 200, whitelist_response.text)
+        profile = dashboard_api.load_profile_or_404(user_id)
+        profile["microsoft_oauth"] = {
+            "provider": "microsoft",
+            "email": "microsoft-summary@example.com",
+            "access_token": "microsoft-access",
+            "refresh_token": "microsoft-refresh",
+            "scope": dashboard_api.REQUIRED_MICROSOFT_MAIL_SCOPE,
+        }
+        dashboard_api.save_profile(profile)
+
+        summaries_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+        emails_dir = dashboard_api.get_user_json_emails_dir(user_id)
+        summaries_dir.mkdir(parents=True, exist_ok=True)
+        emails_dir.mkdir(parents=True, exist_ok=True)
+        summary_payload = {
+            "summary_id": "microsoft_summary",
+            "user_id": user_id,
+            "sender": contact,
+            "title": "Microsoft summary",
+            "executive_summary": "Microsoft summary card should appear.",
+            "summary_markdown": "# Email Summary\n\n## Executive Summary\nMicrosoft summary card should appear.",
+            "source_uids": ["12345"],
+            "source_email_file_ids": ["microsoft-email-one"],
+            "created_at": "2026-05-05T15:00:00",
+            "updated_at": "2026-05-05T15:00:00",
+        }
+        email_payload = {
+            "email_id": "microsoft-email-one",
+            "uid": "12345",
+            "sender": contact,
+            "subject": "Microsoft thread",
+            "date": "2026-05-05T15:00:00",
+            "thread": [
+                {
+                    "message_id": "microsoft-message-one",
+                    "date": "2026-05-05T15:00:00",
+                    "sender": contact,
+                    "to": "microsoft-summary@example.com",
+                    "subject": "Microsoft thread",
+                    "body": "Saved Microsoft thread body.",
+                }
+            ],
+        }
+        (summaries_dir / "microsoft_summary.json").write_text(json.dumps(summary_payload), encoding="utf-8")
+        (emails_dir / "microsoft-email-one.json").write_text(json.dumps(email_payload), encoding="utf-8")
+        dashboard_api.save_processed_uids_for_user(user_id, ["12345"])
+
+        list_response = client.get("/summaries")
+        self.assertEqual(list_response.status_code, 200, list_response.text)
+        self.assertIn("microsoft_summary", {item["summary_id"] for item in list_response.json()["summaries"]})
+
+        detail_response = client.get("/summaries/microsoft_summary")
+        self.assertEqual(detail_response.status_code, 200, detail_response.text)
+        self.assertIn("Microsoft summary card should appear.", detail_response.text)
+
+        thread_response = client.get("/summaries/microsoft_summary/thread")
+        self.assertEqual(thread_response.status_code, 200, thread_response.text)
+        self.assertTrue(thread_response.json()["content_available"])
+        self.assertEqual(thread_response.json()["threads"][0]["thread"][0]["body"], "Saved Microsoft thread body.")
+
+        read_response = client.post("/summaries/microsoft_summary/mark-read")
+        self.assertEqual(read_response.status_code, 200, read_response.text)
+        self.assertTrue(read_response.json()["read_at"])
+
+        done_response = client.post("/summaries/microsoft_summary/mark-done", json={"done": True})
+        self.assertEqual(done_response.status_code, 200, done_response.text)
+        self.assertTrue(done_response.json()["done_at"])
+
+        delete_response = client.delete("/summaries/microsoft_summary")
+        self.assertEqual(delete_response.status_code, 200, delete_response.text)
+        self.assertIn("12345", delete_response.json()["removed_uids"])
+        self.assertNotIn("12345", dashboard_api.load_processed_uids_for_user(user_id))
 
     def test_new_accounts_do_not_inherit_global_account_scoped_settings(self) -> None:
         client = self.signup("fresh@example.com")
@@ -2012,6 +2159,56 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("Old summary", markdown)
         self.assertNotIn("This should not be emailed again.", markdown)
         self.assertEqual(send_mock.call_args.kwargs["subject"], "Daily - Scheduled Email Summary")
+
+    def test_scheduled_report_new_summaries_are_visible_in_dashboard(self) -> None:
+        client = self.signup("scheduled-dashboard@example.com")
+        self.connect_standard_mailbox(client, "scheduled-dashboard@example.com")
+        user_id = "scheduled_dashboard_example_com"
+        contact = "sender@example.com"
+        contacts_response = client.post("/whitelist", json={"contacts": [contact]})
+        self.assertEqual(contacts_response.status_code, 200, contacts_response.text)
+
+        schedule_response = client.post(
+            "/report-schedules",
+            json={
+                "name": "Daily",
+                "interval_value": 1,
+                "interval_unit": "days",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.text)
+        schedule_id = schedule_response.json()["schedule"]["schedule_id"]
+
+        def fake_summarizer_run(_user_id: str, _days_back: int) -> dict:
+            self.assertEqual(_user_id, user_id)
+            summaries_dir = dashboard_api.get_user_json_summaries_dir(user_id)
+            summaries_dir.mkdir(parents=True, exist_ok=True)
+            summary = {
+                "summary_id": "scheduled_visible_summary",
+                "user_id": user_id,
+                "sender": contact,
+                "title": "Scheduled visible summary",
+                "executive_summary": "This scheduled summary should become a dashboard card.",
+                "created_at": "2026-04-28T08:00:00",
+                "updated_at": "2026-04-28T08:00:00",
+            }
+            (summaries_dir / "scheduled_visible_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+            return {"success": True, "new_summary_ids": ["scheduled_visible_summary"]}
+
+        with patch.object(dashboard_api, "execute_summarizer_run", side_effect=fake_summarizer_run), patch.object(
+            dashboard_api,
+            "send_combined_report_via_smtp",
+            return_value={"recipient": "scheduled-dashboard@example.com"},
+        ) as send_mock:
+            dashboard_api.process_due_schedule(schedule_id)
+
+        send_mock.assert_called_once()
+        summaries_response = client.get("/summaries")
+        self.assertEqual(summaries_response.status_code, 200, summaries_response.text)
+        summaries = summaries_response.json()["summaries"]
+        summary_ids = {summary["summary_id"] for summary in summaries}
+        self.assertIn("scheduled_visible_summary", summary_ids)
 
     def test_scheduled_report_goes_to_user_not_tracked_contact(self) -> None:
         client = self.signup("scheduled-recipient-owner@example.com")
