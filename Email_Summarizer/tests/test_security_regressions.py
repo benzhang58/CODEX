@@ -1943,6 +1943,8 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertIn("PUBLIC DISCERE KNOWLEDGE", input_text)
         self.assertNotIn("Secret board meeting", input_text)
         self.assertNotIn("private_user_example_com", input_text)
+        instructions = mock_client.responses.create.call_args.kwargs["instructions"]
+        self.assertIn("Do not use markdown formatting", instructions)
 
     def test_billing_checkout_is_stripe_ready_without_fake_success(self) -> None:
         client = self.signup("checkout@example.com")

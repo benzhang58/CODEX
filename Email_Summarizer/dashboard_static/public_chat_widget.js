@@ -2,6 +2,7 @@
 (() => {
   const STORAGE_POSITION_KEY = "discerePublicChatPosition";
   const STORAGE_HISTORY_KEY = "discerePublicChatHistory";
+  const STORAGE_PROMPTS_HIDDEN_KEY = "discerePublicChatPromptsHidden";
   const MAX_HISTORY = 10;
 
   const starterPrompts = [
@@ -12,6 +13,7 @@
   ];
 
   let conversation = loadConversation();
+  let promptsHidden = localStorage.getItem(STORAGE_PROMPTS_HIDDEN_KEY) === "true" || conversation.some((entry) => entry.role === "user");
   let isSending = false;
   let dragState = null;
 
@@ -90,10 +92,29 @@
     statusElement.textContent = text || "";
   }
 
+  function hideStarterPrompts(elements) {
+    promptsHidden = true;
+    localStorage.setItem(STORAGE_PROMPTS_HIDDEN_KEY, "true");
+    if (elements.prompts) {
+      elements.prompts.hidden = true;
+    }
+  }
+
+  function cleanAssistantText(text) {
+    return String(text || "")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^\s*[-*]\s+/gm, "")
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .trim();
+  }
+
   async function sendQuestion(question, elements) {
     const trimmed = String(question || "").trim();
     if (!trimmed || isSending) return;
     isSending = true;
+    hideStarterPrompts(elements);
     elements.sendButton.disabled = true;
     elements.input.disabled = true;
     setStatus(elements.status, "Thinking...");
@@ -116,7 +137,7 @@
       }
       conversation.push({
         role: "assistant",
-        text: String(data.answer || "I could not answer that clearly. Try asking in a simpler way."),
+        text: cleanAssistantText(data.answer || "I could not answer that clearly. Try asking in a simpler way."),
       });
       setStatus(elements.status, "");
     } catch (error) {
@@ -156,6 +177,7 @@
     const body = createElement("div", "public-chat-body");
     const messages = createElement("div", "public-chat-messages");
     const prompts = createElement("div", "public-chat-prompts");
+    prompts.hidden = promptsHidden;
     starterPrompts.forEach((prompt) => {
       const button = createElement("button", "public-chat-prompt", prompt);
       button.type = "button";
@@ -177,7 +199,7 @@
     windowElement.append(header, body);
     document.body.append(launcher, windowElement);
 
-    const elements = { launcher, windowElement, header, closeButton, messages, input, sendButton, status };
+    const elements = { launcher, windowElement, header, closeButton, messages, prompts, input, sendButton, status };
 
     launcher.addEventListener("click", () => {
       windowElement.hidden = false;
