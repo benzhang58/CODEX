@@ -1365,6 +1365,20 @@
         overflow-wrap: anywhere;
       }
 
+      .schedule-deliverability-note {
+        margin-top: 14px;
+        border: 1px solid #e5dfd4;
+        border-radius: 18px;
+        padding: 14px 16px;
+        background: #f8f3ea;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .schedule-deliverability-note strong {
+        color: var(--text);
+      }
+
       .schedule-inline {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2405,6 +2419,9 @@
               <div class="field field-wide">
                 <label>Report recipient</label>
                 <div id="scheduleRecipientDisplay" class="schedule-recipient-display">Connected account email</div>
+                <div class="schedule-deliverability-note">
+                  <strong>First email note:</strong> The first Discere report email may land in spam. If you do not see it, check spam and mark it as not spam so future reports are easier to find.
+                </div>
               </div>
             </div>
           </section>
@@ -3550,17 +3567,30 @@
         }
       }
 
-      async function showFirstTimeEmailHint({ hintKey, alreadySeen, title, message }) {
+      async function showFirstTimeEmailHint({ hintKey, alreadySeen, title, message, messageHtml = "" }) {
         if (alreadySeen) return;
         const acknowledged = await openAppModal({
           title,
           message,
-          confirmLabel: "Got it",
-          cancelLabel: "Not now",
+          messageHtml,
+          confirmLabel: "OK",
+          cancelLabel: "Close",
+          hideCancel: true,
         });
         if (acknowledged) {
           await markUiHintSeen(hintKey);
         }
+      }
+
+      function buildEmailDeliverabilityHintHtml(primaryMessage) {
+        return `
+          <div style="display:grid; gap:14px;">
+            <p style="margin:0;">${escapeHtml(primaryMessage)}</p>
+            <p style="margin:0;">
+              <strong>First email note:</strong> The first Discere email may land in spam. If you do not see it, check spam and mark it as not spam so future Discere emails are easier to find.
+            </p>
+          </div>
+        `;
       }
 
       function buildLegalAcceptanceHtml() {
@@ -4937,7 +4967,7 @@
           setRunStatus("Select at least one summary first.");
           await openAppModal({
             title: "Select a Summary First",
-            message: "Choose at least one email summary by clicking the checkbox next to it, then click Send Selected Report again.",
+            message: "Choose at least one email summary by clicking the checkbox next to it, then click Delete again.",
             confirmLabel: "OK",
             cancelLabel: "Close",
           });
@@ -4997,7 +5027,7 @@
           setRunStatus("Select at least one summary first.");
           await openAppModal({
             title: "Select a Summary First",
-            message: "Choose at least one email summary by clicking the checkbox next to it, then click Refine Summary again.",
+            message: "Choose at least one email summary by clicking the checkbox next to it, then click Send Selected Report again.",
             confirmLabel: "OK",
             cancelLabel: "Close",
           });
@@ -5008,7 +5038,9 @@
           hintKey: "has_seen_combined_summary_email_hint",
           alreadySeen: Boolean(currentProfile?.settings?.has_seen_combined_summary_email_hint),
           title: "Send Selected Report",
-          message: "Send Selected Report sends one email report with the Executive Summary sections from the summary cards you selected. It does not include each full summary.",
+          messageHtml: buildEmailDeliverabilityHintHtml(
+            "Send Selected Report sends one email report with the Executive Summary sections from the summary cards you selected. It does not include each full summary."
+          ),
         });
 
         emailReportButton.disabled = true;
@@ -5548,7 +5580,7 @@
             hintKey: "has_seen_single_summary_email_hint",
             alreadySeen: false,
             title: "Send Full Summary",
-            message: "This sends the full summary for the currently open email summary only.",
+            messageHtml: buildEmailDeliverabilityHintHtml("This sends the full summary for the currently open email summary only."),
           });
         }
 

@@ -1595,7 +1595,7 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("Confidential merger update", serialized)
         self.assertNotIn("Acquire Project Falcon", serialized)
         self.assertNotIn("Do not leak this", serialized)
-        self.assertIn("Private Notification", serialized)
+        self.assertIn("Email Notification", serialized)
 
     def test_private_combined_report_mode_omits_report_content(self) -> None:
         client = self.signup("private-combined@example.com")
@@ -1621,7 +1621,7 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(send_kwargs["subject"], dashboard_api.MANUAL_REPORT_EMAIL_SUBJECT)
         self.assertNotIn("Board acquisition report", serialized)
         self.assertNotIn("Project Falcon", serialized)
-        self.assertIn("Private Notification", serialized)
+        self.assertIn("Email Notification", serialized)
 
     def test_combined_report_uses_executive_summary_only(self) -> None:
         markdown = dashboard_api.build_combined_report_markdown(

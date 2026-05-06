@@ -571,8 +571,8 @@ GOOGLE_OAUTH_SCOPES = [
 ]
 REQUIRED_GOOGLE_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 REQUIRED_MICROSOFT_MAIL_SCOPE = "https://graph.microsoft.com/Mail.Read"
-TERMS_VERSION = "2026-04-23"
-PRIVACY_VERSION = "2026-04-23"
+TERMS_VERSION = "2026-05-06"
+PRIVACY_VERSION = "2026-05-06"
 MICROSOFT_OAUTH_STATE: Dict[str, Dict[str, str]] = {}
 MICROSOFT_OAUTH_STATE_COOKIE = "email_dashboard_microsoft_state"
 MICROSOFT_OAUTH_NEXT_COOKIE = "email_dashboard_microsoft_next"
@@ -4395,7 +4395,7 @@ Read, done, delete, and re-summarization:
 
 Reports and scheduled reports:
 - Manual and scheduled email reports are sent from Discere's configured report sender address, not from the user's connected Gmail, Microsoft, or mailbox account.
-- Users can choose Full Report, which includes summary content in report emails, or Private Notification, which sends a generic "ready" email that links back to the dashboard without including summary content.
+- Users can choose Full Report, which includes summary content in report emails, or Email Notification, which sends a generic "ready" email that links back to the dashboard without including summary content.
 - Scheduled reports always create a fresh summarizer run first, then email the chosen report format to the user's connected account email.
 - Saved schedules can be viewed, edited, deleted, and toggled on/off.
 - Phone/SMS report delivery is not part of the current launch flow unless explicitly re-enabled later.
@@ -4411,7 +4411,7 @@ Privacy and AI processing:
 - Discere reads mailbox data needed to find emails from tracked contacts and generate summaries.
 - Discere stores account settings, contacts, schedules, summaries, summarized email IDs, and limited source email data needed to operate Discere.
 - Relevant email text and thread context are sent to OpenAI through the OpenAI API to generate summaries and AI answers. Attachment contents are sent to OpenAI only if AI attachment access is enabled; otherwise Discere limits attachment use to metadata such as filenames.
-- OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. OpenAI may still retain limited API data, which can include prompts and responses, for abuse monitoring, safety, legal compliance, and API operation under its published API data controls.
+- OpenAI states that API inputs and outputs are not used to train or improve OpenAI models by default unless the API organization explicitly opts in. Discere has not opted in to share API inputs or outputs for OpenAI model training or improvement, so Discere's OpenAI API inputs and outputs are not used to train or improve OpenAI models. OpenAI may still retain limited API data, which can include prompts and responses, for abuse monitoring, safety, legal compliance, and API operation under its published API data controls.
 - OpenAI's published API data controls say abuse-monitoring logs may include customer content such as prompts and responses and are retained for up to 30 days by default, unless longer retention is required by law or needed to protect OpenAI's services or others from harm.
 - Discere does not sell Google or Microsoft user data and does not use mailbox data for advertising.
 
@@ -4419,7 +4419,7 @@ Security and account controls:
 - OAuth tokens and mailbox credentials are encrypted and stored where needed.
 - Discere uses account isolation so users should only access their own summaries, contacts, settings, attachments, schedules, and related account data.
 - Users can delete individual summaries from the dashboard.
-- Users can delete their account from Settings. Account deletion removes account data, contacts, schedules, summaries, source email data, attachments, and related user records.
+- Users can delete their account from Settings. Account deletion removes account data, contacts, schedules, summaries, source email data, attachments, and related user records, except limited records retained where reasonably necessary for security, legal compliance, dispute resolution, fraud prevention, or backup integrity.
 - Users can revoke Google or Microsoft OAuth access from their provider account settings.
 - No internet service is risk-free. Sensitive legal, medical, financial, government, board-level, regulated, or highly confidential inboxes should be reviewed carefully before connecting.
 
@@ -4510,18 +4510,19 @@ Main features:
 - AI Assistant: inside the dashboard, users can ask questions about their saved summaries and emails.
 - Scheduled summaries: users can receive routine Discere report emails.
 - Reports: sent from Discere to the user's connected account email, not from the user's personal mailbox.
-- Full Report includes summary content in the email. Private Notification sends a simple ready message without summary content.
+- Full Report includes summary content in the email. Email Notification sends a simple ready message without summary content.
 
 Privacy and data:
 - Gmail uses Gmail API read-only access.
 - Microsoft/Outlook uses Microsoft OAuth and Microsoft Graph mailbox read access.
 - Discere reads mailbox data needed to find and summarize emails from tracked contacts.
 - Relevant email text is sent to OpenAI through the OpenAI API to generate summaries and AI answers.
+- Discere has not opted in to share API inputs or outputs for OpenAI model training or improvement, so Discere's OpenAI API inputs and outputs are not used to train or improve OpenAI models.
 - Attachment contents are sent to AI only if AI Attachment Access is turned on. If it is off, Discere only uses basic attachment references such as filenames.
 - Discere stores account settings, contacts, schedules, summaries, summarized email IDs, and limited source email data needed to operate the service.
 - Read or done summaries have source email bodies and saved attachments purged after 20 days, while summarized email IDs can remain to avoid duplicate summaries.
 - Discere does not sell Google or Microsoft user data and does not use mailbox data for advertising.
-- Users can delete individual summaries or delete their account in Settings.
+- Users can delete individual summaries or delete their account in Settings. Limited records may remain where reasonably necessary for security, legal compliance, dispute resolution, fraud prevention, or backup integrity.
 
 Billing:
 - New accounts receive a 7-day free trial without entering payment information.
@@ -4530,7 +4531,7 @@ Billing:
 
 Public chat limits:
 - This public website chat can explain Discere, but it cannot see a visitor's inbox, account, summaries, contacts, schedules, or billing status.
-- For account-specific help, tell users to log in and use the dashboard or contact discereresearch@gmail.com.
+- For account-specific help, tell users to log in and use the dashboard or contact disceresupport@gmail.com.
 """.strip()
 
 
@@ -5206,7 +5207,7 @@ def render_private_report_notification_html(report_label: str = "report") -> str
         "max-width:640px; margin:0 auto; padding:24px; background:#fff;'>"
         f"<h1 style='margin:0 0 12px 0; font-size:28px; letter-spacing:-0.04em;'>Your Discere {escape(report_label)} is ready</h1>"
         "<p style='margin:0; color:#555; line-height:1.6;'>"
-        "You chose Private Notification mode, so this email does not include summary content. "
+        "You chose Email Notification mode, so this email does not include summary content. "
         "Open Discere to read the report inside your dashboard."
         "</p>"
         f"{link_html}"
@@ -5221,7 +5222,7 @@ def render_private_report_notification_text(report_label: str = "report") -> str
     lines = [
         f"Your Discere {report_label} is ready.",
         "",
-        "You chose Private Notification mode, so this email does not include summary content.",
+        "You chose Email Notification mode, so this email does not include summary content.",
         "Open Discere to read the report inside your dashboard.",
     ]
     link = dashboard_url()
@@ -5930,7 +5931,7 @@ def public_chat(payload: PublicChatRequest, request: Request) -> Dict[str, Any]:
 
     answer = clean_chat_answer_text(str(getattr(response, "output_text", "") or ""))
     if not answer:
-        answer = "I could not answer that clearly. Try asking in a simpler way, or contact discereresearch@gmail.com."
+        answer = "I could not answer that clearly. Try asking in a simpler way, or contact disceresupport@gmail.com."
 
     return {"answer": answer}
 
@@ -5975,7 +5976,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
         "For email-specific questions, answer only from the provided summaries and email bodies. Do not invent facts, deadlines, requests, attachments, or email text. "
         "For Discere product, privacy, security, terms, and workflow questions, answer only from the Discere product knowledge provided. "
         "If there are no saved summaries yet, do not mention the internal user ID. For email-specific questions, briefly say there are no saved summaries yet and explain the next step: add contacts, run the summarizer, then ask again. "
-        "If the answer is not in the provided context or product knowledge, say so clearly and suggest checking Settings, Privacy, Security FAQ, Terms, or contacting discereresearch@gmail.com. "
+        "If the answer is not in the provided context or product knowledge, say so clearly and suggest checking Settings, Privacy, Security FAQ, Terms, or contacting disceresupport@gmail.com. "
         "If the user asks where something was said, quote the exact relevant email text when available. "
         "If the user asks about attachments, mention attachment filenames explicitly when available. "
         "If the user asks why deleted summaries/emails appear again, explain that deleting a summary removes the identifier so it can be rediscovered; marking it done keeps the identifier so it should not be re-summarized accidentally. "
