@@ -30,6 +30,7 @@
           document.documentElement.style.setProperty("--accent-soft", values[1]);
           document.documentElement.style.setProperty("--surface-soft", values[2]);
           document.documentElement.style.setProperty("--surface-soft-2", values[3]);
+          document.documentElement.style.backgroundColor = values[0];
         } catch (_) {}
       })();
     </script>
@@ -53,11 +54,15 @@
 
       * { box-sizing: border-box; }
 
+      html,
+      body {
+        background: var(--bg);
+      }
+
       body {
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         color: var(--text);
-        background: var(--bg);
         min-height: 100vh;
       }
 
@@ -1158,71 +1163,89 @@
         try {
           localStorage.setItem("discere:backgroundTheme", theme);
         } catch (_) {}
+        let bgColor = "#f3f3f0";
         if (theme === "white") {
+          bgColor = "#ffffff";
           document.documentElement.style.setProperty("--bg", "#ffffff");
           document.documentElement.style.setProperty("--accent-soft", "#f2f2f2");
           document.documentElement.style.setProperty("--surface-soft", "#f8f8f8");
           document.documentElement.style.setProperty("--surface-soft-2", "#ededed");
         } else if (theme === "blue") {
+          bgColor = "#cfe0ff";
           document.documentElement.style.setProperty("--bg", "#cfe0ff");
           document.documentElement.style.setProperty("--accent-soft", "#aac5ff");
           document.documentElement.style.setProperty("--surface-soft", "#bdd3ff");
           document.documentElement.style.setProperty("--surface-soft-2", "#7da3ff");
         } else if (theme === "pink") {
+          bgColor = "#ffc9de";
           document.documentElement.style.setProperty("--bg", "#ffc9de");
           document.documentElement.style.setProperty("--accent-soft", "#ff9fc6");
           document.documentElement.style.setProperty("--surface-soft", "#ffb8d3");
           document.documentElement.style.setProperty("--surface-soft-2", "#f26ca6");
         } else if (theme === "red") {
+          bgColor = "#ffd1d1";
           document.documentElement.style.setProperty("--bg", "#ffd1d1");
           document.documentElement.style.setProperty("--accent-soft", "#ffaaaa");
           document.documentElement.style.setProperty("--surface-soft", "#ffc1c1");
           document.documentElement.style.setProperty("--surface-soft-2", "#ef6a6a");
         } else if (theme === "stone") {
+          bgColor = "#ead8bf";
           document.documentElement.style.setProperty("--bg", "#ead8bf");
           document.documentElement.style.setProperty("--accent-soft", "#dcb88a");
           document.documentElement.style.setProperty("--surface-soft", "#e4ceab");
           document.documentElement.style.setProperty("--surface-soft-2", "#c89859");
         } else if (theme === "mist") {
+          bgColor = "#cce7ef";
           document.documentElement.style.setProperty("--bg", "#cce7ef");
           document.documentElement.style.setProperty("--accent-soft", "#a7d6e4");
           document.documentElement.style.setProperty("--surface-soft", "#b9e0eb");
           document.documentElement.style.setProperty("--surface-soft-2", "#74b9cf");
         } else if (theme === "green") {
+          bgColor = "#c8f0cf";
           document.documentElement.style.setProperty("--bg", "#c8f0cf");
           document.documentElement.style.setProperty("--accent-soft", "#9be2aa");
           document.documentElement.style.setProperty("--surface-soft", "#b5e9bf");
           document.documentElement.style.setProperty("--surface-soft-2", "#6cc681");
         } else if (theme === "purple") {
+          bgColor = "#dbc9ff";
           document.documentElement.style.setProperty("--bg", "#dbc9ff");
           document.documentElement.style.setProperty("--accent-soft", "#c1a5ff");
           document.documentElement.style.setProperty("--surface-soft", "#ceb8ff");
           document.documentElement.style.setProperty("--surface-soft-2", "#9e77ef");
         } else if (theme === "ocean") {
+          bgColor = "#bfe4f6";
           document.documentElement.style.setProperty("--bg", "#bfe4f6");
           document.documentElement.style.setProperty("--accent-soft", "#8fd0ef");
           document.documentElement.style.setProperty("--surface-soft", "#acddf2");
           document.documentElement.style.setProperty("--surface-soft-2", "#50abd8");
         } else if (theme === "rose") {
+          bgColor = "#f7c9d6";
           document.documentElement.style.setProperty("--bg", "#f7c9d6");
           document.documentElement.style.setProperty("--accent-soft", "#ec9cb3");
           document.documentElement.style.setProperty("--surface-soft", "#f2b8ca");
           document.documentElement.style.setProperty("--surface-soft-2", "#db6a91");
         } else if (theme === "amber") {
+          bgColor = "#f6ddb0";
           document.documentElement.style.setProperty("--bg", "#f6ddb0");
           document.documentElement.style.setProperty("--accent-soft", "#efc86e");
           document.documentElement.style.setProperty("--surface-soft", "#f2d296");
           document.documentElement.style.setProperty("--surface-soft-2", "#db9b2a");
         } else if (theme === "slate") {
+          bgColor = "#d6dde8";
           document.documentElement.style.setProperty("--bg", "#d6dde8");
           document.documentElement.style.setProperty("--accent-soft", "#b7c4d6");
           document.documentElement.style.setProperty("--surface-soft", "#c8d2df");
           document.documentElement.style.setProperty("--surface-soft-2", "#889ab4");
         } else {
+          bgColor = "#f3f3f0";
           document.documentElement.style.setProperty("--bg", "#f3f3f0");
           document.documentElement.style.setProperty("--accent-soft", "#ecebe6");
           document.documentElement.style.setProperty("--surface-soft", "#efeee9");
           document.documentElement.style.setProperty("--surface-soft-2", "#e7e5de");
+        }
+        document.documentElement.style.backgroundColor = bgColor;
+        if (document.body) {
+          document.body.style.backgroundColor = bgColor;
         }
 
         themeChips.forEach((chip) => {
