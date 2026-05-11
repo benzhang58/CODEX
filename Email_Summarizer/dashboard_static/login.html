@@ -6,6 +6,11 @@
     <title>Log In</title>
     <link rel="icon" type="image/png" href="/dashboard_static/discere-logo.png" />
     <link rel="apple-touch-icon" href="/dashboard_static/discere-logo.png" />
+    <script>
+      if (window.location.pathname === "/manual-login") {
+        document.documentElement.classList.add("manual-login-mode");
+      }
+    </script>
     <style>
       :root {
         --bg: #f5f5f7;
@@ -96,6 +101,18 @@
         border-top: 1px solid var(--border);
       }
 
+      .manual-login-mode .public-login-copy,
+      .manual-login-mode .public-oauth-actions {
+        display: none;
+      }
+
+      .manual-login-mode .manual-login-panel {
+        display: block;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
+      }
+
       .manual-login-panel.is-visible {
         display: block;
       }
@@ -140,15 +157,15 @@
   </head>
   <body>
     <main class="card">
-      <h1>Email Dashboard</h1>
-      <p>Log in with Gmail or Outlook.</p>
+      <h1 id="loginTitle">Email Dashboard</h1>
+      <p id="loginIntro" class="public-login-copy">Log in with Gmail or Outlook.</p>
 
-      <div class="actions">
+      <div id="oauthActions" class="actions public-oauth-actions">
         <a id="googleOauthButton" class="secondary-button" href="/auth/google/start">Continue with Google</a>
         <a id="microsoftOauthButton" class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
       </div>
 
-      <div id="manualLoginPanel" class="manual-login-panel" hidden>
+      <div id="manualLoginPanel" class="manual-login-panel">
         <p>Approved private clients can sign in below.</p>
         <div class="field">
           <label for="emailInput">Email</label>
@@ -173,11 +190,12 @@
       const manualLoginPanel = document.getElementById("manualLoginPanel");
       const googleOauthButton = document.getElementById("googleOauthButton");
       const microsoftOauthButton = document.getElementById("microsoftOauthButton");
+      const loginTitle = document.getElementById("loginTitle");
       const status = document.getElementById("status");
       const manualLoginMode = window.location.pathname === "/manual-login";
 
       if (manualLoginMode) {
-        manualLoginPanel.hidden = false;
+        loginTitle.textContent = "Private Client Login";
         manualLoginPanel.classList.add("is-visible");
       }
 
