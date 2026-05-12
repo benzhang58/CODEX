@@ -263,6 +263,10 @@ def monitoring_enabled() -> bool:
     return os.getenv("EMAIL_SUMMARIZER_MONITORING_ENABLED", "true").lower() != "false"
 
 
+def public_reports_enabled() -> bool:
+    return os.getenv("EMAIL_SUMMARIZER_PUBLIC_REPORTS_ENABLED", "false").strip().lower() == "true"
+
+
 SENSITIVE_METADATA_KEY_TERMS = ("token", "secret", "password", "authorization", "cookie", "api_key", "key")
 SENSITIVE_TEXT_PATTERNS = [
     re.compile(r"(?i)\b(bearer)\s+[a-z0-9._~+/=-]{12,}"),
@@ -272,6 +276,7 @@ SENSITIVE_TEXT_PATTERNS = [
     re.compile(
         r"(?i)((?:\"|')?(?:access_token|refresh_token|id_token|client_secret|password|api_key)(?:\"|')?\s*:\s*)(\"[^\"]*\"|'[^']*'|[^\s,;}\]]+)"
     ),
+    re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"),
 ]
 
 
@@ -279,8 +284,9 @@ def redact_sensitive_text(value: str) -> str:
     text = str(value or "")
     redacted = text
     redacted = SENSITIVE_TEXT_PATTERNS[0].sub(r"\1 [redacted]", redacted)
-    for pattern in SENSITIVE_TEXT_PATTERNS[1:]:
+    for pattern in SENSITIVE_TEXT_PATTERNS[1:-1]:
         redacted = pattern.sub(r"\1[redacted]", redacted)
+    redacted = SENSITIVE_TEXT_PATTERNS[-1].sub("[redacted-email]", redacted)
     return redacted
 
 
@@ -660,6 +666,7 @@ def get_db_connection() -> sqlite3.Connection:
 
 
 def track_analytics_event(user_id: str, event_name: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    safe_metadata = safe_monitoring_metadata(metadata)
     with get_db_connection() as connection:
         connection.execute(
             """
@@ -671,9 +678,17 @@ def track_analytics_event(user_id: str, event_name: str, metadata: Optional[Dict
                 user_id,
                 event_name,
                 datetime.now().isoformat(),
-                json.dumps(metadata or {}, ensure_ascii=False),
+                json.dumps(safe_metadata, ensure_ascii=False),
             ),
         )
+
+
+def sanitize_metadata_json_text(raw_value: Any) -> str:
+    try:
+        parsed = json.loads(str(raw_value or "{}"))
+    except json.JSONDecodeError:
+        return truncate_monitoring_value(str(raw_value or ""))
+    return json.dumps(safe_monitoring_metadata(parsed if isinstance(parsed, dict) else {"value": parsed}), ensure_ascii=False)
 
 
 def analytics_event_exists(user_id: str, event_name: str) -> bool:
@@ -1121,6 +1136,14 @@ def check_path_writable(path: Path) -> bool:
         return False
 
 
+def path_is_under(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def build_deploy_readiness() -> Dict[str, Any]:
     report_sender = get_report_sender_config()
     checks = {
@@ -1183,6 +1206,10 @@ def build_deploy_readiness() -> Dict[str, Any]:
             errors.append("Production public base URL should use HTTPS.")
         if not checks["cors_origins_production_safe"]:
             errors.append("Production CORS origins must include at least one HTTPS public origin and cannot include '*'.")
+        if os.getenv("RENDER") and not path_is_under(APP_STORAGE_DIR, Path("/var/data")):
+            errors.append("Production storage directory should be on the Render persistent disk.")
+        if os.getenv("RENDER") and not path_is_under(OUTPUT_ROOT_DIR, Path("/var/data")):
+            errors.append("Production output directory should be on the Render persistent disk.")
 
     if not checks["storage_dir_writable"]:
         errors.append("Storage directory is not writable.")
@@ -1214,7 +1241,8 @@ def build_deploy_readiness() -> Dict[str, Any]:
 
 
 @app.get("/health/deployment")
-def deployment_health() -> Dict[str, Any]:
+def deployment_health(request: Request) -> Dict[str, Any]:
+    require_admin(request)
     readiness = build_deploy_readiness()
     return {
         "status": "ok",
@@ -1227,7 +1255,11 @@ def deployment_health() -> Dict[str, Any]:
 
 @app.get("/health/readiness")
 def readiness_health() -> Dict[str, Any]:
-    return build_deploy_readiness()
+    readiness = build_deploy_readiness()
+    return {
+        "status": readiness["status"],
+        "ready": readiness["status"] == "ready",
+    }
 
 
 @app.get("/admin/analytics")
@@ -1257,6 +1289,8 @@ def admin_analytics(request: Request, limit: int = Query(100, ge=1, le=1000)) ->
                 (limit,),
             ).fetchall()
         ]
+    for event in recent_events:
+        event["metadata_json"] = sanitize_metadata_json_text(event.get("metadata_json"))
     return {"totals": totals, "events": recent_events}
 
 
@@ -1310,6 +1344,8 @@ def admin_monitoring(request: Request, limit: int = Query(100, ge=1, le=1000)) -
                 (limit,),
             ).fetchall()
         ]
+    for event in recent_events:
+        event["metadata_json"] = sanitize_metadata_json_text(event.get("metadata_json"))
     return {
         "enabled": monitoring_enabled(),
         "window_hours": 24,
@@ -1549,10 +1585,13 @@ def delete_account(request: Request, response: Response) -> Dict[str, Any]:
 
     user_data_dir = DATA_DIR / user_id
     user_output_dir = OUTPUT_ROOT_DIR / user_id
+    user_public_report_dir = PUBLIC_REPORTS_DIR / user_id
     if user_data_dir.exists():
         shutil.rmtree(user_data_dir, ignore_errors=True)
     if user_output_dir.exists():
         shutil.rmtree(user_output_dir, ignore_errors=True)
+    if user_public_report_dir.exists():
+        shutil.rmtree(user_public_report_dir, ignore_errors=True)
 
     clear_session(response, request)
     return {"success": True, "user_id": profile["user_id"], "email": profile.get("email", "")}
@@ -3565,7 +3604,7 @@ def find_profile_by_email(email: str) -> Optional[Dict[str, Any]]:
 def load_profile_or_404(user_id: str) -> Dict[str, Any]:
     profile = load_profile(user_id)
     if not profile:
-        raise HTTPException(status_code=404, detail=f"No profile found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail="Profile not found.")
     return profile
 
 
@@ -4865,7 +4904,7 @@ def get_attachment(request: Request, user_id: str = Query(...), path: str = Quer
         raise HTTPException(status_code=403, detail="You do not have access to that attachment.")
 
     if not requested_path.exists() or not requested_path.is_file():
-        raise HTTPException(status_code=404, detail=f"Attachment not found for user '{resolved_user_id}'.")
+        raise HTTPException(status_code=404, detail="Attachment not found.")
 
     return FileResponse(requested_path, filename=requested_path.name)
 
@@ -4877,6 +4916,8 @@ def get_public_report(
     expires: int = Query(...),
     sig: str = Query(...),
 ) -> FileResponse:
+    if not public_reports_enabled():
+        raise HTTPException(status_code=404, detail="Public report links are not available.")
     if expires < int(datetime.now().timestamp()):
         raise HTTPException(status_code=403, detail="Public report link has expired.")
     expected_sig = sign_public_report_token(user_id, path, expires)
@@ -4905,7 +4946,7 @@ def delete_summary(summary_id: str, request: Request, user_id: Optional[str] = Q
     user_id = resolve_user_id(request, user_id)
     summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
-        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail="Summary not found.")
 
     summary_payload = load_summary_json(summary_path)
     other_summaries = [
@@ -6663,7 +6704,7 @@ def get_summary(summary_id: str, request: Request, user_id: Optional[str] = Quer
 
     summary_path = safe_user_file_path(get_user_summaries_dir(user_id), summary_id, ".md", "summary id")
     if not summary_path.exists():
-        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail="Summary not found.")
 
     return load_summary_file(summary_path)
 
@@ -6673,7 +6714,7 @@ def get_summary_thread(summary_id: str, request: Request, user_id: Optional[str]
     user_id = resolve_user_id(request, user_id)
     summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
-        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail="Summary not found.")
 
     summary = load_summary_json(summary_path)
     email_ids = [str(email_id).strip() for email_id in summary.get("source_email_file_ids", []) or [] if str(email_id).strip()]
@@ -6738,7 +6779,7 @@ def mark_summary_read(summary_id: str, request: Request, user_id: Optional[str] 
     user_id = resolve_user_id(request, user_id)
     summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
-        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail="Summary not found.")
 
     payload = load_summary_json(summary_path)
     was_unread = not str(payload.get("read_at", "")).strip()
@@ -6765,7 +6806,7 @@ def mark_summary_done(summary_id: str, payload: SummaryDoneRequest, request: Req
     user_id = resolve_user_id(request, payload.user_id)
     summary_path = safe_user_file_path(get_user_json_summaries_dir(user_id), summary_id, ".json", "summary id")
     if not summary_path.exists():
-        raise HTTPException(status_code=404, detail=f"Summary '{summary_id}' not found for user '{user_id}'.")
+        raise HTTPException(status_code=404, detail="Summary not found.")
 
     summary_payload = load_summary_json(summary_path)
     is_done = bool(payload.done)

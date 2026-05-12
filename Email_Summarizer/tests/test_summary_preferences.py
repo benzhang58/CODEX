@@ -45,6 +45,7 @@ class SummaryPreferenceTests(unittest.TestCase):
             record = email_v13.EmailRecord(
                 uid=1,
                 message_id="message-1",
+                thread_key="message::message-1",
                 sender="boss@example.com",
                 display_name="Boss",
                 subject="Launch",

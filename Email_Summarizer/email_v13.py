@@ -7,7 +7,7 @@ Pipeline:
      every message from every participant, searched across ALL IMAP folders
   3. Extract attachments from EVERY message in the thread (all senders)
   4. Send the complete thread + all attachment previews to the LLM
-  5. Write per-contact and master summaries to disk
+  5. Write per-thread and master summaries to disk
 """
 
 import os
@@ -345,6 +345,7 @@ class EmailRecord:
     """The whitelisted trigger email + its full reconstructed thread."""
     uid: int
     message_id: str
+    thread_key: str
     sender: str
     display_name: str  # human name from From: header e.g. "Wang Li"
     subject: str
@@ -705,8 +706,39 @@ class EmailSummarizer:
         parsed.microsoft_conversation_id = conversation_id
         return parsed
 
-    def _summary_file_id(self, sender: str, run_date: str) -> str:
-        return self._slugify(f"{sender}_{run_date}")
+    def _record_thread_key(self, record: EmailRecord) -> str:
+        if record.thread_key:
+            return record.thread_key
+        thread_ids = [tm.message_id.strip() for tm in record.thread if tm.message_id and tm.message_id.strip()]
+        if thread_ids:
+            return "|".join(sorted(set(thread_ids)))
+        return record.message_id or record.subject or str(record.uid)
+
+    def _message_thread_key(self, msg: Message) -> str:
+        microsoft_conversation_id = getattr(msg, "microsoft_conversation_id", "")
+        if microsoft_conversation_id:
+            return f"microsoft::{microsoft_conversation_id}"
+        gmail_thread_id = getattr(msg, "gmail_thread_id", "")
+        if gmail_thread_id:
+            return f"gmail::{gmail_thread_id}"
+        refs = msg.get("References", "").strip().split()
+        if refs:
+            return f"refs::{refs[0].strip()}"
+        in_reply = msg.get("In-Reply-To", "").strip()
+        if in_reply:
+            return f"reply::{in_reply}"
+        message_id = msg.get("Message-ID", "").strip()
+        if message_id:
+            return f"message::{message_id}"
+        subject = self._decode_subject(msg.get("Subject", "")).strip()
+        subject = re.sub(r'^(Re:|RE:|Fwd:|FWD:)\s*', '', subject, flags=re.IGNORECASE).strip()
+        return f"standalone::{subject}::{self._message_sender(msg)}::{msg.get('Date', '').strip()}"
+
+    def _summary_file_id(self, sender: str, run_date: str, thread_key: Optional[str] = None) -> str:
+        if not thread_key:
+            return self._slugify(f"{sender}_{run_date}")
+        digest = hashlib.sha256(thread_key.encode("utf-8")).hexdigest()[:12]
+        return self._slugify(f"{sender}_{digest}_{run_date}")
 
     @staticmethod
     def _extract_section(markdown: str, section_name: str) -> str:
@@ -1020,25 +1052,6 @@ class EmailSummarizer:
         """
         import re
 
-        def get_thread_key(msg: Message) -> str:
-            microsoft_conversation_id = getattr(msg, "microsoft_conversation_id", "")
-            if microsoft_conversation_id:
-                return f"microsoft::{microsoft_conversation_id}"
-            gmail_thread_id = getattr(msg, "gmail_thread_id", "")
-            if gmail_thread_id:
-                return f"gmail::{gmail_thread_id}"
-            # Use the root Message-ID from References chain as the thread key
-            refs = msg.get("References", "").strip().split()
-            if refs:
-                return refs[0].strip()  # oldest reference = thread root
-            in_reply = msg.get("In-Reply-To", "").strip()
-            if in_reply:
-                return in_reply
-            # Standalone — use normalized subject as key
-            subj = self._decode_subject(msg.get("Subject", "")).strip()
-            subj = re.sub(r'^(Re:|RE:|Fwd:|FWD:)\s*', '', subj, flags=re.IGNORECASE).strip()
-            return f"subj::{subj}"
-
         def get_date(msg: Message) -> datetime:
             try:
                 return email.utils.parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
@@ -1048,7 +1061,7 @@ class EmailSummarizer:
         # Group by thread key, keeping track of all msgs per thread
         threads: Dict[str, List[Message]] = defaultdict(list)
         for msg in msgs:
-            key = get_thread_key(msg)
+            key = self._message_thread_key(msg)
             threads[key].append(msg)
 
         # From each thread group, keep only the most recent trigger
@@ -1166,7 +1179,7 @@ class EmailSummarizer:
                 logger.info(f"Matched {len(matched)} recent email(s) for one tracked sender.")
                 all_uids.update(matched)
             except Exception as e:
-                logger.warning(f"  FROM search failed for '{sender}': {e}")
+                logger.warning("FROM search failed for one tracked sender: %s", e.__class__.__name__)
 
         uid_list = sorted(all_uids)
         logger.info(f"Combined search: {len(uid_list)} candidate email(s) to process.")
@@ -1184,7 +1197,7 @@ class EmailSummarizer:
                 sender = self._message_sender(msg)
                 if not self._is_tracked_sender(sender):
                     skipped_untracked_sender += 1
-                    logger.info(f"  Skipping UID {uid} because actual From is not tracked: {sender or '(empty)'}")
+                    logger.info("Skipping one candidate because actual From is not tracked.")
                     continue
                 msgs.append(msg)
 
@@ -1241,11 +1254,11 @@ class EmailSummarizer:
                 sender = self._message_sender(msg)
                 if not self._is_tracked_sender(sender):
                     skipped_untracked_sender += 1
-                    logger.info(f"Skipping Gmail candidate {gmail_message_id} because actual From is not tracked: {sender or '(empty)'}")
+                    logger.info("Skipping one Gmail candidate because actual From is not tracked.")
                     continue
                 msgs.append(msg)
             except Exception as exc:
-                logger.warning(f"Failed to fetch Gmail message {gmail_message_id}: {exc}")
+                logger.warning("Failed to fetch one Gmail message: %s", exc.__class__.__name__)
 
         logger.info(f"Found {len(msgs)} new Gmail trigger email(s)")
         return msgs, {
@@ -1332,11 +1345,11 @@ class EmailSummarizer:
                 sender = self._message_sender(msg)
                 if not self._is_tracked_sender(sender):
                     skipped_untracked_sender += 1
-                    logger.info(f"Skipping Microsoft Graph candidate because actual From is not tracked: {sender or '(empty)'}")
+                    logger.info("Skipping one Microsoft Graph candidate because actual From is not tracked.")
                     continue
                 msgs.append(msg)
             except Exception as exc:
-                logger.warning(f"Failed to fetch Microsoft Graph message {graph_message_id}: {exc}")
+                logger.warning("Failed to fetch one Microsoft Graph message: %s", exc.__class__.__name__)
 
         return msgs, {
             "candidate_trigger_count": len(candidate_items),
@@ -1483,7 +1496,7 @@ class EmailSummarizer:
             try:
                 messages.append(self._gmail_api_raw_message(gmail_message_id))
             except Exception as exc:
-                logger.warning(f"Failed to fetch Gmail thread message {gmail_message_id}: {exc}")
+                logger.warning("Failed to fetch one Gmail thread message: %s", exc.__class__.__name__)
         if not messages:
             return [self._to_thread_message(trigger, None)]
         thread_msgs = [self._to_thread_message(msg, None) for msg in messages]
@@ -1511,13 +1524,13 @@ class EmailSummarizer:
                     try:
                         messages.append(self._microsoft_graph_raw_message(graph_message_id, conversation_id))
                     except Exception as exc:
-                        logger.warning(f"Failed to fetch Microsoft Graph thread message {graph_message_id}: {exc}")
+                        logger.warning("Failed to fetch one Microsoft Graph thread message: %s", exc.__class__.__name__)
                 next_link = payload.get("@odata.nextLink")
                 if not next_link:
                     break
                 payload = self._microsoft_graph_request(next_link)
         except Exception as exc:
-            logger.warning(f"Failed to fetch Microsoft Graph conversation {conversation_id}: {exc}")
+            logger.warning("Failed to fetch Microsoft Graph conversation: %s", exc.__class__.__name__)
             return [self._to_thread_message(trigger, None)]
 
         if not messages:
@@ -1742,7 +1755,7 @@ class EmailSummarizer:
             display_name = self._decode_subject(from_parts[0].strip()) or from_parts[1].split("@")[0]
             sender       = self._message_sender(msg)
             if not self._is_tracked_sender(sender):
-                logger.info(f"Skipping parsed email because actual From is not tracked: {sender or '(empty)'}")
+                logger.info("Skipping parsed email because actual From is not tracked.")
                 return None
             subject      = self._decode_subject(msg.get("Subject", "(no subject)"))
             date_str   = msg.get("Date", "")
@@ -1759,6 +1772,7 @@ class EmailSummarizer:
             return EmailRecord(
                 uid=uid,
                 message_id=message_id,
+                thread_key=self._message_thread_key(msg),
                 sender=sender,
                 display_name=display_name,
                 subject=subject,
@@ -1956,7 +1970,7 @@ class EmailSummarizer:
             logger.info(f"✅ Generated {'overall' if is_overall else 'contact'} summary")
             return summary
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
+            logger.error("OpenAI API error: %s", e.__class__.__name__)
             return f"Summary generation failed: {e}"
 
     # ──────────────────────────────────────────────
@@ -2121,12 +2135,14 @@ class EmailSummarizer:
                 self._save_metadata(run_date, run_date_display, days_back, records, [])
                 return stats
 
-            # Group by whitelisted sender
-            by_sender: Dict[str, List[EmailRecord]] = defaultdict(list)
+            # Summarize each unique thread separately. Multiple emails from the
+            # same contact in different conversations should create distinct
+            # summary cards in one run.
+            by_thread: Dict[Tuple[str, str], List[EmailRecord]] = defaultdict(list)
             for rec in records:
-                by_sender[rec.sender].append(rec)
+                by_thread[(rec.sender, self._record_thread_key(rec))].append(rec)
 
-            logger.info(f"Summarizing {len(records)} email(s) from {len(by_sender)} contact(s).")
+            logger.info(f"Summarizing {len(records)} email(s) across {len(by_thread)} thread(s).")
 
             # Build display name map: email → human name
             display_names: Dict[str, str] = {}
@@ -2138,27 +2154,23 @@ class EmailSummarizer:
                 if saved_name:
                     display_names[sender] = saved_name
 
-            # Generate one summary per contact
-            contact_summaries: Dict[str, str] = {}
-            contact_display:   Dict[str, str] = {}
+            # Generate one summary per thread
+            summary_entries: List[Dict[str, str]] = []
             saved_summary_ids: List[str] = []
             summary_started_at = time.perf_counter()
-            for sender, recs in by_sender.items():
+            for (sender, thread_key), recs in by_thread.items():
                 name  = display_names.get(sender, sender)
                 label = f"{name} ({sender})"
-                contact_display[sender] = label
                 summary = self.generate_summary(recs, contact_name=label)
                 if summary.startswith("Summary generation failed:"):
                     raise RuntimeError(summary)
-                contact_summaries[sender] = summary
 
                 # Also save individual .md file to disk
-                safe     = sender.replace("@", "_at_").replace(".", "_")
-                out_path = self.summaries_dir / f"{safe}_{run_date}.md"
+                summary_id = self._summary_file_id(sender, run_date, thread_key)
+                out_path = self.summaries_dir / f"{summary_id}.md"
                 out_path.write_text(f"# Email Summary — {label}\n\n{summary}", encoding="utf-8")
-                logger.info(f"Wrote: {out_path.name}")
+                logger.info("Wrote thread summary file.")
 
-                summary_id = self._summary_file_id(sender, run_date)
                 summary_payload = self._summary_payload(
                     summary_id=summary_id,
                     sender=sender,
@@ -2170,18 +2182,26 @@ class EmailSummarizer:
                 )
                 self._save_summary_json(summary_payload)
                 saved_summary_ids.append(summary_id)
+                summary_entries.append(
+                    {
+                        "sender": sender,
+                        "contact_label": label,
+                        "summary_id": summary_id,
+                        "summary_markdown": summary,
+                    }
+                )
             stage_timings["llm_summary_seconds"] = round(time.perf_counter() - summary_started_at, 3)
 
             # Save combined master .md to disk
             write_started_at = time.perf_counter()
             master_md = f"# {run_date_display}\n\n"
             master_md += "\n\n---\n\n".join(
-                f"## {contact_display.get(sender, sender)}\n\n{summary}"
-                for sender, summary in contact_summaries.items()
+                f"## {entry['contact_label']}\n\n{entry['summary_markdown']}"
+                for entry in summary_entries
             )
             master_path = self.summaries_dir / f"OVERALL_MASTER_{run_date}.md"
             master_path.write_text(master_md, encoding="utf-8")
-            logger.info(f"Wrote: {master_path.name}")
+            logger.info("Wrote overall summary file.")
 
             master_summary_payload = {
                 "summary_id": f"overall_master_{run_date}",
@@ -2190,15 +2210,7 @@ class EmailSummarizer:
                 "run_date": run_date,
                 "run_date_display": run_date_display,
                 "summary_markdown": master_md,
-                "contact_summaries": [
-                    {
-                        "sender": sender,
-                        "contact_label": contact_display.get(sender, sender),
-                        "summary_id": self._summary_file_id(sender, run_date),
-                        "summary_markdown": summary,
-                    }
-                    for sender, summary in contact_summaries.items()
-                ],
+                "contact_summaries": summary_entries,
                 "source_message_ids": [record.message_id for record in records if record.message_id],
                 "created_at": datetime.now().isoformat(),
             }
@@ -2222,7 +2234,7 @@ class EmailSummarizer:
                 **trigger_stats,
                 "unique_thread_count": unique_thread_count,
                 "new_email_records_saved": len(records),
-                "new_contact_summaries_saved": len(by_sender),
+                "new_contact_summaries_saved": len(by_thread),
                 "new_total_summaries_saved": len(saved_summary_ids),
                 "stage_timings": stage_timings,
             }

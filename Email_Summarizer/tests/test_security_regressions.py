@@ -66,6 +66,9 @@ class SecurityRegressionTests(unittest.TestCase):
         os.environ.pop("EMAIL_SUMMARIZER_MANUAL_MAILBOX_ALLOWED_EMAILS", None)
         os.environ.pop("EMAIL_SUMMARIZER_VIP_MAILBOX_EMAIL", None)
         os.environ.pop("EMAIL_SUMMARIZER_SMS_ENABLED", None)
+        os.environ.pop("EMAIL_SUMMARIZER_PUBLIC_REPORTS_ENABLED", None)
+        with dashboard_api.RUN_JOB_LOCK:
+            dashboard_api.RUN_JOBS.clear()
         dashboard_api.initialize_database()
         self.client = TestClient(dashboard_api.app, base_url="https://discere-test.example")
 
@@ -1444,7 +1447,85 @@ class SecurityRegressionTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403, response.text)
 
+    def test_cross_account_schedule_access_is_blocked(self) -> None:
+        alice = self.signup("schedule-alice@example.com")
+        self.connect_standard_mailbox(alice, "schedule-alice@example.com")
+        bob = self.signup("schedule-bob@example.com")
+        self.connect_standard_mailbox(bob, "schedule-bob@example.com")
+        alice_user_id = "schedule_alice_example_com"
+        bob_user_id = "schedule_bob_example_com"
+
+        schedule_payload = {
+            "user_id": alice_user_id,
+            "name": "Alice Schedule",
+            "active": True,
+            "interval_value": 1,
+            "interval_unit": "days",
+            "days_back": 7,
+            "recipient_email": "outside@example.com",
+            "run_summarizer_first": True,
+            "send_combined_report": True,
+            "preferred_hour": 8,
+            "preferred_minute": 0,
+            "timezone": "America/Los_Angeles",
+        }
+        create_response = alice.post("/report-schedules", json=schedule_payload)
+        self.assertEqual(create_response.status_code, 200, create_response.text)
+        schedule_id = create_response.json()["schedule"]["schedule_id"]
+
+        bob_list = bob.get("/report-schedules")
+        self.assertEqual(bob_list.status_code, 200, bob_list.text)
+        self.assertEqual(bob_list.json()["schedules"], [])
+
+        explicit_list = bob.get("/report-schedules", params={"user_id": alice_user_id})
+        self.assertEqual(explicit_list.status_code, 403, explicit_list.text)
+
+        bob_update_payload = {**schedule_payload, "user_id": bob_user_id, "name": "Bob Edit Attempt"}
+        update_response = bob.put(f"/report-schedules/{schedule_id}", json=bob_update_payload)
+        self.assertEqual(update_response.status_code, 404, update_response.text)
+
+        explicit_update_payload = {**schedule_payload, "user_id": alice_user_id}
+        explicit_update = bob.put(f"/report-schedules/{schedule_id}", json=explicit_update_payload)
+        self.assertEqual(explicit_update.status_code, 403, explicit_update.text)
+
+        mark_ran = bob.post(f"/report-schedules/{schedule_id}/mark-ran", json={"user_id": bob_user_id})
+        self.assertEqual(mark_ran.status_code, 404, mark_ran.text)
+
+        delete_response = bob.delete(f"/report-schedules/{schedule_id}")
+        self.assertEqual(delete_response.status_code, 404, delete_response.text)
+
+        explicit_delete = bob.delete(f"/report-schedules/{schedule_id}", params={"user_id": alice_user_id})
+        self.assertEqual(explicit_delete.status_code, 403, explicit_delete.text)
+
+    def test_cross_account_run_job_status_access_is_blocked(self) -> None:
+        alice = self.signup("job-alice@example.com")
+        bob = self.signup("job-bob@example.com")
+        alice_user_id = "job_alice_example_com"
+        job_id = "alice-private-job"
+        with dashboard_api.RUN_JOB_LOCK:
+            dashboard_api.RUN_JOBS[job_id] = {
+                "job_id": job_id,
+                "user_id": alice_user_id,
+                "status": "running",
+                "stdout": "",
+                "stderr": "",
+            }
+
+        alice_response = alice.get(f"/run-summarizer/status/{job_id}")
+        self.assertEqual(alice_response.status_code, 200, alice_response.text)
+
+        bob_response = bob.get(f"/run-summarizer/status/{job_id}")
+        self.assertEqual(bob_response.status_code, 404, bob_response.text)
+
+        bob_explicit = bob.get(f"/run-summarizer/status/{job_id}", params={"user_id": alice_user_id})
+        self.assertEqual(bob_explicit.status_code, 403, bob_explicit.text)
+
+        bob_active = bob.get("/run-summarizer/active")
+        self.assertEqual(bob_active.status_code, 200, bob_active.text)
+        self.assertIsNone(bob_active.json()["job"])
+
     def test_public_report_links_reject_path_traversal_even_with_valid_signature(self) -> None:
+        os.environ["EMAIL_SUMMARIZER_PUBLIC_REPORTS_ENABLED"] = "true"
         user_id = "report_owner"
         private_dir = Path(os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"]) / "users" / user_id
         private_dir.mkdir(parents=True, exist_ok=True)
@@ -1460,6 +1541,22 @@ class SecurityRegressionTests(unittest.TestCase):
             params={"user_id": user_id, "path": traversal_path, "expires": expires, "sig": signature},
         )
         self.assertEqual(response.status_code, 403, response.text)
+
+    def test_public_report_links_are_disabled_by_default(self) -> None:
+        user_id = "report_owner"
+        report_dir = dashboard_api.PUBLIC_REPORTS_DIR / user_id
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / "report.pdf"
+        report_path.write_bytes(b"%PDF-1.4 private")
+        relative_path = str(report_path.relative_to(dashboard_api.PUBLIC_REPORTS_DIR))
+        expires = int((dashboard_api.datetime.now() + dashboard_api.timedelta(minutes=5)).timestamp())
+        signature = dashboard_api.sign_public_report_token(user_id, relative_path, expires)
+
+        response = self.client.get(
+            "/public-report",
+            params={"user_id": user_id, "path": relative_path, "expires": expires, "sig": signature},
+        )
+        self.assertEqual(response.status_code, 404, response.text)
 
     def test_account_export_endpoint_is_not_available(self) -> None:
         client = self.signup("no-export@example.com")
@@ -1661,6 +1758,118 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertIn("background:#ffffff", html)
         self.assertNotIn("linear-gradient", html)
         self.assertNotIn("#f5f3ed", html)
+
+    def test_same_sender_different_threads_get_distinct_summary_ids(self) -> None:
+        summarizer = object.__new__(email_v13.EmailSummarizer)
+        first_record = email_v13.EmailRecord(
+            uid=1,
+            message_id="<first@example.com>",
+            thread_key="gmail::thread-one",
+            sender="person@example.com",
+            display_name="Person",
+            subject="First chain",
+            date="2026-05-01T10:00:00",
+            thread=[
+                email_v13.ThreadMessage(
+                    message_id="<first-root@example.com>",
+                    sender="person@example.com",
+                    to="me@example.com",
+                    cc="",
+                    subject="First chain",
+                    date="2026-05-01T10:00:00",
+                    body="First thread.",
+                )
+            ],
+        )
+        second_record = email_v13.EmailRecord(
+            uid=2,
+            message_id="<second@example.com>",
+            thread_key="gmail::thread-two",
+            sender="person@example.com",
+            display_name="Person",
+            subject="Second chain",
+            date="2026-05-02T10:00:00",
+            thread=[
+                email_v13.ThreadMessage(
+                    message_id="<second-root@example.com>",
+                    sender="person@example.com",
+                    to="me@example.com",
+                    cc="",
+                    subject="Second chain",
+                    date="2026-05-02T10:00:00",
+                    body="Second thread.",
+                )
+            ],
+        )
+
+        first_id = summarizer._summary_file_id(
+            first_record.sender,
+            "2026-05-11_1200",
+            summarizer._record_thread_key(first_record),
+        )
+        second_id = summarizer._summary_file_id(
+            second_record.sender,
+            "2026-05-11_1200",
+            summarizer._record_thread_key(second_record),
+        )
+
+        self.assertNotEqual(first_id, second_id)
+        self.assertIn("person_example.com", first_id)
+        self.assertIn("person_example.com", second_id)
+
+    def test_standalone_messages_with_same_subject_are_not_deduped(self) -> None:
+        summarizer = object.__new__(email_v13.EmailSummarizer)
+        first = email.message.Message()
+        first["Message-ID"] = "<first-standalone@example.com>"
+        first["Subject"] = "Project update"
+        first["Date"] = "Mon, 11 May 2026 09:00:00 -0700"
+        second = email.message.Message()
+        second["Message-ID"] = "<second-standalone@example.com>"
+        second["Subject"] = "Project update"
+        second["Date"] = "Mon, 11 May 2026 10:00:00 -0700"
+
+        deduped = summarizer._deduplicate_triggers_by_thread([first, second])
+
+        self.assertEqual(len(deduped), 2)
+
+    def test_provider_thread_keys_keep_gmail_microsoft_and_vip_threads_separate(self) -> None:
+        summarizer = object.__new__(email_v13.EmailSummarizer)
+        gmail_first = email.message.Message()
+        gmail_first.gmail_thread_id = "gmail-thread-1"
+        gmail_first["Message-ID"] = "<gmail-one@example.com>"
+        gmail_first["Subject"] = "Same subject"
+        gmail_second = email.message.Message()
+        gmail_second.gmail_thread_id = "gmail-thread-2"
+        gmail_second["Message-ID"] = "<gmail-two@example.com>"
+        gmail_second["Subject"] = "Same subject"
+
+        microsoft_first = email.message.Message()
+        microsoft_first.microsoft_conversation_id = "microsoft-conversation-1"
+        microsoft_first["Message-ID"] = "<microsoft-one@example.com>"
+        microsoft_second = email.message.Message()
+        microsoft_second.microsoft_conversation_id = "microsoft-conversation-2"
+        microsoft_second["Message-ID"] = "<microsoft-two@example.com>"
+
+        vip_first = email.message.Message()
+        vip_first["Message-ID"] = "<vip-one@example.com>"
+        vip_first["References"] = "<vip-root-one@example.com>"
+        vip_second = email.message.Message()
+        vip_second["Message-ID"] = "<vip-two@example.com>"
+        vip_second["References"] = "<vip-root-two@example.com>"
+
+        keys = {
+            summarizer._message_thread_key(gmail_first),
+            summarizer._message_thread_key(gmail_second),
+            summarizer._message_thread_key(microsoft_first),
+            summarizer._message_thread_key(microsoft_second),
+            summarizer._message_thread_key(vip_first),
+            summarizer._message_thread_key(vip_second),
+        }
+
+        self.assertEqual(len(keys), 6)
+        self.assertIn("gmail::gmail-thread-1", keys)
+        self.assertIn("microsoft::microsoft-conversation-1", keys)
+        self.assertIn("refs::<vip-root-one@example.com>", keys)
 
     def test_report_email_formatter_removes_markdown_headings_and_escapes_html(self) -> None:
         html = dashboard_api.render_markdown_report_email_html(
@@ -2415,10 +2624,14 @@ class SecurityRegressionTests(unittest.TestCase):
         user_dir = Path(os.environ["EMAIL_SUMMARIZER_STORAGE_DIR"]) / "users" / user_id
         user_dir.mkdir(parents=True, exist_ok=True)
         (user_dir / "marker.txt").write_text("private", encoding="utf-8")
+        public_report_dir = dashboard_api.PUBLIC_REPORTS_DIR / user_id
+        public_report_dir.mkdir(parents=True, exist_ok=True)
+        (public_report_dir / "report.pdf").write_bytes(b"%PDF-1.4 private")
 
         response = client.delete("/auth/account")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(user_dir.exists())
+        self.assertFalse(public_report_dir.exists())
 
         with dashboard_api.get_db_connection() as connection:
             for table in ["users", "sessions", "report_schedules", "analytics_events", "bug_reports", "usage_counters"]:
@@ -2432,12 +2645,32 @@ class SecurityRegressionTests(unittest.TestCase):
         response = self.client.get("/health/readiness")
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
-        self.assertIn("checks", payload)
-        self.assertTrue(payload["checks"]["security_headers_enabled"])
-        self.assertTrue(payload["checks"]["cors_origins_production_safe"])
+        self.assertEqual(set(payload.keys()), {"status", "ready"})
         serialized = json.dumps(payload)
         self.assertNotIn("test-openai-key", serialized)
         self.assertNotIn("test-only-encryption-key", serialized)
+        self.assertNotIn("EMAIL_SUMMARIZER", serialized)
+        self.assertNotIn("storage_dir", serialized)
+        self.assertNotIn("cors_origins", serialized)
+
+    def test_deployment_health_requires_admin_key(self) -> None:
+        original_admin_key = os.environ.get("EMAIL_SUMMARIZER_ADMIN_KEY")
+        os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = "test-admin-key"
+        try:
+            response = self.client.get("/health/deployment")
+            self.assertEqual(response.status_code, 403, response.text)
+
+            authorized = self.client.get(
+                "/health/deployment",
+                headers={"x-discere-admin-key": "test-admin-key"},
+            )
+            self.assertEqual(authorized.status_code, 200, authorized.text)
+            self.assertIn("storage_dir", authorized.json())
+        finally:
+            if original_admin_key is None:
+                os.environ.pop("EMAIL_SUMMARIZER_ADMIN_KEY", None)
+            else:
+                os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = original_admin_key
 
     def test_security_headers_are_applied(self) -> None:
         response = self.client.get("/health")
@@ -2609,6 +2842,43 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertNotIn("mailbox-secret", serialized)
         self.assertNotIn("refresh-secret", serialized)
         self.assertIn("visible", serialized)
+
+    def test_analytics_metadata_redacts_secrets_and_email_addresses(self) -> None:
+        dashboard_api.track_analytics_event(
+            "analytics_user",
+            "analytics_secret_test",
+            {
+                "recipient": "recipient@example.com",
+                "sender": "sender@example.com",
+                "api_key": "analytics-api-secret",
+                "detail": "SMTP_PASSWORD=analytics-password contact tracked@example.com",
+                "safe": "visible",
+            },
+        )
+
+        with dashboard_api.get_db_connection() as connection:
+            row = connection.execute(
+                "SELECT metadata_json FROM analytics_events WHERE event_name = ?",
+                ("analytics_secret_test",),
+            ).fetchone()
+
+        self.assertIsNotNone(row)
+        serialized = row["metadata_json"]
+        self.assertIn("[redacted-email]", serialized)
+        self.assertIn("[redacted]", serialized)
+        self.assertIn("visible", serialized)
+        self.assertNotIn("recipient@example.com", serialized)
+        self.assertNotIn("sender@example.com", serialized)
+        self.assertNotIn("tracked@example.com", serialized)
+        self.assertNotIn("analytics-api-secret", serialized)
+        self.assertNotIn("analytics-password", serialized)
+
+        os.environ["EMAIL_SUMMARIZER_ADMIN_KEY"] = "test-admin-key"
+        response = self.client.get("/admin/analytics", headers={"x-discere-admin-key": "test-admin-key"})
+        self.assertEqual(response.status_code, 200, response.text)
+        admin_payload = json.dumps(response.json())
+        self.assertNotIn("recipient@example.com", admin_payload)
+        self.assertNotIn("analytics-api-secret", admin_payload)
 
 
 if __name__ == "__main__":
