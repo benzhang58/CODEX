@@ -2077,7 +2077,7 @@ class EmailSummarizer:
     # Main pipeline
     # ──────────────────────────────────────────────
 
-    def run(self, days_back: int = 7) -> Dict[str, object]:
+    def run(self, days_back: int = 1) -> Dict[str, object]:
         run_started_at = time.perf_counter()
         stage_timings: Dict[str, float] = {}
 
@@ -2258,7 +2258,7 @@ if __name__ == "__main__":
             client_name = config_path.name.replace(".env.", "").replace(".env", "default")
         output_dir  = OUTPUT_ROOT_DIR / client_name
         summarizer  = EmailSummarizer(output_dir, user_id=client_name)
-        stats = summarizer.run(days_back=int(os.getenv("DAYS_BACK", 7)))
+        stats = summarizer.run(days_back=int(os.getenv("DAYS_BACK", 1)))
         print(json.dumps({"success": True, "stats": stats}))
     except Exception as exc:
         logger.error("Run failed: %s", exc)

@@ -2190,7 +2190,7 @@
             <input id="userIdInput" value="" placeholder="Signed in account" readonly hidden />
             <div class="input-chip">
               <div class="input-chip-label">Days back</div>
-              <input id="daysBackInput" type="number" min="1" value="7" />
+              <input id="daysBackInput" type="number" min="1" value="1" />
             </div>
             <div class="input-chip">
               <div class="input-chip-label">Current time</div>
@@ -2455,7 +2455,7 @@
               </div>
               <div class="field">
                 <label for="scheduleDaysBackInput">Days Back</label>
-                <input id="scheduleDaysBackInput" type="number" min="1" value="7" />
+                <input id="scheduleDaysBackInput" type="number" min="1" value="1" />
               </div>
               <div class="field">
                 <label for="scheduleTimezoneInput">Timezone</label>
@@ -3244,7 +3244,7 @@
         scheduleIntervalValueInput.value = String(schedule.interval_value || 1);
         scheduleIntervalUnitInput.value = schedule.interval_unit || "days";
         scheduleTimeInput.value = `${String(schedule.preferred_hour || 0).padStart(2, "0")}:${String(schedule.preferred_minute || 0).padStart(2, "0")}`;
-        scheduleDaysBackInput.value = String(schedule.days_back || 7);
+        scheduleDaysBackInput.value = String(schedule.days_back || 1);
         setScheduleTimezoneValue(schedule.timezone || getLocalTimezone());
         scheduleSaveButton.textContent = "Save Changes";
         scheduleResetButton.hidden = false;
@@ -3356,7 +3356,7 @@
           active: editingScheduleActive,
           interval_value: Number(scheduleIntervalValueInput.value || 1),
           interval_unit: scheduleIntervalUnitInput.value,
-          days_back: Number(scheduleDaysBackInput.value || 7),
+          days_back: Number(scheduleDaysBackInput.value || 1),
           recipient_email: getAccountReportEmail(),
           recipient_phone: "",
           delivery_channel: "email",
@@ -3951,7 +3951,7 @@
       }
 
       function estimateRunTime(daysBack) {
-        const days = Number(daysBack || 7);
+        const days = Number(daysBack || 1);
         if (days <= 3) return "20-40s";
         if (days <= 7) return "30-60s";
         if (days <= 14) return "45-90s";
@@ -4949,7 +4949,7 @@
           });
           return;
         }
-        const daysBack = Number(daysBackInput.value || 7);
+        const daysBack = Number(daysBackInput.value || 1);
         setRunStatus(
           `Checking the last ${daysBack} day(s) for new emails...\n${estimateRunTime(daysBack)}`,
           true
@@ -5006,7 +5006,7 @@
             currentRunJobId = jobId;
             runButton.disabled = true;
             setRunStatus(
-              `Checking the last ${data.days_back || daysBackInput.value || 7} day(s) for new emails...\n${estimateRunTime(data.days_back || daysBackInput.value || 7)}`,
+              `Checking the last ${data.days_back || daysBackInput.value || 1} day(s) for new emails...\n${estimateRunTime(data.days_back || daysBackInput.value || 1)}`,
               true
             );
             activeRunPollTimer = setTimeout(() => pollRunJob(jobId), 2000);

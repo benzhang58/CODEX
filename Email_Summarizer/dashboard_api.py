@@ -730,7 +730,7 @@ def initialize_database() -> None:
                 active INTEGER NOT NULL DEFAULT 1,
                 interval_value INTEGER NOT NULL,
                 interval_unit TEXT NOT NULL,
-                days_back INTEGER NOT NULL DEFAULT 7,
+                days_back INTEGER NOT NULL DEFAULT 1,
                 recipient_email TEXT NOT NULL,
                 run_summarizer_first INTEGER NOT NULL DEFAULT 1,
                 send_combined_report INTEGER NOT NULL DEFAULT 1,
@@ -958,7 +958,7 @@ def reconnect_error(provider: str, purpose: str, detail: str, reconnect_url: str
 
 class RunSummarizerRequest(BaseModel):
     user_id: Optional[str] = None
-    days_back: int = 7
+    days_back: int = 1
 
 
 class SummaryDoneRequest(BaseModel):
@@ -1071,7 +1071,7 @@ class ReportScheduleRequest(BaseModel):
     active: bool = True
     interval_value: int = 1
     interval_unit: str = "days"
-    days_back: int = 7
+    days_back: int = 1
     recipient_email: str = ""
     run_summarizer_first: bool = True
     send_combined_report: bool = True
