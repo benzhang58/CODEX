@@ -148,6 +148,19 @@
         min-height: 22px;
       }
 
+      .login-notice {
+        margin: 14px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .login-notice a {
+        color: var(--text);
+        font-weight: 600;
+        text-decoration: underline;
+      }
+
       @media (max-width: 720px) {
         .actions {
           grid-template-columns: 1fr;
@@ -164,6 +177,11 @@
         <a id="googleOauthButton" class="secondary-button" href="/auth/google/start">Continue with Google</a>
         <a id="microsoftOauthButton" class="secondary-button" href="/auth/microsoft/start">Continue with Microsoft</a>
       </div>
+      <p class="login-notice public-login-copy">
+        By continuing, you agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> and
+        <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>. Discere summarizes emails from
+        contacts you choose and sends relevant text to OpenAI to generate summaries.
+      </p>
 
       <div id="manualLoginPanel" class="manual-login-panel">
         <p>Approved private clients can sign in below.</p>

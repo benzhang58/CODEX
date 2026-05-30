@@ -213,22 +213,6 @@
         <input id="passwordInput" type="password" placeholder="At least 8 characters" />
       </div>
 
-      <div class="field">
-        <label for="birthdayInput">Birthday</label>
-        <input id="birthdayInput" type="date" />
-      </div>
-
-      <div class="field">
-        <label for="genderInput">Gender</label>
-        <select id="genderInput">
-          <option value="">Select gender</option>
-          <option value="Female">Female</option>
-          <option value="Male">Male</option>
-          <option value="Non-binary">Non-binary</option>
-          <option value="Prefer not to say">Prefer not to say</option>
-        </select>
-      </div>
-
       <label class="consent-row" for="acceptTermsInput">
         <input id="acceptTermsInput" type="checkbox" />
         <p class="consent-copy">
@@ -265,8 +249,6 @@
       const emailInput = document.getElementById("emailInput");
       const passwordInput = document.getElementById("passwordInput");
       const accessPasswordInput = document.getElementById("accessPasswordInput");
-      const birthdayInput = document.getElementById("birthdayInput");
-      const genderInput = document.getElementById("genderInput");
       const acceptTermsInput = document.getElementById("acceptTermsInput");
       const createButton = document.getElementById("createButton");
       const status = document.getElementById("status");
@@ -326,11 +308,9 @@
         const email = emailInput.value.trim();
         const password = passwordInput.value;
         const manualAccessPassword = accessPasswordInput.value;
-        const birthday = birthdayInput.value.trim();
-        const gender = genderInput.value.trim();
         const accepted = acceptTermsInput.checked;
 
-        if (!manualAccessPassword || !email || !password || !birthday || !gender) {
+        if (!manualAccessPassword || !email || !password) {
           status.textContent = "Complete all fields first.";
           return;
         }
@@ -354,8 +334,6 @@
               email,
               password,
               manual_access_password: manualAccessPassword,
-              birthday,
-              gender,
               accept_terms: true,
               accept_privacy: true,
             }),

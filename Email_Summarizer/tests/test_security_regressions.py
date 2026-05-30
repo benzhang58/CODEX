@@ -1045,19 +1045,19 @@ class SecurityRegressionTests(unittest.TestCase):
                     {
                         "id": "tracked-id",
                         "conversationId": "conversation-tracked",
-                        "receivedDateTime": "2026-05-05T15:00:00Z",
+                        "receivedDateTime": "2099-05-05T15:00:00Z",
                         "from": {"emailAddress": {"address": "tracked@example.com"}},
                     },
                     {
                         "id": "untracked-id",
                         "conversationId": "conversation-untracked",
-                        "receivedDateTime": "2026-05-05T15:00:00Z",
+                        "receivedDateTime": "2099-05-05T15:00:00Z",
                         "from": {"emailAddress": {"address": "untracked@example.com"}},
                     },
                     {
                         "id": "blank-id",
                         "conversationId": "conversation-blank",
-                        "receivedDateTime": "2026-05-05T14:00:00Z",
+                        "receivedDateTime": "2099-05-05T14:00:00Z",
                         "from": {"emailAddress": {"address": ""}},
                     },
                     {
@@ -1758,6 +1758,21 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertIn("background:#ffffff", html)
         self.assertNotIn("linear-gradient", html)
         self.assertNotIn("#f5f3ed", html)
+
+    def test_report_email_header_includes_discere_logo(self) -> None:
+        html = dashboard_api.render_markdown_report_email_html(
+            "Selected Summary Report",
+            "## Sender One\nUpdated: 2026-04-30\nExecutive summary text.",
+        )
+
+        self.assertIn("https://discere-test.example/dashboard_static/discere-logo.png", html)
+        self.assertIn("alt='Discere'", html)
+
+    def test_private_notification_email_header_includes_discere_logo(self) -> None:
+        html = dashboard_api.render_private_report_notification_html("report")
+
+        self.assertIn("https://discere-test.example/dashboard_static/discere-logo.png", html)
+        self.assertIn("Your Discere report is ready", html)
 
     def test_same_sender_different_threads_get_distinct_summary_ids(self) -> None:
         summarizer = object.__new__(email_v13.EmailSummarizer)

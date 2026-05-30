@@ -635,8 +635,6 @@ ACCOUNT_SCOPED_SETTING_KEYS = {
     "MAILBOX_CONNECTION_CONFIRMED",
     "FIRST_NAME",
     "LAST_NAME",
-    "BIRTHDAY",
-    "GENDER",
     "REPORT_EMAIL_MODE",
     "SUBSCRIPTION_STATUS",
     "SUBSCRIPTION_TRIAL_STARTED_AT",
@@ -1028,8 +1026,6 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     manual_access_password: str = ""
-    birthday: str = ""
-    gender: str = ""
     accept_terms: bool = False
     accept_privacy: bool = False
 
@@ -1515,8 +1511,6 @@ def signup(request: SignupRequest, response: Response) -> Dict[str, Any]:
         and str(settings.get("IMAP_PASSWORD", "")).strip()
         else "false"
     )
-    settings["BIRTHDAY"] = str(request.birthday or "").strip()
-    settings["GENDER"] = str(request.gender or "").strip()
     mark_legal_acceptance(settings)
 
     password_hash, password_salt = _hash_password(request.password)
@@ -2992,8 +2986,6 @@ def default_profile_settings() -> Dict[str, str]:
     settings = {
         "FIRST_NAME": "",
         "LAST_NAME": "",
-        "BIRTHDAY": "",
-        "GENDER": "",
         "HOW_TO_SEEN": "false",
         "HAS_SEEN_PROFILE_NAME_PROMPT": "false",
         "HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT": "false",
@@ -3364,8 +3356,6 @@ def profile_settings_to_response(settings: Dict[str, str]) -> Dict[str, str]:
     return {
         "first_name": settings.get("FIRST_NAME", ""),
         "last_name": settings.get("LAST_NAME", ""),
-        "birthday": settings.get("BIRTHDAY", ""),
-        "gender": settings.get("GENDER", ""),
         "how_to_seen": str(settings.get("HOW_TO_SEEN", "false")).lower() == "true",
         "has_seen_profile_name_prompt": str(settings.get("HAS_SEEN_PROFILE_NAME_PROMPT", "false")).lower() == "true",
         "has_seen_combined_summary_email_hint": str(settings.get("HAS_SEEN_COMBINED_SUMMARY_EMAIL_HINT", "false")).lower() == "true",
@@ -4443,6 +4433,7 @@ Subscription and billing:
 - New accounts receive a 7-day free trial without entering payment information.
 - After the free trial ends, summarization, AI Assistant, report delivery, and scheduled report features require a paid subscription.
 - The current introductory plan is $4.99 per month.
+- Some invited early users may receive free access or extended trials at Discere's discretion.
 - Users can see trial or member status in Settings under Subscription.
 - Testing accounts configured by Discere can be exempt from subscription enforcement.
 
@@ -4567,10 +4558,11 @@ Billing:
 - New accounts receive a 7-day free trial without entering payment information.
 - After the trial, continued access to summarization, AI Assistant, report delivery, and scheduled reports requires a paid subscription.
 - The introductory plan is $4.99 per month unless checkout shows a different price.
+- Some invited early users may receive free access or extended trials at Discere's discretion.
 
 Public chat limits:
 - This public website chat can explain Discere, but it cannot see a visitor's inbox, account, summaries, contacts, schedules, or billing status.
-- For account-specific help, tell users to log in and use the dashboard or contact disceresupport@gmail.com.
+- For account-specific help, tell users to log in and use the dashboard or contact support@discere-ai.com.
 """.strip()
 
 
@@ -4839,11 +4831,7 @@ def render_report_email_html(title: str, cards: List[Dict[str, Any]], intro: str
         "<html><body style='margin:0; padding:0; background:#ffffff;'>"
         "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
         "max-width:760px; margin:0 auto; padding:28px 22px; background:#ffffff;'>"
-        "<div style='margin:0 0 22px 0; padding:0 0 18px 0; border-bottom:1px solid #e6e2da;'>"
-        "<p style='margin:0 0 8px 0; color:#6f6d66; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; font-weight:700;'>Discere</p>"
-        f"<h1 style='margin:0; color:#111; font-size:30px; line-height:1.08; letter-spacing:-0.05em;'>{escape(title or 'Discere Email Summary')}</h1>"
-        f"<p style='margin:12px 0 0 0; color:#555; font-size:15px; line-height:1.6;'>{escape(intro)}</p>"
-        "</div>"
+        + render_email_brand_header(title or "Discere Email Summary", intro)
         + "".join(card_html)
         + "</div></body></html>"
     )
@@ -5198,6 +5186,36 @@ def settings_url() -> str:
     return "/settings"
 
 
+def email_logo_url() -> str:
+    if PUBLIC_BASE_URL:
+        return f"{PUBLIC_BASE_URL}/dashboard_static/discere-logo.png"
+    return ""
+
+
+def render_email_brand_header(title: str, intro: str) -> str:
+    logo_url = email_logo_url()
+    logo_html = (
+        f"<img src='{escape(logo_url)}' alt='Discere' width='42' height='42' "
+        "style='display:block; width:42px; height:42px; border:0; outline:none; text-decoration:none; object-fit:contain;'>"
+        if logo_url
+        else ""
+    )
+    return (
+        "<div style='margin:0 0 22px 0; padding:0 0 18px 0; border-bottom:1px solid #e6e2da;'>"
+        "<table role='presentation' cellpadding='0' cellspacing='0' style='border-collapse:collapse; margin:0 0 10px 0;'>"
+        "<tr>"
+        f"<td style='vertical-align:middle; padding:0 10px 0 0;'>{logo_html}</td>"
+        "<td style='vertical-align:middle;'>"
+        "<p style='margin:0; color:#6f6d66; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; font-weight:700;'>Discere</p>"
+        "</td>"
+        "</tr>"
+        "</table>"
+        f"<h1 style='margin:0; color:#111; font-size:30px; line-height:1.08; letter-spacing:-0.05em;'>{escape(title or 'Discere Email Summary')}</h1>"
+        f"<p style='margin:12px 0 0 0; color:#555; font-size:15px; line-height:1.6;'>{escape(intro)}</p>"
+        "</div>"
+    )
+
+
 def append_report_email_footer_html(html_body: str, *, support_email: str, include_manage_link: bool = False) -> str:
     support = escape(str(support_email or "").strip())
     manage_link = escape(settings_url())
@@ -5244,10 +5262,14 @@ def render_private_report_notification_html(report_label: str = "report") -> str
         else ""
     )
     return (
-        "<html><body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
+        "<html><body style='margin:0; padding:0; background:#ffffff;'>"
+        "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif; color:#111; "
         "max-width:640px; margin:0 auto; padding:24px; background:#fff;'>"
-        f"<h1 style='margin:0 0 12px 0; font-size:28px; letter-spacing:-0.04em;'>Your Discere {escape(report_label)} is ready</h1>"
-        "<p style='margin:0; color:#555; line-height:1.6;'>"
+        + render_email_brand_header(
+            f"Your Discere {report_label} is ready",
+            "Open Discere to read the report inside your dashboard.",
+        )
+        + "<p style='margin:0; color:#555; line-height:1.6;'>"
         "You chose Email Notification mode, so this email does not include summary content. "
         "Open Discere to read the report inside your dashboard."
         "</p>"
@@ -5255,7 +5277,7 @@ def render_private_report_notification_html(report_label: str = "report") -> str
         "<p style='margin:24px 0 0 0; color:#777; font-size:13px; line-height:1.5;'>"
         "This notification was sent by Discere to your connected account email because you requested or scheduled a report."
         "</p>"
-        "</body></html>"
+        "</div></body></html>"
     )
 
 
@@ -5972,7 +5994,7 @@ def public_chat(payload: PublicChatRequest, request: Request) -> Dict[str, Any]:
 
     answer = clean_chat_answer_text(str(getattr(response, "output_text", "") or ""))
     if not answer:
-        answer = "I could not answer that clearly. Try asking in a simpler way, or contact disceresupport@gmail.com."
+        answer = "I could not answer that clearly. Try asking in a simpler way, or contact support@discere-ai.com."
 
     return {"answer": answer}
 
@@ -6017,7 +6039,7 @@ def chat(payload: ChatRequest, request: Request) -> Dict[str, Any]:
         "For email-specific questions, answer only from the provided summaries and email bodies. Do not invent facts, deadlines, requests, attachments, or email text. "
         "For Discere product, privacy, security, terms, and workflow questions, answer only from the Discere product knowledge provided. "
         "If there are no saved summaries yet, do not mention the internal user ID. For email-specific questions, briefly say there are no saved summaries yet and explain the next step: add contacts, run the summarizer, then ask again. "
-        "If the answer is not in the provided context or product knowledge, say so clearly and suggest checking Settings, Privacy, Security FAQ, Terms, or contacting disceresupport@gmail.com. "
+        "If the answer is not in the provided context or product knowledge, say so clearly and suggest checking Settings, Privacy, Security FAQ, Terms, or contacting support@discere-ai.com. "
         "If the user asks where something was said, quote the exact relevant email text when available. "
         "If the user asks about attachments, mention attachment filenames explicitly when available. "
         "If the user asks why deleted summaries/emails appear again, explain that deleting a summary removes the identifier so it can be rediscovered; marking it done keeps the identifier so it should not be re-summarized accidentally. "
