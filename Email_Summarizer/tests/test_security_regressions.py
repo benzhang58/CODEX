@@ -507,6 +507,14 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 307, response.text)
         self.assertEqual(response.headers.get("location"), "/login?next=%2Fdashboard")
 
+    def test_dashboard_login_redirect_preserves_oauth_error(self) -> None:
+        response = self.client.get("/dashboard?google_error=token_exchange_failed", follow_redirects=False)
+        self.assertEqual(response.status_code, 307, response.text)
+        self.assertEqual(
+            response.headers.get("location"),
+            "/login?next=%2Fdashboard&google_error=token_exchange_failed",
+        )
+
     def test_dashboard_serves_logged_in_session(self) -> None:
         client = self.signup("dashboard-auth@example.com")
         response = client.get("/dashboard", follow_redirects=False)

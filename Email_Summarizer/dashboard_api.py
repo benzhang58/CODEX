@@ -1420,7 +1420,14 @@ def login_page(request: Request) -> Response:
 @app.get("/dashboard")
 def dashboard(request: Request) -> Response:
     if not get_session_user_id(request):
-        return RedirectResponse(f"/login?next={quote('/dashboard', safe='')}")
+        params = {"next": "/dashboard"}
+        google_error = str(request.query_params.get("google_error", "") or "").strip()
+        microsoft_error = str(request.query_params.get("microsoft_error", "") or "").strip()
+        if google_error:
+            params["google_error"] = google_error
+        if microsoft_error:
+            params["microsoft_error"] = microsoft_error
+        return RedirectResponse(f"/login?{urlencode(params)}")
     return FileResponse(STATIC_DIR / "index.html")
 
 
